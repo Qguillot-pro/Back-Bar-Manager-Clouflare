@@ -8,13 +8,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     build: {
-      outDir: 'dist', // Standard pour Cloudflare Pages
+      outDir: 'dist', // Dossier de sortie standard pour Cloudflare Pages
     },
     define: {
-      'process.env': {
-         API_KEY: env.API_KEY,
-         // Pas de DATABASE_URL ici, c'est pour le backend Cloudflare uniquement.
-      }
+      // Injection sécurisée de la clé API (Vite remplace la chaîne littérale)
+      'process.env.API_KEY': JSON.stringify(env.API_KEY),
     }
   };
 });
