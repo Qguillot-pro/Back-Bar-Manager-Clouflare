@@ -47,9 +47,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   try {
     const url = new URL(request.url);
-    const path = url.pathname; // ex: /api/init
+    const path = url.pathname; 
 
-    // --- GET ROUTE: INITIALISATION ---
+    // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
       const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig] = await Promise.all([
         pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
@@ -73,8 +73,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           if (row.key === 'temp_item_duration') configMap.tempItemDuration = row.value;
       });
 
-      // Nettoyage automatique (fire and forget logic, mais await pour edge workers)
-      // Note: Sur Edge, il vaut mieux faire ça en background, mais ici on le fait en inline pour simplifier
+      // Nettoyage automatique des items temporaires
       try {
         let interval = null;
         const durationSetting = configMap.tempItemDuration;
@@ -149,10 +148,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       });
     }
 
-    // --- POST ROUTE: ACTIONS ---
+    // --- POST ROUTE: ACTIONS (/api/action) ---
     if (request.method === 'POST') {
+      // On accepte toutes les requêtes POST vers /api/action (ou tout ce qui est géré par ce fichier [[route]])
+      // mais pour être propre, on pourrait vérifier path.includes('/action')
+      
       const bodyText = await request.text();
       const { action, payload } = JSON.parse(bodyText || '{}');
+
+      if (!action) {
+           return new Response(JSON.stringify({ error: 'Action manquante' }), { status: 400, headers: corsHeaders });
+      }
 
       switch (action) {
         case 'SAVE_CONFIG': {
@@ -356,7 +362,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       });
     }
 
-    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
+    return new Response("Not Found", { status: 404, headers: corsHeaders });
 
   } catch (error: any) {
     console.error('Erreur DB:', error);
