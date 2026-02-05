@@ -19,8 +19,12 @@ const App: React.FC = () => {
   const [loginInput, setLoginInput] = useState('');
   const [loginStatus, setLoginStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [tempUser, setTempUser] = useState<User | null>(null);
+  
+  // États UI
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // Sidebar réduite
   const [isGestionOpen, setIsGestionOpen] = useState(true); 
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0); // Timestamp dernière actualisation
 
   const [users, setUsers] = useState<User[]>([]);
   const [storages, setStorages] = useState<StorageSpace[]>([]);
@@ -119,6 +123,22 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleManualRefresh = async () => {
+      const now = Date.now();
+      // Limite : 60000ms = 1 minute
+      if (now - lastRefreshTime < 60000) {
+          const remaining = Math.ceil((60000 - (now - lastRefreshTime)) / 1000);
+          setNotification({ title: 'Patience', message: `Actualisation possible dans ${remaining} sec.`, type: 'info' });
+          setTimeout(() => setNotification(null), 3000);
+          return;
+      }
+
+      await fetchData();
+      setLastRefreshTime(now);
+      setNotification({ title: 'Succès', message: 'Données actualisées', type: 'success' });
+      setTimeout(() => setNotification(null), 3000);
+  };
 
   const initDemoData = () => {
         console.log("Initialisation Demo");
@@ -489,12 +509,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteOrder = (orderId: string) => {
-      // Note: Idéalement une route DELETE API, ici on filtre juste localement pour l'instant et on suppose que le backend gérera
-      // Pour l'instant on met status à une valeur ignorée ou on supprime si l'API le permettait.
-      // Comme DELETE_ORDER n'est pas dans l'API fournie, on va ruser en mettant quantité à 0 ou status annulé si existait
-      // Pour simplifier ici, on supprime de l'état local.
       setOrders(prev => prev.filter(o => o.id !== orderId));
-      // TODO: Ajouter DELETE_ORDER à l'API
   };
   
   const handleAddManualOrder = (itemId: string, qty: number) => {
@@ -568,48 +583,101 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-50">
-      <aside className="w-full md:w-64 bg-slate-950 text-white flex flex-col md:sticky top-0 md:h-screen z-50">
-        <div className="p-6 border-b border-white/5 flex items-center gap-3">
-          <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-black text-xs">B</div>
-          <h1 className="font-black text-sm uppercase tracking-widest">BARSTOCK</h1>
+      
+      {/* SIDEBAR */}
+      <aside className={`bg-slate-950 text-white flex flex-col md:sticky top-0 md:h-screen z-50 transition-all duration-300 ${isSidebarCollapsed ? 'w-full md:w-20' : 'w-full md:w-64'}`}>
+        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-black text-xs shrink-0">B</div>
+            {!isSidebarCollapsed && <h1 className="font-black text-sm uppercase tracking-widest truncate">BARSTOCK</h1>}
+          </div>
+          {/* BOUTON COLLAPSE (Desktop Only) */}
+          <button 
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
+            className="hidden md:flex text-slate-500 hover:text-white transition-colors"
+            title={isSidebarCollapsed ? "Agrandir le menu" : "Réduire le menu"}
+          >
+             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               {isSidebarCollapsed 
+                 ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /> 
+                 : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+               }
+             </svg>
+          </button>
         </div>
+
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-thin">
-          <NavItem active={view === 'dashboard'} onClick={() => setView('dashboard')} label="Tableau de Bord" icon="M4 6h16M4 12h16M4 18h16" />
-          <NavItem active={view === 'restock'} onClick={() => setView('restock')} label="Préparation Cave" icon="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          <NavItem active={view === 'movements'} onClick={() => setView('movements')} label="Mouvements" icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-          <NavItem active={view === 'inventory'} onClick={() => setView('inventory')} label="Stock Global" icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
-          <NavItem active={view === 'orders'} onClick={() => setView('orders')} label="À Commander" icon="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" badge={orders.filter(o => o && o.status === 'PENDING').length} />
-          <NavItem active={view === 'history'} onClick={() => setView('history')} label="Historique" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          <NavItem active={view === 'dlc_tracking'} onClick={() => setView('dlc_tracking')} label="Suivi DLC" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          <NavItem active={view === 'messages'} onClick={() => setView('messages')} label="Messagerie" icon="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" badge={unreadMessagesCount} />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'dashboard'} onClick={() => setView('dashboard')} label="Tableau de Bord" icon="M4 6h16M4 12h16M4 18h16" />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'restock'} onClick={() => setView('restock')} label="Préparation Cave" icon="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'movements'} onClick={() => setView('movements')} label="Mouvements" icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'inventory'} onClick={() => setView('inventory')} label="Stock Global" icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'orders'} onClick={() => setView('orders')} label="À Commander" icon="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" badge={orders.filter(o => o && o.status === 'PENDING').length} />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'history'} onClick={() => setView('history')} label="Historique" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'dlc_tracking'} onClick={() => setView('dlc_tracking')} label="Suivi DLC" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'messages'} onClick={() => setView('messages')} label="Messagerie" icon="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" badge={unreadMessagesCount} />
 
           {/* GROUPE GESTION */}
           <div className="pt-4 mt-4 border-t border-white/5">
               <button 
                 onClick={() => setIsGestionOpen(!isGestionOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
+                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors`}
+                title="Gestion"
               >
-                  <span>Gestion</span>
-                  <svg className={`w-3 h-3 transition-transform ${isGestionOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  {!isSidebarCollapsed && <span>Gestion</span>}
+                  {isSidebarCollapsed ? (
+                      <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
+                  ) : (
+                      <svg className={`w-3 h-3 transition-transform ${isGestionOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  )}
               </button>
               
               {isGestionOpen && (
-                  <div className="space-y-1 mt-1 pl-2">
-                      <NavItem active={view === 'consignes'} onClick={() => setView('consignes')} label="Consignes" icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" small />
-                      <NavItem active={view === 'articles'} onClick={() => { setView('articles'); setArticlesFilter('ALL'); }} label="Base Articles" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" small />
-                      {currentUser?.role === 'ADMIN' && <NavItem active={view === 'config'} onClick={() => setView('config')} label="Configuration" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" small />}
+                  <div className={`space-y-1 mt-1 ${isSidebarCollapsed ? '' : 'pl-2'}`}>
+                      <NavItem collapsed={isSidebarCollapsed} active={view === 'consignes'} onClick={() => setView('consignes')} label="Consignes" icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" small />
+                      <NavItem collapsed={isSidebarCollapsed} active={view === 'articles'} onClick={() => { setView('articles'); setArticlesFilter('ALL'); }} label="Base Articles" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" small />
+                      {currentUser?.role === 'ADMIN' && <NavItem collapsed={isSidebarCollapsed} active={view === 'config'} onClick={() => setView('config')} label="Configuration" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" small />}
                   </div>
               )}
           </div>
         </nav>
-        <div className="p-4 border-t border-white/5 bg-slate-900 flex items-center justify-between">
-          <div className="flex flex-col">
-              <span className="text-xs font-bold truncate max-w-[120px]">{currentUser?.name || 'Profil'}</span>
-              <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-500' : 'text-emerald-500'}`}>
-                  {isOffline ? 'Mode Démo' : 'Connecté'}
-              </span>
+        
+        {/* FOOTER USER & REFRESH */}
+        <div className="p-4 border-t border-white/5 bg-slate-900">
+          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-3' : 'justify-between'}`}>
+            <div className="flex flex-col">
+                {!isSidebarCollapsed && (
+                    <>
+                        <span className="text-xs font-bold truncate max-w-[120px]">{currentUser?.name || 'Profil'}</span>
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-500' : 'text-emerald-500'}`}>
+                            {isOffline ? 'Mode Démo' : 'Connecté'}
+                        </span>
+                    </>
+                )}
+                {isSidebarCollapsed && (
+                    <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center font-black text-xs">
+                        {currentUser?.name?.charAt(0) || 'U'}
+                    </div>
+                )}
+            </div>
+            
+            <div className={`flex ${isSidebarCollapsed ? 'flex-col gap-2' : 'flex-row gap-2'}`}>
+                {/* BOUTON ACTUALISER */}
+                <button 
+                    onClick={handleManualRefresh} 
+                    className="text-slate-400 hover:text-white p-1" 
+                    title="Actualiser (Max 1/min)"
+                >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                </button>
+                
+                {/* BOUTON QUITTER */}
+                <button onClick={() => setCurrentUser(null)} className="text-[10px] text-rose-400 font-black uppercase hover:text-rose-300 p-1" title="Se déconnecter">
+                    {isSidebarCollapsed ? (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                    ) : 'Quitter'}
+                </button>
+            </div>
           </div>
-          <button onClick={() => setCurrentUser(null)} className="text-[10px] text-rose-400 font-black uppercase hover:text-rose-300">Quitter</button>
         </div>
       </aside>
 
@@ -656,18 +724,23 @@ const App: React.FC = () => {
             />
         )}
       </main>
-      {notification && <div className="fixed bottom-6 right-6 bg-white p-4 rounded-xl shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right"><span className="font-bold text-sm">{notification.message}</span><button onClick={() => setNotification(null)} className="text-indigo-600 font-black">OK</button></div>}
+      {notification && <div className="fixed bottom-6 right-6 bg-white p-4 rounded-xl shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right z-[100]"><span className="font-bold text-sm">{notification.message}</span><button onClick={() => setNotification(null)} className="text-indigo-600 font-black">OK</button></div>}
     </div>
   );
 };
 
-const NavItem = ({ active, onClick, label, icon, badge, small }: any) => (
-  <button onClick={onClick} className={`w-full flex items-center justify-between rounded-lg transition-all ${small ? 'px-3 py-2 text-[11px]' : 'px-3 py-2.5 text-xs'} ${active ? 'bg-indigo-600 text-white shadow-lg font-bold' : 'text-slate-400 hover:text-white hover:bg-white/5 font-medium'}`}>
-    <div className="flex items-center gap-3">
+const NavItem = ({ active, onClick, label, icon, badge, small, collapsed }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`w-full flex items-center ${collapsed ? 'justify-center' : 'justify-between'} rounded-lg transition-all ${small ? 'px-3 py-2 text-[11px]' : 'px-3 py-2.5 text-xs'} ${active ? 'bg-indigo-600 text-white shadow-lg font-bold' : 'text-slate-400 hover:text-white hover:bg-white/5 font-medium'}`}
+    title={collapsed ? label : ''}
+  >
+    <div className={`flex items-center ${collapsed ? 'justify-center w-full' : 'gap-3'}`}>
       <svg className={`${small ? 'w-3.5 h-3.5' : 'w-4 h-4'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} /></svg>
-      {label}
+      {!collapsed && <span>{label}</span>}
     </div>
-    {badge > 0 && <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded font-black">{badge}</span>}
+    {!collapsed && badge > 0 && <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded font-black">{badge}</span>}
+    {collapsed && badge > 0 && <div className="absolute top-0 right-0 w-2 h-2 bg-rose-500 rounded-full"></div>}
   </button>
 );
 

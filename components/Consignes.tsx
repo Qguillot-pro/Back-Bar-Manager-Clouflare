@@ -18,6 +18,9 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
   // États pour les filtres de colonnes (similaire à StockTable)
   const [columnFilters, setColumnFilters] = useState<string[]>(['all', 'none', 'none']);
   
+  // Barre de recherche
+  const [searchTerm, setSearchTerm] = useState('');
+
   // Utilisation de l'état local pour gérer les positions en cours d'édition
   const [storagePositions, setStoragePositions] = useState<Record<string, number>>({});
 
@@ -101,20 +104,44 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
     });
   }, [storages, columnFilters, storagePositions]);
 
+  // Filtrage des items basé sur la recherche
+  const filteredItems = useMemo(() => {
+      if (!searchTerm) return items;
+      return items.filter(i => 
+          i.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+          (i.articleCode && i.articleCode.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+  }, [items, searchTerm]);
+
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="p-6 border-b bg-slate-50 flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-6 w-full md:w-auto">
+            <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2 whitespace-nowrap">
               <span className="w-1.5 h-6 bg-indigo-600 rounded-full"></span>
               Consignes Stock
             </h2>
-            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
-              <span className={`text-[10px] font-black uppercase tracking-widest ${!isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Saisie Consignes</span>
-              <button onClick={() => setIsEditOrderMode(!isEditOrderMode)} className={`relative w-10 h-5 rounded-full transition-colors ${isEditOrderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} aria-label="Changer le mode d'édition"><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isEditOrderMode ? 'left-6' : 'left-1'}`}></div></button>
-              <span className={`text-[10px] font-black uppercase tracking-widest ${isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Éditer Ordre Colonnes</span>
-            </div>
+          </div>
+          
+          <div className="flex flex-1 w-full md:w-auto items-center gap-4">
+             {/* SEARCH BAR */}
+             <div className="relative flex-1 max-w-md">
+                <input 
+                    type="text" 
+                    placeholder="Rechercher article..." 
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 transition-all shadow-sm"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+             </div>
+
+             <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm shrink-0">
+                <span className={`text-[10px] font-black uppercase tracking-widest ${!isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Saisie</span>
+                <button onClick={() => setIsEditOrderMode(!isEditOrderMode)} className={`relative w-10 h-5 rounded-full transition-colors ${isEditOrderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} aria-label="Changer le mode d'édition"><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isEditOrderMode ? 'left-6' : 'left-1'}`}></div></button>
+                <span className={`text-[10px] font-black uppercase tracking-widest ${isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Ordre Col.</span>
+             </div>
           </div>
         </div>
         <div className="space-y-4">
@@ -169,7 +196,7 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {items.map(item => (
+            {filteredItems.map(item => (
               <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
                 <td className="p-6 font-bold text-sm sticky left-0 bg-white z-10 border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)]">{item.name}</td>
                 {visibleStorages.map(s => {
@@ -209,6 +236,11 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
                 })}
               </tr>
             ))}
+            {filteredItems.length === 0 && (
+                <tr>
+                    <td colSpan={visibleStorages.length + 1} className="p-8 text-center text-slate-400 italic">Aucun article trouvé.</td>
+                </tr>
+            )}
           </tbody>
         </table>
       </div>
