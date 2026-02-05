@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { StockItem, StorageSpace, StockConsigne, StockPriority } from '../types';
 
@@ -13,7 +14,9 @@ interface ConsignesProps {
 const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, priorities, setConsignes, onSync }) => {
   const [isEditOrderMode, setIsEditOrderMode] = useState(false);
   const [editingValue, setEditingValue] = useState<{key: string, val: string} | null>(null);
-  const [filters, setFilters] = useState<string[]>([storages[0]?.id || 'all', storages[1]?.id || 'none', 'none']);
+  
+  // États pour les filtres de colonnes (similaire à StockTable)
+  const [columnFilters, setColumnFilters] = useState<string[]>(['all', 'none', 'none']);
   
   // Utilisation de l'état local pour gérer les positions en cours d'édition
   const [storagePositions, setStoragePositions] = useState<Record<string, number>>({});
@@ -68,29 +71,35 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
       }
   };
 
-  const handleFilterChange = (index: number, value: string) => {
-    const newFilters = [...filters];
+  const handleColumnFilterChange = (index: number, value: string) => {
+    const newFilters = [...columnFilters];
     newFilters[index] = value;
-    setFilters(newFilters);
+    setColumnFilters(newFilters);
   };
 
-  const orderedStoragesWithLabels = useMemo(() => {
-    const showAll = filters.includes('all');
-    const activeStorageIds = Array.from(new Set(filters.filter(f => f !== 'none' && f !== 'all')));
+  const visibleStorages = useMemo(() => {
+    const showAll = columnFilters.includes('all');
+    // Si 'all' est sélectionné dans un des filtres, on montre tout, trié par position
+    if (showAll) {
+        return [...storages].sort((a, b) => {
+            const posA = storagePositions[a.id] ?? (a.order ?? 999);
+            const posB = storagePositions[b.id] ?? (b.order ?? 999);
+            return posA - posB;
+        });
+    }
 
-    const sortedStorages = [...storages].sort((a, b) => {
+    const activeStorageIds = Array.from(new Set(columnFilters.filter(f => f !== 'none')));
+    
+    // On retourne les stockages sélectionnés
+    const selected = storages.filter(s => activeStorageIds.includes(s.id));
+    
+    // On trie quand même par position pour garder la cohérence visuelle
+    return selected.sort((a, b) => {
         const posA = storagePositions[a.id] ?? (a.order ?? 999);
         const posB = storagePositions[b.id] ?? (b.order ?? 999);
         return posA - posB;
     });
-
-    const filtered = showAll ? sortedStorages : sortedStorages.filter(s => activeStorageIds.includes(s.id));
-
-    return filtered.map((s) => {
-      const pos = storagePositions[s.id] ?? (s.order ?? 0);
-      return { ...s, displayLabel: pos > 0 ? `S${pos}` : 'S?' };
-    });
-  }, [storages, storagePositions, filters]);
+  }, [storages, columnFilters, storagePositions]);
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
@@ -104,13 +113,26 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
             <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
               <span className={`text-[10px] font-black uppercase tracking-widest ${!isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Saisie Consignes</span>
               <button onClick={() => setIsEditOrderMode(!isEditOrderMode)} className={`relative w-10 h-5 rounded-full transition-colors ${isEditOrderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} aria-label="Changer le mode d'édition"><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isEditOrderMode ? 'left-6' : 'left-1'}`}></div></button>
-              <span className={`text-[10px] font-black uppercase tracking-widest ${isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Éditer Ordre</span>
+              <span className={`text-[10px] font-black uppercase tracking-widest ${isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Éditer Ordre Colonnes</span>
             </div>
           </div>
         </div>
         <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[0, 1, 2].map(i => <div key={i} className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Filtre Espace {i + 1}</label><select value={filters[i]} onChange={(e) => handleFilterChange(i, e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm"><option value="none">-- Aucun --</option><option value="all">Tous les espaces</option>{storages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>)}
+            {[0, 1, 2].map(i => (
+                <div key={i} className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Filtre Espace {i + 1}</label>
+                    <select 
+                        value={columnFilters[i]} 
+                        onChange={(e) => handleColumnFilterChange(i, e.target.value)} 
+                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-600 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm"
+                    >
+                        <option value="none">-- Aucun --</option>
+                        <option value="all">Tous les espaces</option>
+                        {storages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                </div>
+            ))}
             </div>
             <div className="flex items-start gap-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
                 <svg className="w-4 h-4 text-indigo-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -120,13 +142,13 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
             </div>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto max-h-[70vh]">
         <table className="w-full text-left">
-          <thead className="bg-white text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+          <thead className="bg-white text-[10px] font-black text-slate-400 uppercase tracking-widest border-b sticky top-0 z-20 shadow-sm">
             <tr>
-              <th className="p-6 sticky left-0 bg-white z-20 border-r shadow-[1px_0_0_0_#e2e8f0]">Article</th>
-              {orderedStoragesWithLabels.map(s => (
-                <th key={s.id} className={`p-6 text-center border-r min-w-[160px] transition-all ${s.id === 's0' ? 'bg-amber-50/50 text-amber-600' : ''}`}>
+              <th className="p-6 sticky left-0 bg-white z-30 border-r shadow-[1px_0_0_0_#e2e8f0]">Article</th>
+              {visibleStorages.map(s => (
+                <th key={s.id} className={`p-6 text-center border-r min-w-[160px] bg-white transition-all ${s.id === 's0' ? 'text-amber-600' : ''}`}>
                   <div className="flex flex-col items-center gap-2">
                       <span className="whitespace-nowrap">{s.name}</span>
                       {isEditOrderMode && (
@@ -150,7 +172,7 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
             {items.map(item => (
               <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
                 <td className="p-6 font-bold text-sm sticky left-0 bg-white z-10 border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)]">{item.name}</td>
-                {orderedStoragesWithLabels.map(s => {
+                {visibleStorages.map(s => {
                   const consigne = consignes.find(c => c.itemId === item.id && c.storageId === s.id);
                   const priority = priorities.find(p => p.itemId === item.id && p.storageId === s.id);
                   const currentVal = consigne?.minQuantity || 0;
@@ -160,7 +182,6 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
                     ? editingValue.val 
                     : currentVal.toString().replace('.', ',');
                     
-                  // FIX: Traiter undefined comme 0 explicitement.
                   const priorityVal = priority?.priority ?? 0;
                   const isZeroPriority = priorityVal === 0 && s.id !== 's0';
                   

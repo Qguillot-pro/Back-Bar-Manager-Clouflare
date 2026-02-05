@@ -17,10 +17,14 @@ interface ArticlesListProps {
 const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, categories, onDelete, userRole, dlcProfiles = [], onSync, filter = 'ALL' }) => {
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [editingPrice, setEditingPrice] = useState<{ id: string, value: string } | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   
-  const displayedItems = filter === 'TEMPORARY' 
+  const displayedItems = (filter === 'TEMPORARY' 
       ? items.filter(i => i.isTemporary) 
-      : items;
+      : items).filter(i => 
+          i.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+          (i.articleCode && i.articleCode.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
 
   const updateItem = (id: string, field: keyof StockItem, value: any) => {
     setItems(prev => prev.map(i => {
@@ -88,17 +92,32 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
       <div className={`p-6 border-b flex flex-col md:flex-row justify-between items-center gap-4 ${filter === 'TEMPORARY' ? 'bg-amber-50' : 'bg-slate-50'}`}>
-        <h2 className={`font-black uppercase tracking-tight flex items-center gap-2 ${filter === 'TEMPORARY' ? 'text-amber-800' : 'text-slate-800'}`}>
-            <span className={`w-1.5 h-6 rounded-full ${filter === 'TEMPORARY' ? 'bg-amber-500' : 'bg-indigo-600'}`}></span>
-            {filter === 'TEMPORARY' ? 'Intégration Articles Temporaires' : 'Base de Données Articles'}
-        </h2>
+        <div className="flex flex-col gap-1">
+            <h2 className={`font-black uppercase tracking-tight flex items-center gap-2 ${filter === 'TEMPORARY' ? 'text-amber-800' : 'text-slate-800'}`}>
+                <span className={`w-1.5 h-6 rounded-full ${filter === 'TEMPORARY' ? 'bg-amber-500' : 'bg-indigo-600'}`}></span>
+                {filter === 'TEMPORARY' ? 'Intégration Articles Temporaires' : 'Base de Données Articles'}
+            </h2>
+            <span className={`text-[10px] font-black uppercase tracking-widest ${filter === 'TEMPORARY' ? 'text-amber-400' : 'text-slate-400'}`}>{displayedItems.length} réf. affichées</span>
+        </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 w-full md:w-auto">
+            {/* Barre de recherche */}
+            <div className="relative flex-1 md:w-64">
+                <input 
+                    type="text" 
+                    placeholder="Rechercher nom ou code..." 
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            </div>
+
             {userRole === 'ADMIN' && filter === 'ALL' && (
-                <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm shrink-0">
                     <span className={`text-[10px] font-black uppercase tracking-widest ${!isReorderMode ? 'text-slate-400' : 'text-slate-300'}`}>Lecture</span>
                     <button 
-                        onClick={() => setIsReorderMode(!isReorderMode)} 
+                        onClick={() => { setIsReorderMode(!isReorderMode); setSearchTerm(''); }} 
                         className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${isReorderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} 
                         aria-label="Activer le mode réorganisation"
                     >
@@ -107,22 +126,21 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                     <span className={`text-[10px] font-black uppercase tracking-widest ${isReorderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Réorganiser</span>
                 </div>
             )}
-            <span className={`text-[10px] font-black uppercase tracking-widest ${filter === 'TEMPORARY' ? 'text-amber-400' : 'text-slate-400'}`}>{displayedItems.length} réf.</span>
         </div>
       </div>
       
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto max-h-[70vh]">
         <table className="w-full text-left">
-          <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+          <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest sticky top-0 z-20 shadow-sm">
             <tr>
-              {isReorderMode && <th className="p-6 w-16 text-center">Ordre</th>}
-              <th className="p-6">Produit</th>
-              <th className="p-6 w-32">Code Article</th>
-              <th className="p-6">Format</th>
-              <th className="p-6">Catégorie</th>
-              <th className="p-6">Configuration</th>
-              <th className="p-6 text-right">Prix Unit (€HT)</th>
-              <th className="p-6 text-center">Actions</th>
+              {isReorderMode && <th className="p-6 w-16 text-center bg-slate-100">Ordre</th>}
+              <th className="p-6 bg-slate-100">Produit</th>
+              <th className="p-6 w-32 bg-slate-100">Code Article</th>
+              <th className="p-6 bg-slate-100">Format</th>
+              <th className="p-6 bg-slate-100">Catégorie</th>
+              <th className="p-6 bg-slate-100">Configuration</th>
+              <th className="p-6 text-right bg-slate-100">Prix Unit (€HT)</th>
+              <th className="p-6 text-center bg-slate-100">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
