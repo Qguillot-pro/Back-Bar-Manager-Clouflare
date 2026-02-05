@@ -1,3 +1,4 @@
+
 -- A EXÉCUTER DANS L'ÉDITEUR SQL DE NEON
 -- Ce script initialise la structure de la base de données.
 
@@ -143,6 +144,17 @@ CREATE TABLE IF NOT EXISTS unfulfilled_orders (
     item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
     date TIMESTAMP DEFAULT NOW(),
     user_name TEXT
+);
+
+-- NOUVELLE TABLE: MESSAGES
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    user_name TEXT,
+    date TIMESTAMP DEFAULT NOW(),
+    is_archived BOOLEAN DEFAULT FALSE,
+    admin_reply TEXT,
+    reply_date TIMESTAMP
 );
 
 -- 4. Données Initiales

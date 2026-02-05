@@ -123,3 +123,13 @@ export interface UnfulfilledOrder {
   date: string;
   userName?: string;
 }
+
+export interface Message {
+  id: string;
+  content: string;
+  userName: string;
+  date: string;
+  isArchived: boolean;
+  adminReply?: string;
+  replyDate?: string;
+}

@@ -52,7 +52,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
-      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig] = await Promise.all([
+      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages] = await Promise.all([
         pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
         pool.query('SELECT * FROM users'),
         pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
@@ -66,7 +66,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         pool.query('SELECT * FROM stock_priorities'),
         pool.query('SELECT * FROM dlc_profiles'),
         pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500'),
-        pool.query('SELECT * FROM app_config')
+        pool.query('SELECT * FROM app_config'),
+        pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 200')
       ]);
 
       const configMap: any = { tempItemDuration: '14_DAYS' };
@@ -141,7 +142,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           priorities: priorities.rows.map(p => ({ itemId: p.item_id, storageId: p.storage_id, priority: p.priority })),
           dlcProfiles: dlcProfiles.rows.map(p => ({ id: p.id, name: p.name, durationHours: p.duration_hours })),
           unfulfilledOrders: unfulfilledOrders.rows.map(u => ({ id: u.id, itemId: u.item_id, date: u.date, userName: u.user_name })),
-          appConfig: configMap
+          appConfig: configMap,
+          messages: messages.rows.map(m => ({ 
+             id: m.id, 
+             content: m.content, 
+             userName: m.user_name, 
+             date: m.date, 
+             isArchived: m.is_archived,
+             adminReply: m.admin_reply,
+             replyDate: m.reply_date
+          }))
       };
 
       return new Response(JSON.stringify(responseBody), {
@@ -152,8 +162,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- POST ROUTE: ACTIONS (/api/action) ---
     if (request.method === 'POST') {
-      // On accepte toutes les requêtes POST vers /api/action (ou tout ce qui est géré par ce fichier [[route]])
-      // mais pour être propre, on pourrait vérifier path.includes('/action')
       
       const bodyText = await request.text();
       const { action, payload } = JSON.parse(bodyText || '{}');
@@ -351,6 +359,32 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
         case 'DELETE_DLC_PROFILE': {
             await pool.query('DELETE FROM dlc_profiles WHERE id = $1', [payload.id]);
+            break;
+        }
+
+        case 'SAVE_MESSAGE': {
+            const { id, content, userName, date, isArchived } = payload;
+            await pool.query(`
+                INSERT INTO messages (id, content, user_name, date, is_archived)
+                VALUES ($1, $2, $3, $4, $5)
+            `, [id, content, userName, date, isArchived]);
+            break;
+        }
+
+        case 'UPDATE_MESSAGE': {
+            const { id, isArchived, adminReply, replyDate } = payload;
+            // On met à jour ce qui est fourni
+            if (adminReply !== undefined) {
+                await pool.query(`UPDATE messages SET admin_reply = $2, reply_date = $3 WHERE id = $1`, [id, adminReply, replyDate]);
+            }
+            if (isArchived !== undefined) {
+                await pool.query(`UPDATE messages SET is_archived = $2 WHERE id = $1`, [id, isArchived]);
+            }
+            break;
+        }
+
+        case 'DELETE_MESSAGE': {
+            await pool.query('DELETE FROM messages WHERE id = $1', [payload.id]);
             break;
         }
 

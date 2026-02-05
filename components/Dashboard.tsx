@@ -1,7 +1,7 @@
 
-import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole } from '../types';
+import React, { useState, useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -11,171 +11,231 @@ interface DashboardProps {
   dlcHistory?: DLCHistory[];
   dlcProfiles?: DLCProfile[];
   userRole?: UserRole;
-  onNavigateToIntegration?: () => void;
+  transactions?: Transaction[];
+  messages: Message[];
+  currentUserName: string;
+  onNavigate: (view: string) => void;
+  onSendMessage: (text: string) => void;
+  onArchiveMessage: (id: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, onNavigateToIntegration }) => {
-  // Helper to get total stock for an item across all storages
-  const getItemTotalStock = (itemId: string) => 
-    stockLevels.filter(sl => sl.itemId === itemId).reduce((acc, curr) => acc + curr.currentQuantity, 0);
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, currentUserName, onNavigate, onSendMessage, onArchiveMessage }) => {
+  const [newMessageText, setNewMessageText] = useState('');
 
-  // Helper to get total min consigne for an item across all storages
-  const getItemMinConsigne = (itemId: string) => 
-    consignes.filter(c => c.itemId === itemId).reduce((acc, curr) => acc + curr.minQuantity, 0);
+  // 1. KPI Alertes Réappro (Quantité Totale Manquante)
+  const totalRestockNeeded = useMemo(() => {
+      let total = 0;
+      consignes.forEach(c => {
+          const level = stockLevels.find(l => l.itemId === c.itemId && l.storageId === c.storageId);
+          const current = level?.currentQuantity || 0;
+          if (current < c.minQuantity) {
+              total += (c.minQuantity - current);
+          }
+      });
+      return Math.ceil(total); // On arrondit à l'entier sup pour le nombre d'unités
+  }, [consignes, stockLevels]);
 
-  const chartData = items.map(item => {
-    const currentStock = getItemTotalStock(item.id);
-    const minStock = getItemMinConsigne(item.id);
-    return {
-      name: item.name,
-      stock: currentStock,
-      min: minStock,
-      ratio: minStock > 0 ? (currentStock / minStock) * 100 : 100
-    };
-  });
+  // 2. KPI DLC Expirées (Nombre de produits)
+  const expiredDlcCount = useMemo(() => {
+      return dlcHistory.filter(h => {
+        const item = items.find(i => i.id === h.itemId);
+        const profile = dlcProfiles.find(p => p.id === item?.dlcProfileId);
+        if (!profile) return false;
+        
+        const expirationDate = new Date(new Date(h.openedAt).getTime() + profile.durationHours * 60 * 60 * 1000);
+        return new Date() > expirationDate;
+    }).length;
+  }, [dlcHistory, items, dlcProfiles]);
+  
+  const totalItemsCount = items.length;
 
-  const categoryDistribution = categories.map(cat => ({
-    name: cat,
-    value: items.filter(i => i.category === cat).length
-  }));
+  // 3. Chart Data: Historique des Remontées Cave (7 derniers jours)
+  const restockHistoryData = useMemo(() => {
+    const data = [];
+    const today = new Date();
+    // Normaliser 'today' à 4h du matin pour les shifts bar
+    if (today.getHours() < 4) today.setDate(today.getDate() - 1);
+    today.setHours(4,0,0,0);
 
-  const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dayStr = d.toLocaleDateString('fr-FR', { weekday: 'short' });
+        
+        // Fin de la journée de shift (lendemain 4h du mat)
+        const shiftEnd = new Date(d);
+        shiftEnd.setDate(shiftEnd.getDate() + 1);
 
-  const lowStockCount = items.filter(item => {
-    const total = getItemTotalStock(item.id);
-    const min = getItemMinConsigne(item.id);
-    return min > 0 && total <= min;
-  }).length;
+        const dailyTotal = transactions
+            .filter(t => t.type === 'IN' && t.isCaveTransfer)
+            .filter(t => {
+                const tDate = new Date(t.date);
+                return tDate >= d && tDate < shiftEnd;
+            })
+            .reduce((acc, curr) => acc + curr.quantity, 0);
 
-  const totalItemsCount = items.reduce((acc, item) => acc + getItemTotalStock(item.id), 0);
-  const tempItemsCount = items.filter(i => i.isTemporary).length;
+        data.push({ name: dayStr, value: dailyTotal });
+    }
+    return data;
+  }, [transactions]);
 
-  // DLC Expiration Logic
-  const expiredDlcCount = dlcHistory.filter(h => {
-      const item = items.find(i => i.id === h.itemId);
-      const profile = dlcProfiles.find(p => p.id === item?.dlcProfileId);
-      if (!profile) return false;
-      
-      const expirationDate = new Date(new Date(h.openedAt).getTime() + profile.durationHours * 60 * 60 * 1000);
-      return new Date() > expirationDate;
-  }).length;
+  // 4. Messages Actifs
+  const activeMessages = useMemo(() => {
+      return messages.filter(m => !m.isArchived).slice(0, 5); // Max 5 récents
+  }, [messages]);
+
+  const handlePostMessage = () => {
+      if (newMessageText.length > 0 && newMessageText.length <= 300) {
+          onSendMessage(newMessageText);
+          setNewMessageText('');
+      }
+  };
 
   return (
     <div className="space-y-6">
-      <div className={`grid grid-cols-1 md:grid-cols-3 ${userRole === 'ADMIN' ? 'lg:grid-cols-4' : ''} gap-6`}>
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
+      <div className={`grid grid-cols-1 md:grid-cols-3 gap-6`}>
+        {/* KPI REAPPRO */}
+        <div 
+            onClick={() => onNavigate('restock')}
+            className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-indigo-300 transition-all group"
+        >
           <div>
-            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Alertes Réappro</p>
-            <p className={`text-4xl font-black ${lowStockCount > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-              {lowStockCount} <span className="text-lg opacity-50 font-bold">RÉF.</span>
-            </p>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-indigo-500 transition-colors">Unités à Remonter</p>
+            {totalRestockNeeded === 0 ? (
+                <div className="flex items-center gap-2">
+                    <p className="text-4xl font-black text-emerald-500">OK</p>
+                    <span className="bg-emerald-100 text-emerald-600 rounded-full p-1"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></span>
+                </div>
+            ) : (
+                <p className="text-4xl font-black text-rose-500">
+                {totalRestockNeeded} <span className="text-lg opacity-50 font-bold">UNIT.</span>
+                </p>
+            )}
           </div>
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${lowStockCount > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${totalRestockNeeded > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
           </div>
         </div>
         
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
+        {/* KPI DLC */}
+        <div 
+            onClick={() => onNavigate('dlc_tracking')}
+            className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-indigo-300 transition-all group"
+        >
             <div>
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Alertes DLC Expirées</p>
-              <p className={`text-4xl font-black ${expiredDlcCount > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                {expiredDlcCount} <span className="text-lg opacity-50 font-bold">PROD.</span>
-              </p>
+              <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-indigo-500 transition-colors">Alertes DLC Expirées</p>
+              {expiredDlcCount === 0 ? (
+                <div className="flex items-center gap-2">
+                    <p className="text-4xl font-black text-emerald-500">OK</p>
+                    <span className="bg-emerald-100 text-emerald-600 rounded-full p-1"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></span>
+                </div>
+              ) : (
+                <p className="text-4xl font-black text-rose-500">
+                    {expiredDlcCount} <span className="text-lg opacity-50 font-bold">PROD.</span>
+                </p>
+              )}
             </div>
             <div className={`w-12 h-12 rounded-full flex items-center justify-center ${expiredDlcCount > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </div>
         </div>
 
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
+        {/* KPI TOTAL REFS */}
+        <div 
+            onClick={() => onNavigate('articles')}
+            className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-indigo-300 transition-all group"
+        >
           <div>
-            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Volume Stock</p>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-indigo-500 transition-colors">Base Articles</p>
             <p className="text-4xl font-black text-slate-900">
-              {totalItemsCount} <span className="text-lg opacity-50 font-bold">UNIT.</span>
+              {totalItemsCount} <span className="text-lg opacity-50 font-bold">RÉF.</span>
             </p>
           </div>
           <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
           </div>
         </div>
-
-        {userRole === 'ADMIN' && (
-             <div 
-                className="bg-amber-50 p-8 rounded-2xl shadow-sm border border-amber-100 flex items-center justify-between cursor-pointer hover:bg-amber-100 transition-colors"
-                onClick={onNavigateToIntegration}
-             >
-                <div>
-                    <p className="text-xs font-black text-amber-600 uppercase tracking-widest mb-1">Articles à intégrer</p>
-                    <p className="text-4xl font-black text-amber-600">
-                    {tempItemsCount}
-                    </p>
-                </div>
-                <div className="w-12 h-12 rounded-full bg-white text-amber-500 flex items-center justify-center">
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-                </div>
-            </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 h-[450px] flex flex-col">
+        
+        {/* CHART: Historique Remontées */}
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 h-[500px] flex flex-col">
           <h3 className="flex-none text-sm font-black uppercase tracking-widest mb-8 text-slate-800 flex items-center gap-2">
-            <span className="w-1.5 h-4 bg-rose-500 rounded-full"></span>
-            Niveaux Critiques par Article
+            <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
+            Volume Remontées Cave (7 Jours)
           </h3>
-          <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
+          <div className="flex-1 min-h-0 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData.filter(d => d.stock <= d.min * 1.5).sort((a,b) => a.ratio - b.ratio)}>
+              <BarChart data={restockHistoryData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
-                <YAxis axisLine={false} tickLine={false} fontSize={10} />
+                <XAxis dataKey="name" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
+                <YAxis axisLine={false} tickLine={false} fontSize={10} tick={{fill: '#94a3b8'}} />
                 <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
                   cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
                 />
-                <Bar dataKey="stock" radius={[4, 4, 0, 0]} barSize={40}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.stock <= entry.min ? '#f43f5e' : '#6366f1'} />
-                  ))}
-                </Bar>
+                <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40} fill="#6366f1" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 h-[450px] flex flex-col">
-          <h3 className="flex-none text-sm font-black uppercase tracking-widest mb-8 text-slate-800 flex items-center gap-2">
-             <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
-             Répartition des Références
-          </h3>
-          <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryDistribution.filter(d => d.value > 0)}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={110}
-                  paddingAngle={8}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {categoryDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+        {/* WIDGET: Messagerie */}
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 h-[500px] flex flex-col relative overflow-hidden">
+          <div className="flex justify-between items-center mb-6">
+              <h3 className="flex-none text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                <span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>
+                Messages Équipe
+              </h3>
+              <button onClick={() => onNavigate('messages')} className="text-[10px] font-bold text-indigo-500 hover:underline uppercase">Tout voir</button>
           </div>
-          <div className="flex-none flex flex-wrap justify-center gap-4 mt-2">
-            {categoryDistribution.filter(d => d.value > 0).map((cat, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }}></div>
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{cat.name}</span>
+          
+          <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4 scrollbar-thin">
+              {activeMessages.map(msg => (
+                  <div key={msg.id} className="bg-slate-50 p-4 rounded-xl border border-slate-100 group">
+                      <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-slate-900">{msg.userName}</span>
+                              <span className="text-[9px] text-slate-400">{new Date(msg.date).toLocaleDateString()} {new Date(msg.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                          </div>
+                          {userRole === 'ADMIN' && (
+                              <button onClick={() => onArchiveMessage(msg.id)} className="text-slate-300 hover:text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Archiver"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg></button>
+                          )}
+                      </div>
+                      <p className="text-sm text-slate-600 leading-relaxed">{msg.content}</p>
+                      {msg.adminReply && (
+                          <div className="mt-2 pt-2 border-t border-slate-200">
+                              <p className="text-[9px] font-black uppercase text-indigo-400">Réponse Admin</p>
+                              <p className="text-xs text-indigo-800">{msg.adminReply}</p>
+                          </div>
+                      )}
+                  </div>
+              ))}
+              {activeMessages.length === 0 && <p className="text-center text-slate-400 italic py-10 text-xs">Aucun message récent.</p>}
+          </div>
+
+          <div className="mt-auto pt-4 border-t border-slate-100">
+              <div className="relative">
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-100 outline-none resize-none"
+                    rows={3}
+                    placeholder="Laisser un message à l'équipe..."
+                    maxLength={300}
+                    value={newMessageText}
+                    onChange={e => setNewMessageText(e.target.value)}
+                  ></textarea>
+                  <div className="flex justify-between items-center mt-2">
+                      <span className="text-[9px] font-bold text-slate-300">{newMessageText.length}/300</span>
+                      <button 
+                        onClick={handlePostMessage}
+                        disabled={!newMessageText.trim()}
+                        className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 transition-all"
+                      >
+                          Envoyer
+                      </button>
+                  </div>
               </div>
-            ))}
           </div>
         </div>
       </div>
