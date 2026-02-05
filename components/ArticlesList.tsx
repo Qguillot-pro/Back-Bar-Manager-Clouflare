@@ -103,6 +103,18 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                     <label className="flex items-center gap-3 cursor-pointer">
                         <input 
                         type="checkbox"
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                        checked={item.isConsigne || false}
+                        onChange={e => updateItem(item.id, 'isConsigne', e.target.checked)}
+                        />
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${item.isConsigne ? 'text-blue-500' : 'text-slate-300'}`}>
+                            {item.isConsigne ? '♻ Consigne' : 'Consigne'}
+                        </span>
+                    </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input 
+                        type="checkbox"
                         className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
                         checked={item.isDLC || false}
                         onChange={e => updateItem(item.id, 'isDLC', e.target.checked)}
@@ -119,17 +131,6 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                             {dlcProfiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                     )}
-
-                    <label className="flex items-center gap-3 cursor-pointer">
-                        <input 
-                        type="checkbox"
-                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
-                        checked={item.isConsigne || false}
-                        onChange={e => updateItem(item.id, 'isConsigne', e.target.checked)}
-                        />
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${item.isConsigne ? 'text-blue-500' : 'text-slate-300'}`}>Consigne</span>
-                    </label>
-
                   </div>
                 </td>
                 <td className="p-6">

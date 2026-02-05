@@ -260,6 +260,24 @@ const Configuration: React.FC<ConfigProps> = ({
                 </div>
 
                 <div className="bg-slate-50 p-4 border rounded-2xl flex flex-col gap-3">
+                  <label className="flex items-center gap-3 cursor-pointer bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors">
+                    <input 
+                      type="checkbox" 
+                      className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500"
+                      checked={itemIsConsigne}
+                      onChange={e => setItemIsConsigne(e.target.checked)}
+                    />
+                    <div className="flex flex-col">
+                        <span className="font-bold text-sm text-slate-700 flex items-center gap-2">
+                            Bouteille Consignée
+                            <span className="bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded font-black uppercase">Recyclage</span>
+                        </span>
+                        <span className="text-[9px] text-slate-400">Déclenche une pop-up de rappel au recyclage lors de la sortie.</span>
+                    </div>
+                  </label>
+
+                  <div className="border-t border-slate-200 my-1"></div>
+
                   <label className="flex items-center gap-3 cursor-pointer">
                     <input 
                       type="checkbox" 
@@ -283,21 +301,6 @@ const Configuration: React.FC<ConfigProps> = ({
                     </select>
                   )}
                   
-                  <div className="border-t border-slate-200 my-1"></div>
-
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500"
-                      checked={itemIsConsigne}
-                      onChange={e => setItemIsConsigne(e.target.checked)}
-                    />
-                    <span className="font-bold text-sm text-slate-700 flex items-center gap-2">
-                        Bouteille Consignée
-                        <span className="bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded font-black uppercase">Recyclage</span>
-                    </span>
-                  </label>
-
                 </div>
               </div>
 

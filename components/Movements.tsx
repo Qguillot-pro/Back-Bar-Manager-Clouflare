@@ -233,10 +233,17 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                     <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Bouteille Consignée</h3>
                     <p className="text-slate-500 font-bold">Ne pas jeter ! Merci de placer la bouteille dans le bac de recyclage :</p>
                     <p className="text-xl font-black text-blue-600">{pendingConsigneItem.name}</p>
+                    {pendingConsigneItem.isDLC && (
+                        <p className="text-xs font-bold text-amber-500 bg-amber-50 rounded-lg py-1 px-2 inline-block">
+                            ⚠ Suivi DLC requis ensuite
+                        </p>
+                    )}
                 </div>
                 <div className="flex gap-4 pt-4">
                     <button onClick={() => setConsigneModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">Annuler</button>
-                    <button onClick={confirmConsigneAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 shadow-xl shadow-blue-200 transition-all active:scale-95">Valider</button>
+                    <button onClick={confirmConsigneAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 shadow-xl shadow-blue-200 transition-all active:scale-95">
+                        {pendingConsigneItem.isDLC ? 'Valider & Contrôle DLC' : 'Valider'}
+                    </button>
                 </div>
             </div>
         </div>
