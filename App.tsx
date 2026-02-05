@@ -44,6 +44,10 @@ const App: React.FC = () => {
   const [isOffline, setIsOffline] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
+  const [manualOrderSearch, setManualOrderSearch] = useState('');
+  const [manualOrderQty, setManualOrderQty] = useState(1);
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+
   const syncData = async (action: string, payload: any) => {
     if (isOffline) return;
     try {
@@ -130,7 +134,7 @@ const App: React.FC = () => {
           isDraft: false,
           lastUpdated: new Date().toISOString()
         }]);
-        setMessages([{ id: 'm1', content: 'Bienvenue sur la démo !', userName: 'Système', date: new Date().toISOString(), isArchived: false }]);
+        setMessages([{ id: 'm1', content: 'Bienvenue sur la démo !', userName: 'Système', date: new Date().toISOString(), isArchived: false, readBy: [] }]);
   };
 
   const loadLocalData = () => {
@@ -213,7 +217,8 @@ const App: React.FC = () => {
           content: text,
           userName: currentUser.name,
           date: new Date().toISOString(),
-          isArchived: false
+          isArchived: false,
+          readBy: [currentUser.id]
       };
       setMessages(prev => [msg, ...prev]);
       syncData('SAVE_MESSAGE', msg);
@@ -222,6 +227,17 @@ const App: React.FC = () => {
   const handleArchiveMessage = (id: string) => {
       setMessages(prev => prev.map(m => m.id === id ? { ...m, isArchived: true } : m));
       syncData('UPDATE_MESSAGE', { id, isArchived: true });
+  };
+
+  const handleMarkMessageRead = (messageId: string) => {
+      if (!currentUser) return;
+      setMessages(prev => prev.map(m => {
+          if (m.id === messageId && !m.readBy?.includes(currentUser.id)) {
+              return { ...m, readBy: [...(m.readBy || []), currentUser.id] };
+          }
+          return m;
+      }));
+      syncData('MARK_MESSAGE_READ', { messageId, userId: currentUser.id });
   };
 
   const handleRestockAction = (itemId: string, storageId: string, qtyToAdd: number, qtyToOrder: number = 0, isRupture: boolean = false) => {
@@ -299,12 +315,42 @@ const App: React.FC = () => {
           if (firstStorage) targetStorageId = firstStorage.id;
       }
 
+      // Si c'est une ENTRÉE, on vérifie si la consigne est déjà atteinte
+      if (type === 'IN') {
+          const targetLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
+          const currentTargetQty = targetLevel?.currentQuantity || 0;
+          const targetConsigne = consignes.find(c => c.itemId === itemId && c.storageId === targetStorageId)?.minQuantity || 0;
+
+          // Si le stock (arrondi au sup) est déjà >= consigne, on redirige vers la priorité suivante ou le surstock
+          // Ex: Stock 2.2, Consigne 3. Math.ceil(2.2)=3. 3>=3. Donc c'est plein.
+          if (targetConsigne > 0 && Math.ceil(currentTargetQty) >= targetConsigne) {
+              // On cherche le stockage suivant (priorité inférieure mais > 0)
+              const nextPriorityStorage = itemPriorities.find(p => p.storageId !== targetStorageId);
+              
+              if (nextPriorityStorage) {
+                  targetStorageId = nextPriorityStorage.storageId;
+              } else {
+                  targetStorageId = 's0'; // Redirection vers surstock
+              }
+          }
+      }
+
       const currentLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
       const currentQty = currentLevel?.currentQuantity || 0;
       
       let newQty = currentQty;
-      if (type === 'IN') newQty += qty;
-      else newQty = Math.max(0, newQty - qty);
+      
+      if (type === 'IN') {
+          newQty += qty;
+      } else {
+          // Règle spéciale de SORTIE : Si stock décimal (bouteille entamée) et mouvement -1, on tombe sur l'entier inférieur.
+          // Ex: Stock 3.4, Sortie 1 -> Stock 3.0 (on a fini la bouteille entamée)
+          if (qty === 1 && currentQty % 1 !== 0) {
+              newQty = Math.floor(currentQty);
+          } else {
+              newQty = Math.max(0, newQty - qty);
+          }
+      }
 
       // Mise à jour Stock
       handleStockUpdate(itemId, targetStorageId, newQty);
@@ -468,6 +514,9 @@ const App: React.FC = () => {
      );
   }
 
+  // Calcul du nombre de messages non lus pour l'utilisateur actuel
+  const unreadMessagesCount = messages.filter(m => !m.isArchived && (!m.readBy || !m.readBy.includes(currentUser.id))).length;
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-50">
       <aside className="w-full md:w-64 bg-slate-950 text-white flex flex-col md:sticky top-0 md:h-screen z-50">
@@ -483,7 +532,7 @@ const App: React.FC = () => {
           <NavItem active={view === 'orders'} onClick={() => setView('orders')} label="À Commander" icon="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" badge={orders.filter(o => o && o.status === 'PENDING').length} />
           <NavItem active={view === 'history'} onClick={() => setView('history')} label="Historique" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           <NavItem active={view === 'dlc_tracking'} onClick={() => setView('dlc_tracking')} label="Suivi DLC" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          <NavItem active={view === 'messages'} onClick={() => setView('messages')} label="Messagerie" icon="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" badge={messages.filter(m => !m.isArchived).length} />
+          <NavItem active={view === 'messages'} onClick={() => setView('messages')} label="Messagerie" icon="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" badge={unreadMessagesCount} />
 
           {/* GROUPE GESTION */}
           <div className="pt-4 mt-4 border-t border-white/5">

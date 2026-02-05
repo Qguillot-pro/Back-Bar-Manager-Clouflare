@@ -143,15 +143,22 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           dlcProfiles: dlcProfiles.rows.map(p => ({ id: p.id, name: p.name, durationHours: p.duration_hours })),
           unfulfilledOrders: unfulfilledOrders.rows.map(u => ({ id: u.id, itemId: u.item_id, date: u.date, userName: u.user_name })),
           appConfig: configMap,
-          messages: messages.rows.map(m => ({ 
-             id: m.id, 
-             content: m.content, 
-             userName: m.user_name, 
-             date: m.date, 
-             isArchived: m.is_archived,
-             adminReply: m.admin_reply,
-             replyDate: m.reply_date
-          }))
+          messages: messages.rows.map(m => {
+             let readBy: string[] = [];
+             try {
+                 if (m.read_by) readBy = JSON.parse(m.read_by);
+             } catch(e) {}
+             return { 
+                 id: m.id, 
+                 content: m.content, 
+                 userName: m.user_name, 
+                 date: m.date, 
+                 isArchived: m.is_archived,
+                 adminReply: m.admin_reply,
+                 replyDate: m.reply_date,
+                 readBy
+             };
+          })
       };
 
       return new Response(JSON.stringify(responseBody), {
@@ -363,11 +370,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
 
         case 'SAVE_MESSAGE': {
-            const { id, content, userName, date, isArchived } = payload;
+            const { id, content, userName, date, isArchived, readBy } = payload;
             await pool.query(`
-                INSERT INTO messages (id, content, user_name, date, is_archived)
-                VALUES ($1, $2, $3, $4, $5)
-            `, [id, content, userName, date, isArchived]);
+                INSERT INTO messages (id, content, user_name, date, is_archived, read_by)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [id, content, userName, date, isArchived, JSON.stringify(readBy || [])]);
             break;
         }
 
@@ -379,6 +386,24 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             }
             if (isArchived !== undefined) {
                 await pool.query(`UPDATE messages SET is_archived = $2 WHERE id = $1`, [id, isArchived]);
+            }
+            break;
+        }
+
+        case 'MARK_MESSAGE_READ': {
+            const { messageId, userId } = payload;
+            // Récupérer le read_by actuel
+            const res = await pool.query('SELECT read_by FROM messages WHERE id = $1', [messageId]);
+            if (res.rows.length > 0) {
+                let currentReadBy: string[] = [];
+                try {
+                    currentReadBy = JSON.parse(res.rows[0].read_by || '[]');
+                } catch(e) {}
+                
+                if (!currentReadBy.includes(userId)) {
+                    currentReadBy.push(userId);
+                    await pool.query('UPDATE messages SET read_by = $2 WHERE id = $1', [messageId, JSON.stringify(currentReadBy)]);
+                }
             }
             break;
         }

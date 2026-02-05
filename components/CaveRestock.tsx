@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, UnfulfilledOrder, PendingOrder } from '../types';
 
@@ -114,16 +115,13 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
         const currentQty = level?.currentQuantity || 0;
         const minQty = consigne.minQuantity;
 
-        // Si on est en dessous de la consigne
-        if (currentQty < minQty) {
-            const rawGap = minQty - currentQty;
-            let gap = 0;
+        // RÈGLE SPÉCIALE : Une bouteille entamée (décimale) compte comme une bouteille présente pour le déclenchement
+        // Ex: 2.2 en stock vs Consigne 3 -> Math.ceil(2.2) = 3 -> 3 >= 3 -> Pas de besoin.
+        const effectiveQty = Math.ceil(currentQty);
 
-            if (minQty <= 1) {
-                gap = Math.ceil(rawGap);
-            } else {
-                gap = Math.floor(rawGap);
-            }
+        // Si on est en dessous de la consigne
+        if (effectiveQty < minQty) {
+            const gap = minQty - effectiveQty;
             
             if (gap > 0) {
                 const detail: NeedDetail = {

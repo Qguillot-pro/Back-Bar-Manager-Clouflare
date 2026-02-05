@@ -132,4 +132,5 @@ export interface Message {
   isArchived: boolean;
   adminReply?: string;
   replyDate?: string;
+  readBy?: string[]; // Liste des IDs utilisateurs ayant lu le message
 }

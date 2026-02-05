@@ -154,8 +154,11 @@ CREATE TABLE IF NOT EXISTS messages (
     date TIMESTAMP DEFAULT NOW(),
     is_archived BOOLEAN DEFAULT FALSE,
     admin_reply TEXT,
-    reply_date TIMESTAMP
+    reply_date TIMESTAMP,
+    read_by TEXT -- JSON string array of user IDs
 );
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_by TEXT;
 
 -- 4. Données Initiales
 INSERT INTO storage_spaces (id, name, sort_order) VALUES 
