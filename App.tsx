@@ -300,74 +300,123 @@ const App: React.FC = () => {
   // NOUVEAU: Logique de transaction universelle (pour Mouvements.tsx)
   const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number) => {
       // Pour un mouvement rapide, on doit déterminer quel stockage impacter.
-      // Priorité 1 : S'il y a un seul stockage avec priorité > 0, on le prend.
-      // Priorité 2 : S'il y en a plusieurs, on prend celui avec la plus haute priorité.
-      // Priorité 3 : Sinon le premier trouvé (souvent s1 ou s0).
-      
       const itemPriorities = priorities.filter(p => p.itemId === itemId && p.storageId !== 's0').sort((a,b) => b.priority - a.priority);
       let targetStorageId = 's0'; // Fallback Surstock
       
       if (itemPriorities.length > 0) {
           targetStorageId = itemPriorities[0].storageId;
       } else {
-          // Si pas de priorité définie, on cherche le premier stockage autre que s0
           const firstStorage = storages.find(s => s.id !== 's0');
           if (firstStorage) targetStorageId = firstStorage.id;
       }
 
-      // Si c'est une ENTRÉE, on vérifie si la consigne est déjà atteinte
+      // --- LOGIQUE ENTRÉE (IN) ---
       if (type === 'IN') {
           const targetLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
           const currentTargetQty = targetLevel?.currentQuantity || 0;
           const targetConsigne = consignes.find(c => c.itemId === itemId && c.storageId === targetStorageId)?.minQuantity || 0;
 
           // Si le stock (arrondi au sup) est déjà >= consigne, on redirige vers la priorité suivante ou le surstock
-          // Ex: Stock 2.2, Consigne 3. Math.ceil(2.2)=3. 3>=3. Donc c'est plein.
           if (targetConsigne > 0 && Math.ceil(currentTargetQty) >= targetConsigne) {
-              // On cherche le stockage suivant (priorité inférieure mais > 0)
               const nextPriorityStorage = itemPriorities.find(p => p.storageId !== targetStorageId);
-              
-              if (nextPriorityStorage) {
-                  targetStorageId = nextPriorityStorage.storageId;
-              } else {
-                  targetStorageId = 's0'; // Redirection vers surstock
-              }
+              targetStorageId = nextPriorityStorage ? nextPriorityStorage.storageId : 's0';
           }
-      }
+          
+          const currentLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
+          const currentQty = currentLevel?.currentQuantity || 0;
+          const newQty = currentQty + qty;
 
-      const currentLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
-      const currentQty = currentLevel?.currentQuantity || 0;
+          handleStockUpdate(itemId, targetStorageId, newQty);
+          
+          const trans: Transaction = {
+              id: Math.random().toString(36).substr(2, 9),
+              itemId, storageId: targetStorageId, type, quantity: qty,
+              date: new Date().toISOString(), isCaveTransfer: false, userName: currentUser?.name
+          };
+          setTransactions(prev => [trans, ...prev]);
+          syncData('SAVE_TRANSACTION', trans);
+      } 
       
-      let newQty = currentQty;
-      
-      if (type === 'IN') {
-          newQty += qty;
-      } else {
-          // Règle spéciale de SORTIE : Si stock décimal (bouteille entamée) et mouvement -1, on tombe sur l'entier inférieur.
-          // Ex: Stock 3.4, Sortie 1 -> Stock 3.0 (on a fini la bouteille entamée)
+      // --- LOGIQUE SORTIE (OUT) ---
+      else {
+          const currentLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
+          const currentQty = currentLevel?.currentQuantity || 0;
+
+          // CAS SPÉCIAL : Sortie d'une bouteille entamée (décimale) -> Remplacement auto
           if (qty === 1 && currentQty % 1 !== 0) {
-              newQty = Math.floor(currentQty);
-          } else {
-              newQty = Math.max(0, newQty - qty);
+              // 1. On cherche une bouteille de remplacement (Surstock ou autre)
+              let sourceStorageId: string | null = 's0';
+              let sourceLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === 's0');
+
+              // Si pas de surstock, on cherche ailleurs (sauf le target actuel)
+              if (!sourceLevel || sourceLevel.currentQuantity < 1) {
+                  const otherSource = stockLevels.find(l => l.itemId === itemId && l.storageId !== targetStorageId && l.currentQuantity >= 1);
+                  if (otherSource) {
+                      sourceStorageId = otherSource.storageId;
+                      sourceLevel = otherSource;
+                  } else {
+                      sourceStorageId = null;
+                  }
+              }
+
+              if (sourceStorageId && sourceLevel) {
+                  // A. On déduit la source
+                  handleStockUpdate(itemId, sourceStorageId, sourceLevel.currentQuantity - 1);
+
+                  // B. On met à jour la cible : Entier inférieur (bouteille finie) + 1 (nouvelle)
+                  handleStockUpdate(itemId, targetStorageId, Math.floor(currentQty) + 1);
+
+                  // C. Transaction de Sortie
+                  const transOut: Transaction = {
+                      id: Math.random().toString(36).substr(2, 9),
+                      itemId, storageId: targetStorageId, type: 'OUT', quantity: 1,
+                      date: new Date().toISOString(), userName: currentUser?.name,
+                      note: 'Fin bouteille (Auto-Remplacement)'
+                  };
+                  setTransactions(prev => [transOut, ...prev]);
+                  syncData('SAVE_TRANSACTION', transOut);
+
+                  // D. Transaction de Transfert
+                  const transTransfer: Transaction = {
+                      id: Math.random().toString(36).substr(2, 9),
+                      itemId, storageId: targetStorageId, type: 'IN', quantity: 1,
+                      date: new Date().toISOString(), userName: 'Système',
+                      isCaveTransfer: true,
+                      note: `Transfert Auto depuis ${storages.find(s=>s.id===sourceStorageId)?.name}`
+                  };
+                  setTransactions(prev => [transTransfer, ...prev]); 
+                  syncData('SAVE_TRANSACTION', transTransfer);
+                  return; // Stop ici
+              } else {
+                  // Pas de stock pour remplacer -> On jette juste (Math.floor)
+                  handleStockUpdate(itemId, targetStorageId, Math.floor(currentQty));
+                  
+                  const trans: Transaction = {
+                      id: Math.random().toString(36).substr(2, 9),
+                      itemId, storageId: targetStorageId, type: 'OUT', quantity: 1,
+                      date: new Date().toISOString(), userName: currentUser?.name,
+                      note: 'Fin bouteille (Pas de stock remplacement)'
+                  };
+                  setTransactions(prev => [trans, ...prev]);
+                  syncData('SAVE_TRANSACTION', trans);
+                  return;
+              }
+          } 
+          
+          // Sortie Classique
+          else {
+              const newQty = Math.max(0, currentQty - qty);
+              handleStockUpdate(itemId, targetStorageId, newQty);
+              
+              const trans: Transaction = {
+                  id: Math.random().toString(36).substr(2, 9),
+                  itemId, storageId: targetStorageId, type, quantity: qty,
+                  date: new Date().toISOString(), isCaveTransfer: false, userName: currentUser?.name
+              };
+              setTransactions(prev => [trans, ...prev]);
+              syncData('SAVE_TRANSACTION', trans);
           }
       }
-
-      // Mise à jour Stock
-      handleStockUpdate(itemId, targetStorageId, newQty);
-
-      // Enregistrement Transaction
-      const trans: Transaction = {
-          id: Math.random().toString(36).substr(2, 9),
-          itemId,
-          storageId: targetStorageId,
-          type,
-          quantity: qty,
-          date: new Date().toISOString(),
-          isCaveTransfer: false, // Mouvement manuel standard
-          userName: currentUser?.name
-      };
-      setTransactions(prev => [trans, ...prev]);
-      syncData('SAVE_TRANSACTION', trans);
   };
 
   const handleUnfulfilledOrder = (itemId: string) => {
