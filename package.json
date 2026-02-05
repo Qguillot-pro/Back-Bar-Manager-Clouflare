@@ -1,7 +1,7 @@
 {
-  "name": "back-bar-manager-v1.1-cloudflare",
-  "version": "1.1.0",
-  "description": "BarStock Pro - Cloudflare Edition",
+  "name": "back-bar-manager-v1.2-beta",
+  "version": "1.2.0-beta",
+  "description": "BarStock Pro - Cloudflare Edition (Dev V1.2)",
   "main": "index.tsx",
   "scripts": {
     "start": "vite",

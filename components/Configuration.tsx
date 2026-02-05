@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Category, StockItem, StorageSpace, Format, StockPriority, StockConsigne, User, DLCProfile, UserRole, AppConfig } from '../types';
 import PriorityConfig from './PriorityConfig';
@@ -38,6 +39,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [itemFormat, setItemFormat] = useState('');
   const [itemIsDlc, setItemIsDlc] = useState(false);
   const [itemDlcProfile, setItemDlcProfile] = useState('');
+  const [itemIsConsigne, setItemIsConsigne] = useState(false);
 
   const [storageName, setStorageName] = useState('');
   
@@ -72,6 +74,7 @@ const Configuration: React.FC<ConfigProps> = ({
       lastUpdated: new Date().toISOString(),
       isDLC: itemIsDlc,
       dlcProfileId: itemIsDlc ? itemDlcProfile : undefined,
+      isConsigne: itemIsConsigne,
       order: items.length,
       isDraft: true
     };
@@ -83,6 +86,7 @@ const Configuration: React.FC<ConfigProps> = ({
     setItemArticleCode('');
     setItemIsDlc(false);
     setItemDlcProfile('');
+    setItemIsConsigne(false);
   };
 
   const handleConfigChange = (field: keyof AppConfig, value: any) => {
@@ -278,6 +282,22 @@ const Configuration: React.FC<ConfigProps> = ({
                       ))}
                     </select>
                   )}
+                  
+                  <div className="border-t border-slate-200 my-1"></div>
+
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500"
+                      checked={itemIsConsigne}
+                      onChange={e => setItemIsConsigne(e.target.checked)}
+                    />
+                    <span className="font-bold text-sm text-slate-700 flex items-center gap-2">
+                        Bouteille Consignée
+                        <span className="bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded font-black uppercase">Recyclage</span>
+                    </span>
+                  </label>
+
                 </div>
               </div>
 

@@ -60,6 +60,7 @@ export interface StockItem {
   createdAt?: string; // Date de création pour gestion temporaire
   isDLC?: boolean;
   dlcProfileId?: string;
+  isConsigne?: boolean; // Nouveau champ pour les produits consignés
   order: number;
   isDraft?: boolean;
   isTemporary?: boolean; // Indicateur produit non prévu

@@ -1,3 +1,4 @@
+
 import { Pool } from '@neondatabase/serverless';
 
 interface Env {
@@ -105,6 +106,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             createdAt: row.created_at,
             isDLC: row.is_dlc,
             dlcProfileId: row.dlc_profile_id,
+            isConsigne: row.is_consigne,
             order: row.sort_order,
             isDraft: row.is_draft,
             isTemporary: row.is_temporary
@@ -171,17 +173,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
 
         case 'SAVE_ITEM': {
-          const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, order, isDraft, isTemporary, createdAt } = payload;
+          const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt } = payload;
           await pool.query(`
-            INSERT INTO items (id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, sort_order, is_draft, is_temporary, created_at, last_updated)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, NOW()), NOW())
+            INSERT INTO items (id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, is_consigne, sort_order, is_draft, is_temporary, created_at, last_updated)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, NOW()), NOW())
             ON CONFLICT (id) DO UPDATE SET
               article_code = EXCLUDED.article_code,
               name = EXCLUDED.name, category = EXCLUDED.category, format_id = EXCLUDED.format_id,
               price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, 
-              dlc_profile_id = EXCLUDED.dlc_profile_id, sort_order = EXCLUDED.sort_order, 
+              dlc_profile_id = EXCLUDED.dlc_profile_id, is_consigne = EXCLUDED.is_consigne, sort_order = EXCLUDED.sort_order, 
               is_draft = EXCLUDED.is_draft, is_temporary = EXCLUDED.is_temporary, last_updated = NOW()
-          `, [id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, order, isDraft, isTemporary, createdAt]);
+          `, [id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt]);
           break;
         }
 

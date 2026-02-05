@@ -1,5 +1,5 @@
 {
-  "name": "Back-bar-Manager-V1.1-Cloudflare",
-  "description": "Version 1.1 Cloudflare Edition. Gestion de stock pour bar d'hôtel avec base de données Neon via Neon Serverless Driver.",
+  "name": "Back-Bar-Manager V1.2 (Beta)",
+  "description": "Version de développement 1.2 (Beta). Focus: Recettes, Fiches Techniques, Optimisation et Intégration POS.",
   "requestFramePermissions": []
 }

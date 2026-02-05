@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { StockItem, Format, Category, UserRole, DLCProfile } from '../types';
 
@@ -55,7 +56,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
               <th className="p-6 w-32">Code Article</th>
               <th className="p-6">Format</th>
               <th className="p-6">Catégorie</th>
-              <th className="p-6">DLC Configuration</th>
+              <th className="p-6">Configuration</th>
               <th className="p-6 text-right">Prix Unit (€HT)</th>
               <th className="p-6 text-center">Actions</th>
             </tr>
@@ -98,19 +99,19 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                   </select>
                 </td>
                 <td className="p-6">
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-3">
                     <label className="flex items-center gap-3 cursor-pointer">
                         <input 
                         type="checkbox"
-                        className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
                         checked={item.isDLC || false}
                         onChange={e => updateItem(item.id, 'isDLC', e.target.checked)}
                         />
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${item.isDLC ? 'text-amber-500' : 'text-slate-300'}`}>Tracking</span>
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${item.isDLC ? 'text-amber-500' : 'text-slate-300'}`}>Tracking DLC</span>
                     </label>
                     {item.isDLC && (
                         <select 
-                            className="bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 text-[10px] font-bold text-amber-700 outline-none"
+                            className="bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 text-[10px] font-bold text-amber-700 outline-none ml-7"
                             value={item.dlcProfileId || ''}
                             onChange={(e) => updateItem(item.id, 'dlcProfileId', e.target.value)}
                         >
@@ -118,6 +119,17 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                             {dlcProfiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                     )}
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input 
+                        type="checkbox"
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                        checked={item.isConsigne || false}
+                        onChange={e => updateItem(item.id, 'isConsigne', e.target.checked)}
+                        />
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${item.isConsigne ? 'text-blue-500' : 'text-slate-300'}`}>Consigne</span>
+                    </label>
+
                   </div>
                 </td>
                 <td className="p-6">

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format } from '../types';
 
@@ -21,8 +22,13 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   
   const [unfulfilledSearch, setUnfulfilledSearch] = useState('');
 
+  // DLC Modal State
   const [dlcModalOpen, setDlcModalOpen] = useState(false);
   const [pendingDlcItem, setPendingDlcItem] = useState<StockItem | null>(null);
+
+  // Consigne Modal State
+  const [consigneModalOpen, setConsigneModalOpen] = useState(false);
+  const [pendingConsigneItem, setPendingConsigneItem] = useState<StockItem | null>(null);
 
   const [isTempItemModalOpen, setIsTempItemModalOpen] = useState(false);
   const [tempItemName, setTempItemName] = useState('');
@@ -45,27 +51,61 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
         quantity = 1;
     }
 
-    if (type === 'OUT' && item.isDLC) {
-        setPendingDlcItem(item);
-        setDlcModalOpen(true);
-    } else {
-        onTransaction(item.id, type, quantity);
-        setSearch('');
-        setQty('1');
+    if (type === 'OUT') {
+        // Logique de priorité : d'abord Consigne, ensuite DLC
+        if (item.isConsigne) {
+            setPendingConsigneItem(item);
+            setConsigneModalOpen(true);
+            // La suite sera gérée par confirmConsigneAction qui appellera potentiellement la modal DLC
+            return;
+        }
+
+        if (item.isDLC) {
+            setPendingDlcItem(item);
+            setDlcModalOpen(true);
+            return;
+        }
     }
+
+    // Si pas d'interception, on exécute
+    onTransaction(item.id, type, quantity);
+    setSearch('');
+    setQty('1');
+  };
+
+  const executeTransactionAfterChecks = (item: StockItem) => {
+      let normalized = qty.replace(',', '.');
+      if (normalized === '.') normalized = '0';
+      const quantity = parseFloat(normalized) || 1;
+      
+      onTransaction(item.id, 'OUT', quantity);
+      setSearch('');
+      setQty('1');
+      
+      // Reset all modals
+      setDlcModalOpen(false);
+      setPendingDlcItem(null);
+      setConsigneModalOpen(false);
+      setPendingConsigneItem(null);
+  };
+
+  const confirmConsigneAction = () => {
+      if (pendingConsigneItem) {
+          // Si l'item a AUSSI une DLC, on enchaîne vers la modal DLC
+          if (pendingConsigneItem.isDLC) {
+              setPendingDlcItem(pendingConsigneItem);
+              setDlcModalOpen(true); // Ouvre la modal DLC
+              setConsigneModalOpen(false); // Ferme celle de la consigne
+          } else {
+              // Sinon on exécute
+              executeTransactionAfterChecks(pendingConsigneItem);
+          }
+      }
   };
 
   const confirmDlcAction = () => {
     if (pendingDlcItem) {
-        let normalized = qty.replace(',', '.');
-        if (normalized === '.') normalized = '0';
-        const quantity = parseFloat(normalized) || 1;
-        
-        onTransaction(pendingDlcItem.id, 'OUT', quantity);
-        setSearch('');
-        setQty('1');
-        setDlcModalOpen(false);
-        setPendingDlcItem(null);
+        executeTransactionAfterChecks(pendingDlcItem);
     }
   };
 
@@ -174,6 +214,29 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                 <div className="flex gap-4 pt-4">
                     <button onClick={() => setDlcModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">Annuler</button>
                     <button onClick={confirmDlcAction} className="flex-1 bg-amber-500 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-amber-600 shadow-xl shadow-amber-200 transition-all active:scale-95">Valider</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* CONSIGNE MODAL */}
+      {consigneModalOpen && pendingConsigneItem && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
+            <div className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl border border-slate-200 text-center space-y-8 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
+                <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                    <svg className="w-10 h-10 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                </div>
+                <div className="space-y-2">
+                    <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Bouteille Consignée</h3>
+                    <p className="text-slate-500 font-bold">Ne pas jeter ! Merci de placer la bouteille dans le bac de recyclage :</p>
+                    <p className="text-xl font-black text-blue-600">{pendingConsigneItem.name}</p>
+                </div>
+                <div className="flex gap-4 pt-4">
+                    <button onClick={() => setConsigneModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">Annuler</button>
+                    <button onClick={confirmConsigneAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 shadow-xl shadow-blue-200 transition-all active:scale-95">Valider</button>
                 </div>
             </div>
         </div>
@@ -331,6 +394,9 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                                         {item?.name || 'Inconnu'}
                                         {item?.isTemporary && (
                                             <span className="bg-amber-500 text-white text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest">TEMP</span>
+                                        )}
+                                        {item?.isConsigne && (
+                                            <span className="bg-blue-100 text-blue-500 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest font-black" title="Bouteille Consignée">♻</span>
                                         )}
                                     </span>
                                     <span className="text-[9px] text-slate-400 uppercase">
