@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message } from './types';
 import Dashboard from './components/Dashboard';
@@ -10,6 +11,7 @@ import Consignes from './components/Consignes';
 import DLCView from './components/DLCView';
 import History from './components/History';
 import MessagesView from './components/MessagesView';
+import Order from './components/Order';
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -18,7 +20,7 @@ const App: React.FC = () => {
   const [loginStatus, setLoginStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [tempUser, setTempUser] = useState<User | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isGestionOpen, setIsGestionOpen] = useState(true); // Default open for desktop
+  const [isGestionOpen, setIsGestionOpen] = useState(true); 
 
   const [users, setUsers] = useState<User[]>([]);
   const [storages, setStorages] = useState<StorageSpace[]>([]);
@@ -37,14 +39,10 @@ const App: React.FC = () => {
   const [appConfig, setAppConfig] = useState<AppConfig>({ tempItemDuration: '14_DAYS' });
   
   const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages'>('dashboard');
-  const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); // Filtre pour la page articles
+  const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); 
   const [notification, setNotification] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-
-  const [manualOrderSearch, setManualOrderSearch] = useState('');
-  const [manualOrderQty, setManualOrderQty] = useState(1);
-  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
 
   const syncData = async (action: string, payload: any) => {
     if (isOffline) return;
@@ -119,8 +117,6 @@ const App: React.FC = () => {
   }, []);
 
   const initDemoData = () => {
-        // ... (Demo data init code same as before) ...
-        // Simplification for brevity in this update, keeping core demo data structure
         console.log("Initialisation Demo");
         setCategories(['Spiritueux', 'Vins', 'Bières', 'Softs', 'Ingrédients Cocktail', 'Autre']);
         setStorages([{ id: 's1', name: 'Frigo Soft', order: 1 }, { id: 's0', name: 'Surstock', order: 99 }]);
@@ -201,8 +197,6 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentUser, handlePinInput]);
 
-  // ... (Other handlers like handleStockUpdate, handleDeleteItem, etc. kept as is, omitting for brevity of XML but assumed present)
-  // Re-implementing core handlers required for navigation and new features
   const handleStockUpdate = (itemId: string, storageId: string, newQty: number) => {
     setStockLevels(prev => {
       const exists = prev.find(l => l.itemId === itemId && l.storageId === storageId);
@@ -230,23 +224,248 @@ const App: React.FC = () => {
       syncData('UPDATE_MESSAGE', { id, isArchived: true });
   };
 
-  // ... (Keeping existing handlers for transactions/orders/etc to ensure app works)
   const handleRestockAction = (itemId: string, storageId: string, qtyToAdd: number, qtyToOrder: number = 0, isRupture: boolean = false) => {
-     // ... (Implementation from previous code)
-      // Minimal mock implementation to make the code compile in this context if copied
-      console.log("Restock", itemId, qtyToAdd);
+      // 1. Mise à jour du stock (Remontée)
+      if (qtyToAdd > 0) {
+          // On cherche d'où ça vient (Surstock s0 ou autre)
+          const sourceId = 's0';
+          const sourceLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === sourceId);
+          const currentSourceQty = sourceLevel?.currentQuantity || 0;
+          
+          // Mettre à jour la source (Surstock) - Décrémenter
+          handleStockUpdate(itemId, sourceId, Math.max(0, currentSourceQty - qtyToAdd));
+
+          // Mettre à jour la destination (Bar) - Incrémenter
+          const destLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
+          const currentDestQty = destLevel?.currentQuantity || 0;
+          handleStockUpdate(itemId, storageId, currentDestQty + qtyToAdd);
+
+          // Enregistrer la transaction
+          const trans: Transaction = {
+              id: Math.random().toString(36).substr(2, 9),
+              itemId,
+              storageId,
+              type: 'IN',
+              quantity: qtyToAdd,
+              date: new Date().toISOString(),
+              isCaveTransfer: true,
+              userName: currentUser?.name
+          };
+          setTransactions(prev => [trans, ...prev]);
+          syncData('SAVE_TRANSACTION', trans);
+      }
+
+      // 2. Gestion Commande / Rupture
+      if (qtyToOrder > 0 || isRupture) {
+          // Vérifier si une commande existe déjà
+          const existingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
+          
+          if (existingOrder) {
+              const newQty = existingOrder.quantity + qtyToOrder;
+              const updated = { ...existingOrder, quantity: newQty, ruptureDate: isRupture ? new Date().toISOString() : existingOrder.ruptureDate };
+              setOrders(prev => prev.map(o => o.id === existingOrder.id ? updated : o));
+              syncData('SAVE_ORDER', updated);
+          } else {
+              const newOrder: PendingOrder = {
+                  id: Math.random().toString(36).substr(2, 9),
+                  itemId,
+                  quantity: qtyToOrder > 0 ? qtyToOrder : 1, // Par défaut 1 si rupture sans qté précisée
+                  date: new Date().toISOString(),
+                  status: 'PENDING',
+                  userName: currentUser?.name,
+                  ruptureDate: isRupture ? new Date().toISOString() : undefined
+              };
+              setOrders(prev => [...prev, newOrder]);
+              syncData('SAVE_ORDER', newOrder);
+          }
+      }
   };
-  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number) => { /*...*/ };
-  const handleUnfulfilledOrder = (itemId: string) => { /*...*/ };
-  const handleCreateTemporaryItem = (name: string, q: number) => { /*...*/ };
+
+  // NOUVEAU: Logique de transaction universelle (pour Mouvements.tsx)
+  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number) => {
+      // Pour un mouvement rapide, on doit déterminer quel stockage impacter.
+      // Priorité 1 : S'il y a un seul stockage avec priorité > 0, on le prend.
+      // Priorité 2 : S'il y en a plusieurs, on prend celui avec la plus haute priorité.
+      // Priorité 3 : Sinon le premier trouvé (souvent s1 ou s0).
+      
+      const itemPriorities = priorities.filter(p => p.itemId === itemId && p.storageId !== 's0').sort((a,b) => b.priority - a.priority);
+      let targetStorageId = 's0'; // Fallback Surstock
+      
+      if (itemPriorities.length > 0) {
+          targetStorageId = itemPriorities[0].storageId;
+      } else {
+          // Si pas de priorité définie, on cherche le premier stockage autre que s0
+          const firstStorage = storages.find(s => s.id !== 's0');
+          if (firstStorage) targetStorageId = firstStorage.id;
+      }
+
+      const currentLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
+      const currentQty = currentLevel?.currentQuantity || 0;
+      
+      let newQty = currentQty;
+      if (type === 'IN') newQty += qty;
+      else newQty = Math.max(0, newQty - qty);
+
+      // Mise à jour Stock
+      handleStockUpdate(itemId, targetStorageId, newQty);
+
+      // Enregistrement Transaction
+      const trans: Transaction = {
+          id: Math.random().toString(36).substr(2, 9),
+          itemId,
+          storageId: targetStorageId,
+          type,
+          quantity: qty,
+          date: new Date().toISOString(),
+          isCaveTransfer: false, // Mouvement manuel standard
+          userName: currentUser?.name
+      };
+      setTransactions(prev => [trans, ...prev]);
+      syncData('SAVE_TRANSACTION', trans);
+  };
+
+  const handleUnfulfilledOrder = (itemId: string) => {
+      const unf: UnfulfilledOrder = {
+          id: Math.random().toString(36).substr(2, 9),
+          itemId,
+          date: new Date().toISOString(),
+          userName: currentUser?.name
+      };
+      setUnfulfilledOrders(prev => [unf, ...prev]);
+      syncData('SAVE_UNFULFILLED_ORDER', unf);
+
+      // Créer automatiquement une commande "En attente" pour ce produit
+      handleRestockAction(itemId, 's0', 0, 1, true); // 0 remontée, 1 commande, isRupture=true
+  };
+
+  const handleCreateTemporaryItem = (name: string, q: number) => {
+      const newItem: StockItem = {
+          id: 'temp_' + Date.now(),
+          name,
+          category: 'Produits Temporaires',
+          formatId: 'f1', // Défaut 70cl ou autre
+          pricePerUnit: 0,
+          lastUpdated: new Date().toISOString(),
+          isTemporary: true,
+          order: 9999,
+          createdAt: new Date().toISOString()
+      };
+      setItems(prev => [...prev, newItem]);
+      syncData('SAVE_ITEM', newItem);
+
+      // Si quantité cible > 0, on définit une consigne temporaire sur le Surstock
+      if (q > 0) {
+          setConsignes(prev => [...prev, { itemId: newItem.id, storageId: 's0', minQuantity: q }]);
+          syncData('SAVE_CONSIGNE', { itemId: newItem.id, storageId: 's0', minQuantity: q });
+      }
+  };
+
   const handleDeleteItem = (id: string) => { setItems(prev => prev.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); };
   const handleDeleteDlcHistory = (id: string) => { setDlcHistory(prev => prev.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', {id}); };
+
+  // Logique de mise à jour des commandes (pour le composant Order)
+  const handleOrderUpdate = (orderId: string, quantity: number, status: 'PENDING' | 'ORDERED' | 'RECEIVED' = 'PENDING', ruptureDate?: string) => {
+      setOrders(prev => prev.map(o => {
+          if (o.id === orderId) {
+              const updated = { 
+                  ...o, 
+                  quantity, 
+                  status,
+                  ruptureDate: ruptureDate !== undefined ? ruptureDate : o.ruptureDate,
+                  orderedAt: status === 'ORDERED' && o.status !== 'ORDERED' ? new Date().toISOString() : o.orderedAt,
+                  receivedAt: status === 'RECEIVED' && o.status !== 'RECEIVED' ? new Date().toISOString() : o.receivedAt,
+                  // Si on passe à RECEIVED, on garde la quantité initiale pour l'historique si pas déjà fait
+                  initialQuantity: status === 'RECEIVED' && !o.initialQuantity ? o.quantity : o.initialQuantity
+              };
+              syncData('SAVE_ORDER', updated);
+              
+              // Si REÇU, on incrémente le stock (Surstock par défaut pour les réceptions)
+              if (status === 'RECEIVED' && o.status !== 'RECEIVED') {
+                  const targetStorageId = 's0';
+                  const currentLevel = stockLevels.find(l => l.itemId === o.itemId && l.storageId === targetStorageId);
+                  const currentQty = currentLevel?.currentQuantity || 0;
+                  handleStockUpdate(o.itemId, targetStorageId, currentQty + quantity);
+              }
+              
+              return updated;
+          }
+          return o;
+      }));
+  };
+
+  const handleDeleteOrder = (orderId: string) => {
+      // Note: Idéalement une route DELETE API, ici on filtre juste localement pour l'instant et on suppose que le backend gérera
+      // Pour l'instant on met status à une valeur ignorée ou on supprime si l'API le permettait.
+      // Comme DELETE_ORDER n'est pas dans l'API fournie, on va ruser en mettant quantité à 0 ou status annulé si existait
+      // Pour simplifier ici, on supprime de l'état local.
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+      // TODO: Ajouter DELETE_ORDER à l'API
+  };
+  
+  const handleAddManualOrder = (itemId: string, qty: number) => {
+      const newOrder: PendingOrder = {
+          id: Math.random().toString(36).substr(2, 9),
+          itemId,
+          quantity: qty,
+          date: new Date().toISOString(),
+          status: 'PENDING',
+          userName: currentUser?.name
+      };
+      setOrders(prev => [...prev, newOrder]);
+      syncData('SAVE_ORDER', newOrder);
+  };
 
   if (loading) return <div className="h-screen flex items-center justify-center font-black animate-pulse">CHARGEMENT...</div>;
 
   if (!currentUser) {
-     // Login Screen (Same as before)
-     return <div className="h-screen bg-slate-900 flex items-center justify-center p-4"><div className="bg-white p-10 rounded-3xl"><h1 className="text-center font-black mb-4">LOGIN</h1><div className="grid grid-cols-3 gap-2">{[1,2,3,4,5,6,7,8,9,0].map(n => <button key={n} onClick={() => handlePinInput(n.toString())} className="p-4 bg-slate-100 font-black rounded-xl">{n}</button>)}</div></div></div>;
+     return (
+       <div className="h-screen bg-slate-900 flex items-center justify-center p-4">
+         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden max-w-sm w-full">
+           <div className="bg-indigo-600 p-8 text-center">
+             <div className="w-16 h-16 bg-white rounded-2xl mx-auto mb-4 flex items-center justify-center text-indigo-600 font-black text-2xl shadow-lg">B</div>
+             <h1 className="text-white font-black text-xl tracking-widest uppercase">BarStock Pro</h1>
+             <p className="text-indigo-200 text-xs font-bold mt-2">Identification Requise</p>
+           </div>
+           
+           <div className="p-8">
+             <div className="flex justify-center gap-4 mb-8">
+               {[0, 1, 2, 3].map(i => (
+                 <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${loginInput.length > i ? 'bg-indigo-600 scale-110' : 'bg-slate-200'}`}></div>
+               ))}
+             </div>
+
+             <div className="grid grid-cols-3 gap-4 mb-6">
+               {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+                 <button 
+                   key={n} 
+                   onClick={() => handlePinInput(n.toString())} 
+                   className="aspect-square rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-black text-2xl transition-all active:scale-95 shadow-sm border border-slate-100"
+                 >
+                   {n}
+                 </button>
+               ))}
+               <div className="aspect-square"></div>
+               <button 
+                 onClick={() => handlePinInput("0")} 
+                 className="aspect-square rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-black text-2xl transition-all active:scale-95 shadow-sm border border-slate-100"
+               >
+                 0
+               </button>
+               <button 
+                 onClick={() => setLoginInput(prev => prev.slice(0, -1))} 
+                 className="aspect-square rounded-full bg-rose-50 text-rose-500 font-black flex items-center justify-center active:scale-95 transition-all"
+               >
+                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" /></svg>
+               </button>
+             </div>
+             
+             {loginStatus === 'error' && (
+                <p className="text-center text-rose-500 text-xs font-black uppercase animate-bounce">Code PIN Incorrect</p>
+             )}
+           </div>
+         </div>
+       </div>
+     );
   }
 
   return (
@@ -328,7 +547,15 @@ const App: React.FC = () => {
         {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
         
         {view === 'orders' && (
-            <div className="text-center p-10 text-slate-400">Composant Order (Placeholder pour compilation)</div>
+            <Order 
+              orders={orders} 
+              items={items} 
+              storages={storages} 
+              onUpdateOrder={handleOrderUpdate} 
+              onDeleteOrder={handleDeleteOrder} 
+              onAddManualOrder={handleAddManualOrder}
+              formats={formats}
+            />
         )}
       </main>
       {notification && <div className="fixed bottom-6 right-6 bg-white p-4 rounded-xl shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right"><span className="font-bold text-sm">{notification.message}</span><button onClick={() => setNotification(null)} className="text-indigo-600 font-black">OK</button></div>}
