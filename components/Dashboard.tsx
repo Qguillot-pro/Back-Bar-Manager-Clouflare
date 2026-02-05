@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole } from '../types';
@@ -117,54 +118,58 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 h-[450px]">
-          <h3 className="text-sm font-black uppercase tracking-widest mb-8 text-slate-800 flex items-center gap-2">
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 h-[450px] flex flex-col">
+          <h3 className="flex-none text-sm font-black uppercase tracking-widest mb-8 text-slate-800 flex items-center gap-2">
             <span className="w-1.5 h-4 bg-rose-500 rounded-full"></span>
             Niveaux Critiques par Article
           </h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <BarChart data={chartData.filter(d => d.stock <= d.min * 1.5).sort((a,b) => a.ratio - b.ratio)}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
-              <YAxis axisLine={false} tickLine={false} fontSize={10} />
-              <Tooltip 
-                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                cursor={{ fill: '#f8fafc' }}
-              />
-              <Bar dataKey="stock" radius={[4, 4, 0, 0]} barSize={40}>
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.stock <= entry.min ? '#f43f5e' : '#6366f1'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData.filter(d => d.stock <= d.min * 1.5).sort((a,b) => a.ratio - b.ratio)}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
+                <YAxis axisLine={false} tickLine={false} fontSize={10} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                  cursor={{ fill: '#f8fafc' }}
+                />
+                <Bar dataKey="stock" radius={[4, 4, 0, 0]} barSize={40}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.stock <= entry.min ? '#f43f5e' : '#6366f1'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 h-[450px]">
-          <h3 className="text-sm font-black uppercase tracking-widest mb-8 text-slate-800 flex items-center gap-2">
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 h-[450px] flex flex-col">
+          <h3 className="flex-none text-sm font-black uppercase tracking-widest mb-8 text-slate-800 flex items-center gap-2">
              <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
              Répartition des Références
           </h3>
-          <ResponsiveContainer width="100%" height="85%">
-            <PieChart>
-              <Pie
-                data={categoryDistribution.filter(d => d.value > 0)}
-                cx="50%"
-                cy="50%"
-                innerRadius={80}
-                outerRadius={110}
-                paddingAngle={8}
-                dataKey="value"
-                stroke="none"
-              >
-                {categoryDistribution.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex flex-wrap justify-center gap-4 mt-2">
+          <div className="flex-1 min-h-0 w-full" style={{ minHeight: '200px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={categoryDistribution.filter(d => d.value > 0)}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={80}
+                  outerRadius={110}
+                  paddingAngle={8}
+                  dataKey="value"
+                  stroke="none"
+                >
+                  {categoryDistribution.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex-none flex flex-wrap justify-center gap-4 mt-2">
             {categoryDistribution.filter(d => d.value > 0).map((cat, i) => (
               <div key={i} className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }}></div>

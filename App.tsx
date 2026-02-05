@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig } from './types';
 import Dashboard from './components/Dashboard';
@@ -65,14 +66,10 @@ const App: React.FC = () => {
     try {
       const response = await fetch('/api/init');
       
-      if (!response.ok) {
-          let errorMsg = `Erreur API: ${response.status} ${response.statusText}`;
-          try {
-             const errJson = await response.json();
-             if (errJson.error) errorMsg += ` - ${errJson.error}`;
-             if (errJson.details) errorMsg += ` (${JSON.stringify(errJson.details)})`;
-          } catch (e) {}
-          throw new Error(errorMsg);
+      // Gestion spécifique pour le mode Preview où /api/init peut ne pas exister (404) ou retourner du HTML (SPA fallback)
+      const contentType = response.headers.get("content-type");
+      if (!response.ok || (contentType && !contentType.includes("application/json"))) {
+          throw new Error("Mode Preview (Backend non disponible)");
       }
 
       const data = await response.json();
@@ -112,7 +109,10 @@ const App: React.FC = () => {
     } catch (error: any) {
       console.warn("Passage en mode Hors Ligne:", error);
       setIsOffline(true);
-      setConnectionError(error.message || "Erreur inconnue");
+      // On masque l'erreur si c'est le mode preview attendu
+      if (!error.message.includes("Mode Preview")) {
+          setConnectionError(error.message || "Erreur inconnue");
+      }
       loadLocalData();
     } finally { setLoading(false); }
   };
@@ -121,40 +121,109 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
-  const loadLocalData = () => {
-    const local = localStorage.getItem('barstock_local_db');
-    if (local) {
-      const d = JSON.parse(local);
-      setItems(d.items || []); 
-      
-      let localUsers: User[] = d.users || [];
-      if (!localUsers.find(u => u.id === 'admin')) {
-         localUsers.push({ id: 'admin', name: 'Administrateur', role: 'ADMIN', pin: '2159' });
-      }
-      localUsers = localUsers.filter(u => u.id !== 'admin_secours');
-      localUsers.push({ id: 'admin_secours', name: 'Admin Secours', role: 'ADMIN', pin: '0407' });
-
-      setUsers(localUsers); 
-      setStorages(d.storages || []);
-      
-      setStockLevels((d.stockLevels || []).map((l: any) => ({...l, currentQuantity: Number(l.currentQuantity)})));
-      setConsignes((d.consignes || []).map((c: any) => ({...c, minQuantity: Number(c.minQuantity)})));
-      setTransactions((d.transactions || []).map((t: any) => ({...t, quantity: Number(t.quantity)})));
-      setOrders((d.orders || []).map((o: any) => ({...o, quantity: Number(o.quantity)})));
-      
-      setDlcHistory(d.dlcHistory || []);
-      if (d.categories) setCategories(d.categories);
-      if (d.formats) setFormats(d.formats);
-      if (d.priorities) setPriorities(d.priorities);
-      if (d.dlcProfiles) setDlcProfiles(d.dlcProfiles);
-      if (d.unfulfilledOrders) setUnfulfilledOrders(d.unfulfilledOrders);
-      if (d.appConfig) setAppConfig(d.appConfig);
-    } else {
+  const initDemoData = () => {
+        console.log("Initialisation avec données de démonstration");
         setUsers([
             { id: 'admin', name: 'Administrateur', role: 'ADMIN', pin: '2159' },
             { id: 'admin_secours', name: 'Admin Secours', role: 'ADMIN', pin: '0407' }
         ]);
+        setCategories(['Spiritueux', 'Vins', 'Bières', 'Softs', 'Ingrédients Cocktail', 'Autre']);
+        setFormats([
+            { id: 'f1', name: '70cl', value: 70 },
+            { id: 'f2', name: '75cl', value: 75 },
+            { id: 'f3', name: '33cl', value: 33 },
+            { id: 'f4', name: '1L', value: 100 }
+        ]);
+        setStorages([
+            { id: 's1', name: 'Frigo Soft', order: 1 },
+            { id: 's2', name: 'Frigo Vin', order: 2 },
+            { id: 's3', name: 'Speed Rack', order: 3 },
+            { id: 's9', name: 'Réserve', order: 9 },
+            { id: 's0', name: 'Surstock', order: 99 }
+        ]);
+        setDlcProfiles([
+            { id: 'd1', name: '3 Jours', durationHours: 72 },
+            { id: 'd2', name: '5 Jours', durationHours: 120 }
+        ]);
+        
+        const now = new Date().toISOString();
+        setItems([
+            { id: 'demo_1', name: 'Vodka Absolut', category: 'Spiritueux', formatId: 'f1', pricePerUnit: 15, order: 1, isDLC: false, isConsigne: false, lastUpdated: now, isDraft: false },
+            { id: 'demo_2', name: 'Gin Bombay', category: 'Spiritueux', formatId: 'f1', pricePerUnit: 18, order: 2, isDLC: false, isConsigne: false, lastUpdated: now, isDraft: false },
+            { id: 'demo_3', name: 'Coca Cola', category: 'Softs', formatId: 'f3', pricePerUnit: 0.8, order: 3, isDLC: true, dlcProfileId: 'd1', isConsigne: true, lastUpdated: now, isDraft: false },
+            { id: 'demo_4', name: 'Jus d\'Orange', category: 'Softs', formatId: 'f4', pricePerUnit: 2, order: 4, isDLC: true, dlcProfileId: 'd1', isConsigne: false, lastUpdated: now, isDraft: false },
+        ]);
+        
+        setStockLevels([
+            { itemId: 'demo_1', storageId: 's3', currentQuantity: 0.5 },
+            { itemId: 'demo_1', storageId: 's9', currentQuantity: 2 },
+            { itemId: 'demo_2', storageId: 's3', currentQuantity: 0.8 },
+            { itemId: 'demo_3', storageId: 's1', currentQuantity: 12 },
+        ]);
+        
+        setConsignes([
+            { itemId: 'demo_1', storageId: 's3', minQuantity: 1 },
+            { itemId: 'demo_2', storageId: 's3', minQuantity: 1 },
+            { itemId: 'demo_3', storageId: 's1', minQuantity: 24 },
+        ]);
+        
+        setPriorities([
+            { itemId: 'demo_1', storageId: 's3', priority: 10 },
+            { itemId: 'demo_2', storageId: 's3', priority: 10 },
+            { itemId: 'demo_3', storageId: 's1', priority: 10 },
+        ]);
+  };
+
+  const loadLocalData = () => {
+    const local = localStorage.getItem('barstock_local_db');
+    if (local) {
+      try {
+        const d = JSON.parse(local);
+        // Si le cache local est vide en items, on force les données de démo
+        if (!d.items || d.items.length === 0) {
+            initDemoData();
+            return;
+        }
+
+        setItems(d.items || []); 
+        
+        let localUsers: User[] = d.users || [];
+        if (!localUsers.find(u => u.id === 'admin')) {
+           localUsers.push({ id: 'admin', name: 'Administrateur', role: 'ADMIN', pin: '2159' });
+        }
+        localUsers = localUsers.filter(u => u.id !== 'admin_secours');
+        localUsers.push({ id: 'admin_secours', name: 'Admin Secours', role: 'ADMIN', pin: '0407' });
+
+        setUsers(localUsers); 
+        setStorages(d.storages || []);
+        
+        setStockLevels((d.stockLevels || []).map((l: any) => ({...l, currentQuantity: Number(l.currentQuantity)})));
+        setConsignes((d.consignes || []).map((c: any) => ({...c, minQuantity: Number(c.minQuantity)})));
+        setTransactions((d.transactions || []).map((t: any) => ({...t, quantity: Number(t.quantity)})));
+        setOrders((d.orders || []).map((o: any) => ({...o, quantity: Number(o.quantity)})));
+        
+        setDlcHistory(d.dlcHistory || []);
+        if (d.categories) setCategories(d.categories);
+        if (d.formats) setFormats(d.formats);
+        if (d.priorities) setPriorities(d.priorities);
+        if (d.dlcProfiles) setDlcProfiles(d.dlcProfiles);
+        if (d.unfulfilledOrders) setUnfulfilledOrders(d.unfulfilledOrders);
+        if (d.appConfig) setAppConfig(d.appConfig);
+      } catch (e) {
+          console.error("Erreur lecture local storage, fallback demo", e);
+          initDemoData();
+      }
+    } else {
+        initDemoData();
     }
+  };
+
+  const resetDemoData = () => {
+      if (window.confirm("Réinitialiser toutes les données locales et recharger les données de démonstration ?")) {
+          localStorage.removeItem('barstock_local_db');
+          initDemoData();
+          window.location.reload();
+      }
   };
 
   useEffect(() => {
@@ -636,20 +705,26 @@ const App: React.FC = () => {
           <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Identification requise</p>
           
           <div className="flex flex-col items-center justify-center mb-6 gap-2">
-              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${isOffline ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                  {isOffline ? 'Mode Hors Ligne' : 'Connecté (Neon)'}
+              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${isOffline ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                  {isOffline ? 'Mode Démo / Local' : 'Connecté (Neon)'}
               </span>
               {isOffline && (
-                  <>
+                  <div className="flex flex-col gap-2 items-center">
                     <button onClick={fetchData} className="text-[10px] font-bold text-indigo-500 underline hover:text-indigo-700">
                         Réessayer la connexion
                     </button>
                     {connectionError && (
-                        <p className="text-[8px] text-rose-500 font-bold text-center max-w-[200px] break-words">
+                        <p className="text-[8px] text-amber-500 font-bold text-center max-w-[200px] break-words bg-amber-50 p-2 rounded">
                             {connectionError}
                         </p>
                     )}
-                  </>
+                    <button 
+                        onClick={resetDemoData} 
+                        className="mt-2 text-[9px] font-black text-slate-400 hover:text-rose-500 uppercase tracking-widest border border-slate-200 px-2 py-1 rounded hover:border-rose-200 transition-all"
+                    >
+                        Réinitialiser Données Démo
+                    </button>
+                  </div>
               )}
           </div>
 
@@ -674,6 +749,7 @@ const App: React.FC = () => {
             <div className="col-span-3 text-center mt-4">
                {loginStatus === 'error' && <p className="text-rose-500 text-[10px] font-black uppercase animate-bounce">Code PIN incorrect</p>}
                {loginStatus === 'success' && <p className="text-emerald-500 text-[10px] font-black uppercase">Bienvenue {tempUser?.name || '...'}</p>}
+               {isOffline && loginStatus === 'idle' && <p className="text-slate-400 text-[9px] mt-2">PIN Admin: 2159 / Barman: 0000</p>}
             </div>
           </div>
         </div>
@@ -703,15 +779,15 @@ const App: React.FC = () => {
         <div className="p-4 border-t border-white/5 bg-slate-900 flex items-center justify-between">
           <div className="flex flex-col">
               <span className="text-xs font-bold truncate max-w-[120px]">{currentUser?.name || 'Profil'}</span>
-              <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-rose-500' : 'text-emerald-500'}`}>
-                  {isOffline ? 'Hors Ligne (Local)' : 'Connecté (Neon)'}
+              <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-500' : 'text-emerald-500'}`}>
+                  {isOffline ? 'Mode Démo' : 'Connecté (Neon)'}
               </span>
           </div>
           <button onClick={() => setCurrentUser(null)} className="text-[10px] text-rose-400 font-black uppercase hover:text-rose-300">Quitter</button>
         </div>
       </aside>
 
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
         {view === 'dashboard' && <Dashboard items={sortedItems} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser?.role || 'BARMAN'} onNavigateToIntegration={handleNavigateToIntegration} />}
         {view === 'inventory' && <StockTable items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleStockUpdate} consignes={consignes} />}
         {view === 'movements' && <Movements items={sortedItems} transactions={transactions} storages={sortedStorages} onTransaction={handleTransaction} onOpenKeypad={() => {}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleUnfulfilledOrder} onCreateTemporaryItem={handleCreateTemporaryItem} formats={formats} />}
