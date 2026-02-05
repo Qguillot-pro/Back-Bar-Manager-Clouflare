@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { StockItem, Format, Category, UserRole, DLCProfile } from '../types';
 
 interface ArticlesListProps {
@@ -15,6 +15,8 @@ interface ArticlesListProps {
 }
 
 const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, categories, onDelete, userRole, dlcProfiles = [], onSync, filter = 'ALL' }) => {
+  const [isReorderMode, setIsReorderMode] = useState(false);
+  const [editingPrice, setEditingPrice] = useState<{ id: string, value: string } | null>(null);
   
   const displayedItems = filter === 'TEMPORARY' 
       ? items.filter(i => i.isTemporary) 
@@ -32,26 +34,88 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
   };
 
   const integrateItem = (item: StockItem) => {
-      // Pour valider l'intégration, on retire le flag isTemporary
-      // On suppose que l'admin a fait les modifs nécessaires avant de cliquer
       const updated = { ...item, isTemporary: false };
       setItems(prev => prev.map(i => i.id === item.id ? updated : i));
       onSync('SAVE_ITEM', updated);
   };
 
+  // --- LOGIQUE PRIX ---
+  const handlePriceFocus = (item: StockItem) => {
+    setEditingPrice({ id: item.id, value: item.pricePerUnit.toString() });
+  };
+
+  const handlePriceChange = (val: string) => {
+    // Autoriser vide, chiffres, point ou virgule
+    if (/^[0-9]*[.,]?[0-9]*$/.test(val)) {
+        setEditingPrice(prev => prev ? { ...prev, value: val } : null);
+    }
+  };
+
+  const handlePriceBlur = (id: string) => {
+    if (!editingPrice) return;
+    let normalized = editingPrice.value.replace(',', '.');
+    if (normalized === '.') normalized = '0';
+    
+    const num = parseFloat(normalized) || 0;
+    updateItem(id, 'pricePerUnit', num);
+    setEditingPrice(null);
+  };
+
+  // --- LOGIQUE REORDER ---
+  const moveItem = (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === displayedItems.length - 1) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    const currentItem = displayedItems[index];
+    const targetItem = displayedItems[targetIndex];
+
+    // On échange les valeurs de 'order'. 
+    // Si les valeurs sont identiques (ex: 0 pour les deux), on force une divergence basée sur l'index visuel.
+    let newOrderCurrent = targetItem.order ?? targetIndex;
+    let newOrderTarget = currentItem.order ?? index;
+
+    if (newOrderCurrent === newOrderTarget) {
+        newOrderCurrent = targetIndex;
+        newOrderTarget = index;
+    }
+
+    // Mise à jour locale et DB
+    updateItem(currentItem.id, 'order', newOrderCurrent);
+    updateItem(targetItem.id, 'order', newOrderTarget);
+  };
+
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className={`p-6 border-b flex justify-between items-center ${filter === 'TEMPORARY' ? 'bg-amber-50' : 'bg-slate-50'}`}>
+      <div className={`p-6 border-b flex flex-col md:flex-row justify-between items-center gap-4 ${filter === 'TEMPORARY' ? 'bg-amber-50' : 'bg-slate-50'}`}>
         <h2 className={`font-black uppercase tracking-tight flex items-center gap-2 ${filter === 'TEMPORARY' ? 'text-amber-800' : 'text-slate-800'}`}>
             <span className={`w-1.5 h-6 rounded-full ${filter === 'TEMPORARY' ? 'bg-amber-500' : 'bg-indigo-600'}`}></span>
             {filter === 'TEMPORARY' ? 'Intégration Articles Temporaires' : 'Base de Données Articles'}
         </h2>
-        <span className={`text-[10px] font-black uppercase tracking-widest ${filter === 'TEMPORARY' ? 'text-amber-400' : 'text-slate-400'}`}>{displayedItems.length} références</span>
+        
+        <div className="flex items-center gap-4">
+            {userRole === 'ADMIN' && filter === 'ALL' && (
+                <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${!isReorderMode ? 'text-slate-400' : 'text-slate-300'}`}>Lecture</span>
+                    <button 
+                        onClick={() => setIsReorderMode(!isReorderMode)} 
+                        className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${isReorderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} 
+                        aria-label="Activer le mode réorganisation"
+                    >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-300 ${isReorderMode ? 'left-7' : 'left-1'}`}></div>
+                    </button>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${isReorderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Réorganiser</span>
+                </div>
+            )}
+            <span className={`text-[10px] font-black uppercase tracking-widest ${filter === 'TEMPORARY' ? 'text-amber-400' : 'text-slate-400'}`}>{displayedItems.length} réf.</span>
+        </div>
       </div>
+      
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">
             <tr>
+              {isReorderMode && <th className="p-6 w-16 text-center">Ordre</th>}
               <th className="p-6">Produit</th>
               <th className="p-6 w-32">Code Article</th>
               <th className="p-6">Format</th>
@@ -62,13 +126,37 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {displayedItems.map(item => (
+            {displayedItems.map((item, index) => (
               <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors group relative ${item.isTemporary ? 'bg-amber-50/30' : ''}`}>
+                
+                {isReorderMode && (
+                    <td className="p-6 text-center">
+                        <div className="flex flex-col items-center gap-1">
+                            <button 
+                                onClick={() => moveItem(index, 'up')} 
+                                disabled={index === 0}
+                                className={`p-1 rounded hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-colors ${index === 0 ? 'opacity-20 cursor-not-allowed' : ''}`}
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg>
+                            </button>
+                            <span className="text-[9px] font-black text-slate-300">{index + 1}</span>
+                            <button 
+                                onClick={() => moveItem(index, 'down')}
+                                disabled={index === displayedItems.length - 1}
+                                className={`p-1 rounded hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-colors ${index === displayedItems.length - 1 ? 'opacity-20 cursor-not-allowed' : ''}`}
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
+                            </button>
+                        </div>
+                    </td>
+                )}
+
                 <td className="p-6">
                   <input 
                     className="w-full bg-transparent border-b border-transparent focus:border-indigo-500 outline-none font-bold text-slate-900"
                     value={item.name}
                     onChange={e => updateItem(item.id, 'name', e.target.value)}
+                    disabled={isReorderMode}
                   />
                   {item.isTemporary && <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest mt-1 block">Temporaire</span>}
                 </td>
@@ -78,6 +166,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                     value={item.articleCode || ''}
                     placeholder="-"
                     onChange={e => updateItem(item.id, 'articleCode', e.target.value)}
+                    disabled={isReorderMode}
                   />
                 </td>
                 <td className="p-6">
@@ -85,6 +174,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                     className="bg-transparent outline-none font-bold text-slate-600 text-xs uppercase cursor-pointer"
                     value={item.formatId}
                     onChange={e => updateItem(item.id, 'formatId', e.target.value)}
+                    disabled={isReorderMode}
                   >
                     {formats.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                   </select>
@@ -94,12 +184,13 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                     className="bg-transparent outline-none font-black text-indigo-600 text-[10px] uppercase tracking-tighter cursor-pointer"
                     value={item.category}
                     onChange={e => updateItem(item.id, 'category', e.target.value as Category)}
+                    disabled={isReorderMode}
                   >
                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </td>
                 <td className="p-6">
-                  <div className="flex flex-col gap-3">
+                  <div className={`flex flex-col gap-3 ${isReorderMode ? 'opacity-50 pointer-events-none' : ''}`}>
                     <label className="flex items-center gap-3 cursor-pointer">
                         <input 
                         type="checkbox"
@@ -135,15 +226,19 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                 </td>
                 <td className="p-6">
                   <input 
-                    type="number"
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
                     className="w-24 bg-transparent border-b border-transparent focus:border-indigo-500 outline-none text-right font-black text-slate-900"
-                    value={item.pricePerUnit}
-                    onChange={e => updateItem(item.id, 'pricePerUnit', Number(e.target.value))}
+                    value={editingPrice?.id === item.id ? editingPrice.value : item.pricePerUnit}
+                    onFocus={() => handlePriceFocus(item)}
+                    onChange={(e) => handlePriceChange(e.target.value)}
+                    onBlur={() => handlePriceBlur(item.id)}
+                    disabled={isReorderMode}
+                    placeholder="0"
                   />
                 </td>
                 <td className="p-6 text-center relative z-10 flex items-center justify-center gap-2">
-                  {userRole === 'ADMIN' && item.isTemporary && (
+                  {userRole === 'ADMIN' && item.isTemporary && !isReorderMode && (
                       <div className="flex gap-2">
                           <button 
                             type="button"
@@ -163,7 +258,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                           </button>
                       </div>
                   )}
-                  {userRole === 'ADMIN' && !item.isTemporary && (
+                  {userRole === 'ADMIN' && !item.isTemporary && !isReorderMode && (
                     <button 
                       type="button"
                       onClick={(e) => {
@@ -183,7 +278,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
             ))}
             {displayedItems.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-20 text-center italic text-slate-400 text-sm">Aucun produit trouvé.</td>
+                <td colSpan={isReorderMode ? 8 : 7} className="py-20 text-center italic text-slate-400 text-sm">Aucun produit trouvé.</td>
               </tr>
             )}
           </tbody>
