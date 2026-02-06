@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS app_config (
 
 -- Config par défaut si inexistante
 INSERT INTO app_config (key, value) VALUES ('temp_item_duration', '14_DAYS') ON CONFLICT DO NOTHING;
+INSERT INTO app_config (key, value) VALUES ('default_margin', '82') ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS storage_spaces (
     id TEXT PRIMARY KEY,
@@ -146,7 +147,6 @@ CREATE TABLE IF NOT EXISTS unfulfilled_orders (
     user_name TEXT
 );
 
--- NOUVELLE TABLE: MESSAGES
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     content TEXT NOT NULL,
@@ -160,7 +160,32 @@ CREATE TABLE IF NOT EXISTS messages (
 
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_by TEXT;
 
--- 4. Données Initiales
+-- 4. MODULE RECETTES
+CREATE TABLE IF NOT EXISTS glassware (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    capacity NUMERIC,
+    image_url TEXT -- Base64 string for small images
+);
+
+CREATE TABLE IF NOT EXISTS recipes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT,
+    glassware_id TEXT,
+    technique TEXT,
+    description TEXT,
+    history TEXT,
+    decoration TEXT,
+    selling_price NUMERIC,
+    cost_price NUMERIC,
+    status TEXT DEFAULT 'DRAFT', -- 'DRAFT' ou 'VALIDATED'
+    created_by TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    ingredients JSONB -- Stocke la liste des ingrédients en JSON
+);
+
+-- 5. Données Initiales
 INSERT INTO storage_spaces (id, name, sort_order) VALUES 
 ('s1', 'Frigo Soft', 1), ('s2', 'Frigo Vin', 2), ('s3', 'Speed Rack', 3),
 ('s4', 'Etg Sirops', 4), ('s5', 'Etg Liqueurs', 5), ('s6', 'Pyramide', 6),

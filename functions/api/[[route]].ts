@@ -52,7 +52,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
-      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages] = await Promise.all([
+      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes] = await Promise.all([
         pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
         pool.query('SELECT * FROM users'),
         pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
@@ -67,12 +67,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         pool.query('SELECT * FROM dlc_profiles'),
         pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500'),
         pool.query('SELECT * FROM app_config'),
-        pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 200')
+        pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 200'),
+        pool.query('SELECT * FROM glassware ORDER BY name ASC'),
+        pool.query('SELECT * FROM recipes ORDER BY name ASC')
       ]);
 
-      const configMap: any = { tempItemDuration: '14_DAYS' };
+      const configMap: any = { tempItemDuration: '14_DAYS', defaultMargin: 82 };
       appConfig.rows.forEach(row => {
           if (row.key === 'temp_item_duration') configMap.tempItemDuration = row.value;
+          if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
       });
 
       // Nettoyage automatique des items temporaires
@@ -158,7 +161,29 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                  replyDate: m.reply_date,
                  readBy
              };
-          })
+          }),
+          glassware: glassware.rows.map(g => ({
+              id: g.id,
+              name: g.name,
+              capacity: parseFloat(g.capacity || '0'),
+              imageUrl: g.image_url
+          })),
+          recipes: recipes.rows.map(r => ({
+              id: r.id,
+              name: r.name,
+              category: r.category,
+              glasswareId: r.glassware_id,
+              technique: r.technique,
+              description: r.description,
+              history: r.history,
+              decoration: r.decoration,
+              sellingPrice: parseFloat(r.selling_price || '0'),
+              costPrice: parseFloat(r.cost_price || '0'),
+              status: r.status,
+              createdBy: r.created_by,
+              createdAt: r.created_at,
+              ingredients: r.ingredients // PostgreSQL JSONB is automatically parsed by node-postgres
+          }))
       };
 
       return new Response(JSON.stringify(responseBody), {
@@ -183,7 +208,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             await pool.query(`
                 INSERT INTO app_config (key, value) VALUES ($1, $2)
                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            `, [key, value]);
+            `, [key, String(value)]);
             break;
         }
 
@@ -410,6 +435,47 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
         case 'DELETE_MESSAGE': {
             await pool.query('DELETE FROM messages WHERE id = $1', [payload.id]);
+            break;
+        }
+
+        // --- RECETTES & VERRERIE ---
+
+        case 'SAVE_GLASSWARE': {
+            const { id, name, capacity, imageUrl } = payload;
+            await pool.query(`
+                INSERT INTO glassware (id, name, capacity, image_url)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, capacity = EXCLUDED.capacity, image_url = EXCLUDED.image_url
+            `, [id, name, capacity, imageUrl]);
+            break;
+        }
+
+        case 'DELETE_GLASSWARE': {
+            await pool.query('DELETE FROM glassware WHERE id = $1', [payload.id]);
+            break;
+        }
+
+        case 'SAVE_RECIPE': {
+            const { id, name, category, glasswareId, technique, description, history, decoration, sellingPrice, costPrice, status, createdBy, createdAt, ingredients } = payload;
+            await pool.query(`
+                INSERT INTO recipes (id, name, category, glassware_id, technique, description, history, decoration, selling_price, cost_price, status, created_by, created_at, ingredients)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                ON CONFLICT (id) DO UPDATE SET 
+                    name = EXCLUDED.name, category = EXCLUDED.category, glassware_id = EXCLUDED.glassware_id,
+                    technique = EXCLUDED.technique, description = EXCLUDED.description, history = EXCLUDED.history,
+                    decoration = EXCLUDED.decoration, selling_price = EXCLUDED.selling_price, cost_price = EXCLUDED.cost_price,
+                    status = EXCLUDED.status, ingredients = EXCLUDED.ingredients
+            `, [id, name, category, glasswareId, technique, description, history, decoration, sellingPrice, costPrice, status, createdBy, createdAt, JSON.stringify(ingredients)]);
+            break;
+        }
+
+        case 'DELETE_RECIPE': {
+            await pool.query('DELETE FROM recipes WHERE id = $1', [payload.id]);
+            break;
+        }
+
+        case 'VALIDATE_RECIPE': {
+            await pool.query('UPDATE recipes SET status = $2 WHERE id = $1', [payload.id, 'VALIDATED']);
             break;
         }
 

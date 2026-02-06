@@ -22,6 +22,7 @@ export type UserRole = 'ADMIN' | 'BARMAN';
 
 export interface AppConfig {
   tempItemDuration: '3_DAYS' | '7_DAYS' | '14_DAYS' | '1_MONTH' | '3_MONTHS' | 'INFINITE';
+  defaultMargin?: number; // Pourcentage (ex: 82)
 }
 
 export interface User {
@@ -133,4 +134,37 @@ export interface Message {
   adminReply?: string;
   replyDate?: string;
   readBy?: string[]; // Liste des IDs utilisateurs ayant lu le message
+}
+
+// --- NOUVEAUX TYPES POUR LES RECETTES ---
+
+export interface Glassware {
+  id: string;
+  name: string;
+  capacity?: number; // en cl
+  imageUrl?: string; // Base64 ou URL
+}
+
+export interface RecipeIngredient {
+  itemId?: string; // Lien vers StockItem si existant
+  tempName?: string; // Nom si pas dans la base
+  quantity: number;
+  unit: 'cl' | 'ml' | 'dash' | 'piece' | 'cuillere';
+}
+
+export interface Recipe {
+  id: string;
+  name: string;
+  category: string; // Ex: Signature, Classique, Mocktail
+  glasswareId: string;
+  technique: 'Shaker' | 'Verre à mélange' | 'Construit' | 'Blender' | 'Throwing';
+  description: string; // Max 150 cars
+  history?: string; // Max 150 cars
+  ingredients: RecipeIngredient[];
+  decoration?: string;
+  sellingPrice?: number;
+  costPrice?: number; // Calculé
+  status: 'DRAFT' | 'VALIDATED';
+  createdBy?: string;
+  createdAt: string;
 }

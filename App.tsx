@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -12,6 +12,7 @@ import DLCView from './components/DLCView';
 import History from './components/History';
 import MessagesView from './components/MessagesView';
 import Order from './components/Order';
+import RecipesView from './components/RecipesView';
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -40,9 +41,13 @@ const App: React.FC = () => {
   const [priorities, setPriorities] = useState<StockPriority[]>([]);
   const [unfulfilledOrders, setUnfulfilledOrders] = useState<UnfulfilledOrder[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [appConfig, setAppConfig] = useState<AppConfig>({ tempItemDuration: '14_DAYS' });
+  const [appConfig, setAppConfig] = useState<AppConfig>({ tempItemDuration: '14_DAYS', defaultMargin: 82 });
   
-  const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages'>('dashboard');
+  // New States for Recipes
+  const [glassware, setGlassware] = useState<Glassware[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  
+  const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes'>('dashboard');
   const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); 
   const [notification, setNotification] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -106,6 +111,8 @@ const App: React.FC = () => {
         setPriorities((data.priorities || []).map((p: any) => ({...p, priority: Number(p.priority)})));
         setUnfulfilledOrders(data.unfulfilledOrders || []);
         setMessages(data.messages || []);
+        setGlassware(data.glassware || []);
+        setRecipes(data.recipes || []);
         if (data.appConfig) setAppConfig(data.appConfig);
       } else {
           throw new Error("Structure de données invalide reçue de l'API");
@@ -177,6 +184,8 @@ const App: React.FC = () => {
         setDlcProfiles(d.dlcProfiles || []);
         setUnfulfilledOrders(d.unfulfilledOrders || []);
         setMessages(d.messages || []);
+        setGlassware(d.glassware || []);
+        setRecipes(d.recipes || []);
         if (d.appConfig) setAppConfig(d.appConfig);
       } catch (e) { initDemoData(); }
     } else { initDemoData(); }
@@ -184,10 +193,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!loading && !isOffline) {
-      const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages };
+      const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes };
       localStorage.setItem('barstock_local_db', JSON.stringify(db));
     }
-  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages]);
+  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages, glassware, recipes]);
 
   const sortedItems = useMemo(() => [...items].filter(i => !!i).sort((a, b) => (a.order || 0) - (b.order || 0)), [items]);
   const sortedStorages = useMemo(() => [...storages].filter(s => !!s).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)), [storages]);
@@ -580,6 +589,8 @@ const App: React.FC = () => {
 
   // Calcul du nombre de messages non lus pour l'utilisateur actuel
   const unreadMessagesCount = messages.filter(m => !m.isArchived && (!m.readBy || !m.readBy.includes(currentUser.id))).length;
+  // Calcul du nombre de recettes en attente
+  const pendingRecipesCount = recipes.filter(r => r.status === 'DRAFT').length;
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-50">
@@ -612,6 +623,13 @@ const App: React.FC = () => {
           <NavItem collapsed={isSidebarCollapsed} active={view === 'movements'} onClick={() => setView('movements')} label="Mouvements" icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'inventory'} onClick={() => setView('inventory')} label="Stock Global" icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'orders'} onClick={() => setView('orders')} label="À Commander" icon="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" badge={orders.filter(o => o && o.status === 'PENDING').length} />
+          
+          <div className="my-2 border-t border-white/5"></div>
+          
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'recipes'} onClick={() => setView('recipes')} label="Fiches Techniques" icon="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" badge={currentUser.role === 'ADMIN' ? pendingRecipesCount : 0} />
+          
+          <div className="my-2 border-t border-white/5"></div>
+
           <NavItem collapsed={isSidebarCollapsed} active={view === 'history'} onClick={() => setView('history')} label="Historique" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'dlc_tracking'} onClick={() => setView('dlc_tracking')} label="Suivi DLC" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'messages'} onClick={() => setView('messages')} label="Messagerie" icon="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" badge={unreadMessagesCount} />
@@ -708,7 +726,20 @@ const App: React.FC = () => {
         {view === 'articles' && <ArticlesList items={sortedItems} setItems={setItems} formats={formats} categories={categories} userRole={currentUser?.role || 'BARMAN'} onDelete={handleDeleteItem} onSync={syncData} dlcProfiles={dlcProfiles} filter={articlesFilter} />}
         {view === 'consignes' && <Consignes items={sortedItems} storages={sortedStorages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
         {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={sortedStorages} onDelete={handleDeleteDlcHistory} />}
-        {view === 'config' && currentUser?.role === 'ADMIN' && <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={sortedStorages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} />}
+        
+        {view === 'config' && currentUser?.role === 'ADMIN' && (
+            <Configuration 
+                setItems={setItems} setStorages={setStorages} setFormats={setFormats} 
+                storages={sortedStorages} formats={formats} priorities={priorities} 
+                setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} 
+                items={items} categories={categories} setCategories={setCategories} 
+                users={users} setUsers={setUsers} currentUser={currentUser} 
+                dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} 
+                appConfig={appConfig} setAppConfig={setAppConfig}
+                glassware={glassware} setGlassware={setGlassware}
+            />
+        )}
+        
         {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={sortedStorages} unfulfilledOrders={unfulfilledOrders} onUpdateOrderQuantity={() => {}} formats={formats} />}
         {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
         
@@ -721,6 +752,18 @@ const App: React.FC = () => {
               onDeleteOrder={handleDeleteOrder} 
               onAddManualOrder={handleAddManualOrder}
               formats={formats}
+            />
+        )}
+
+        {view === 'recipes' && (
+            <RecipesView 
+                recipes={recipes} 
+                items={items} 
+                glassware={glassware} 
+                currentUser={currentUser} 
+                appConfig={appConfig} 
+                onSync={syncData} 
+                setRecipes={setRecipes} 
             />
         )}
       </main>
@@ -739,8 +782,8 @@ const NavItem = ({ active, onClick, label, icon, badge, small, collapsed }: any)
       <svg className={`${small ? 'w-3.5 h-3.5' : 'w-4 h-4'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} /></svg>
       {!collapsed && <span>{label}</span>}
     </div>
-    {!collapsed && badge > 0 && <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded font-black">{badge}</span>}
-    {collapsed && badge > 0 && <div className="absolute top-0 right-0 w-2 h-2 bg-rose-500 rounded-full"></div>}
+    {!collapsed && badge > 0 && <span className="bg-pink-500 text-white text-[9px] px-1.5 py-0.5 rounded font-black">{badge}</span>}
+    {collapsed && badge > 0 && <div className="absolute top-0 right-0 w-2 h-2 bg-pink-500 rounded-full"></div>}
   </button>
 );
 

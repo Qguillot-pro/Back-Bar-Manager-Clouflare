@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
-import { Category, StockItem, StorageSpace, Format, StockPriority, StockConsigne, User, DLCProfile, UserRole, AppConfig } from '../types';
+import { Category, StockItem, StorageSpace, Format, StockPriority, StockConsigne, User, DLCProfile, UserRole, AppConfig, Glassware } from '../types';
 import PriorityConfig from './PriorityConfig';
+import GlasswareConfig from './GlasswareConfig';
 
 interface ConfigProps {
   setItems: React.Dispatch<React.SetStateAction<StockItem[]>>;
@@ -24,13 +25,16 @@ interface ConfigProps {
   onSync: (action: string, payload: any) => void;
   appConfig: AppConfig;
   setAppConfig: React.Dispatch<React.SetStateAction<AppConfig>>;
+  glassware?: Glassware[];
+  setGlassware?: React.Dispatch<React.SetStateAction<Glassware[]>>;
 }
 
 const Configuration: React.FC<ConfigProps> = ({ 
   setItems, setStorages, setFormats, storages, formats, priorities, setPriorities, consignes, setConsignes, items,
-  categories, setCategories, users, setUsers, currentUser, dlcProfiles, setDlcProfiles, onSync, appConfig, setAppConfig
+  categories, setCategories, users, setUsers, currentUser, dlcProfiles, setDlcProfiles, onSync, appConfig, setAppConfig,
+  glassware = [], setGlassware
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc'>('general');
+  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware'>('general');
   
   // New Item States
   const [itemName, setItemName] = useState('');
@@ -91,7 +95,9 @@ const Configuration: React.FC<ConfigProps> = ({
 
   const handleConfigChange = (field: keyof AppConfig, value: any) => {
       setAppConfig(prev => ({ ...prev, [field]: value }));
-      onSync('SAVE_CONFIG', { key: 'temp_item_duration', value: value });
+      // On sauvegarde avec une clé en snake_case pour la DB
+      const key = field === 'tempItemDuration' ? 'temp_item_duration' : 'default_margin';
+      onSync('SAVE_CONFIG', { key, value });
   };
 
   const deleteFormat = (id: string) => {
@@ -238,6 +244,7 @@ const Configuration: React.FC<ConfigProps> = ({
         <button onClick={() => setActiveSubTab('priorities')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'priorities' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Priorités Stock</button>
         {currentUser?.role === 'ADMIN' && (
           <>
+            <button onClick={() => setActiveSubTab('glassware')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'glassware' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Verrerie</button>
             <button onClick={() => setActiveSubTab('users')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Utilisateurs</button>
             <button onClick={() => setActiveSubTab('dlc')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'dlc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Configuration DLC</button>
           </>
@@ -380,20 +387,35 @@ const Configuration: React.FC<ConfigProps> = ({
             </div>
 
             <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
-                <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>Durée de vie Articles Temporaires</h3>
-                <p className="text-[10px] text-slate-400 font-medium">Les articles temporaires non intégrés après cette durée seront automatiquement supprimés.</p>
-                <select 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none uppercase text-xs cursor-pointer focus:ring-2 focus:ring-amber-200 transition-all"
-                    value={appConfig.tempItemDuration}
-                    onChange={(e) => handleConfigChange('tempItemDuration', e.target.value)}
-                >
-                    <option value="3_DAYS">3 Jours</option>
-                    <option value="7_DAYS">7 Jours</option>
-                    <option value="14_DAYS">14 Jours</option>
-                    <option value="1_MONTH">1 Mois</option>
-                    <option value="3_MONTHS">3 Mois</option>
-                    <option value="INFINITE">Infini (Ne jamais supprimer)</option>
-                </select>
+                <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>Configuration Avancée</h3>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Durée Articles Temporaires</label>
+                        <select 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none uppercase text-xs cursor-pointer focus:ring-2 focus:ring-amber-200 transition-all"
+                            value={appConfig.tempItemDuration}
+                            onChange={(e) => handleConfigChange('tempItemDuration', e.target.value)}
+                        >
+                            <option value="3_DAYS">3 Jours</option>
+                            <option value="7_DAYS">7 Jours</option>
+                            <option value="14_DAYS">14 Jours</option>
+                            <option value="1_MONTH">1 Mois</option>
+                            <option value="3_MONTHS">3 Mois</option>
+                            <option value="INFINITE">Infini</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Marge Cible Cocktails (%)</label>
+                        <input 
+                            type="number" 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none" 
+                            value={appConfig.defaultMargin || 82} 
+                            onChange={(e) => handleConfigChange('defaultMargin', parseInt(e.target.value))} 
+                        />
+                    </div>
+                </div>
             </div>
           </div>
         </div>
@@ -401,6 +423,10 @@ const Configuration: React.FC<ConfigProps> = ({
       
       {activeSubTab === 'priorities' && (
         <PriorityConfig items={items} storages={storages} priorities={priorities} setPriorities={setPriorities} categories={categories} onSync={onSync} />
+      )}
+
+      {activeSubTab === 'glassware' && setGlassware && (
+          <GlasswareConfig glassware={glassware} setGlassware={setGlassware} onSync={onSync} />
       )}
       
       {activeSubTab === 'users' && currentUser?.role === 'ADMIN' && (
