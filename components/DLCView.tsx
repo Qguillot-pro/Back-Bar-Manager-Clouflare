@@ -13,25 +13,12 @@ interface DLCViewProps {
 const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, storages, onDelete }) => {
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [selectedDlcId, setSelectedDlcId] = useState<string | null>(null);
-  const [quantityLost, setQuantityLost] = useState<number>(0);
+  const [quantityLost, setQuantityLost] = useState<string>('');
 
   const activeDlcs = useMemo(() => {
-    // 1. Trier l'historique par date d'ouverture décroissante (le plus récent en premier)
-    const sortedHistory = [...dlcHistory].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime());
-
-    // 2. Map pour dédoublonner par clé unique (ItemId + StorageId)
-    const uniqueMap = new Map<string, DLCHistory>();
-
-    sortedHistory.forEach(entry => {
-        const key = `${entry.itemId}-${entry.storageId}`;
-        // Comme on a trié par date décroissante, la première occurrence est la plus récente
-        if (!uniqueMap.has(key)) {
-            uniqueMap.set(key, entry);
-        }
-    });
-
-    // 3. Convertir en tableau et enrichir les données
-    return Array.from(uniqueMap.values()).map(entry => {
+    // On ne dédoublonne plus : on affiche TOUS les éléments de l'historique (bouteilles ouvertes)
+    // pour permettre de supprimer les anciennes entrées si nécessaire.
+    return dlcHistory.map(entry => {
       const item = items.find(i => i.id === entry.itemId);
       const storage = storages.find(s => s.id === entry.storageId);
       const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
@@ -70,16 +57,20 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
 
   const handleOpenLossModal = (id: string) => {
       setSelectedDlcId(id);
-      setQuantityLost(0);
+      setQuantityLost(''); // Vide par défaut
       setLossModalOpen(true);
   };
 
   const handleConfirmLoss = () => {
       if (selectedDlcId) {
-          onDelete(selectedDlcId, quantityLost);
+          const normalized = quantityLost.replace(',', '.');
+          const qty = normalized ? parseFloat(normalized) : 0;
+          
+          onDelete(selectedDlcId, qty);
+          
           setLossModalOpen(false);
           setSelectedDlcId(null);
-          setQuantityLost(0);
+          setQuantityLost('');
       }
   };
 
@@ -96,12 +87,16 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
                   
                   <div className="flex justify-center mb-6">
                       <input 
-                        type="number" 
-                        step="0.1"
-                        min="0"
-                        className="w-32 bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 text-center font-black text-3xl outline-none focus:border-rose-500 focus:bg-white transition-all text-slate-900"
+                        type="text" 
+                        inputMode="decimal"
+                        className="w-32 bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 text-center font-black text-3xl outline-none focus:border-rose-500 focus:bg-white transition-all text-slate-900 placeholder-slate-300"
                         value={quantityLost}
-                        onChange={(e) => setQuantityLost(parseFloat(e.target.value) || 0)}
+                        placeholder="0"
+                        onChange={(e) => {
+                            if (/^\d*([.,]\d*)?$/.test(e.target.value)) {
+                                setQuantityLost(e.target.value);
+                            }
+                        }}
                       />
                   </div>
 
@@ -137,7 +132,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
             <tr>
               <th className="p-6">Produit</th>
               <th className="p-6">Espace</th>
-              <th className="p-6">Ouvert le (Dernier)</th>
+              <th className="p-6">Ouvert le</th>
               <th className="p-6">Échéance</th>
               <th className="p-6">Temps Restant</th>
               <th className="p-6 text-center">Action</th>
