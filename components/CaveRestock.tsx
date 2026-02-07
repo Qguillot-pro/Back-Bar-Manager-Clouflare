@@ -23,6 +23,7 @@ interface NeedDetail {
   minQty: number;
   gap: number;
   priority: number;
+  isRedirected?: boolean; // Indique si le besoin vient d'un autre stock (décimal)
 }
 
 // Structure regroupée par article
@@ -85,92 +86,125 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
   // --- LOGIQUE CALCUL BESOINS ---
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
-    const map = new Map<string, AggregatedNeed>();
+    // Map (Item ID) -> Map (Storage ID) -> { minQty: number, isRedirected: boolean }
+    const effectiveConsignes = new Map<string, Map<string, { minQty: number, isRedirected: boolean }>>();
+    
+    // 1. Initialisation avec les consignes statiques
+    consignes.forEach(c => {
+        if (!effectiveConsignes.has(c.itemId)) effectiveConsignes.set(c.itemId, new Map());
+        effectiveConsignes.get(c.itemId)!.set(c.storageId, { minQty: c.minQuantity, isRedirected: false });
+    });
 
-    // Helper: Ajouter un besoin à la map
-    const addNeed = (item: StockItem, storage: StorageSpace, gap: number, currentQty: number, minQty: number, priority: number) => {
-        if (!map.has(item.id)) {
-            map.set(item.id, {
-                item,
-                totalGap: 0,
-                maxPriority: 0,
-                details: [],
-                isUrgent: isUrgentUnfulfilled(item.id)
-            });
-        }
-        const entry = map.get(item.id)!;
+    // 2. Gestion des Consignes Décimales (Décalage de besoin)
+    // On parcourt les items qui ont des consignes
+    items.forEach(item => {
+        const itemConsignes = consignes.filter(c => c.itemId === item.id);
         
-        // Vérifie si le détail existe déjà (pour cumuler si besoin, ex: redirection de stock)
-        const existingDetail = entry.details.find(d => d.storage.id === storage.id);
-        if (existingDetail) {
-            existingDetail.gap += gap;
-        } else {
-            entry.details.push({
-                storage,
-                currentQty,
-                minQty,
-                gap,
-                priority
-            });
-        }
-        
-        entry.totalGap += gap;
-        entry.maxPriority = Math.max(entry.maxPriority, priority);
-        if (isUrgentUnfulfilled(item.id)) entry.isUrgent = true;
-    };
+        // Liste des priorités pour cet item (exclut Surstock)
+        const itemPriorities = priorities
+            .filter(p => p.itemId === item.id && p.storageId !== 's0')
+            .sort((a, b) => b.priority - a.priority); // Descendant (Plus haute priorité en premier)
 
-    consignes.forEach(consigne => {
-        const item = items.find(i => i.id === consigne.itemId);
-        const storage = storages.find(s => s.id === consigne.storageId);
-        
-        if (!item || !storage) return;
-
-        // Récupération de la priorité
-        const priorityObj = priorities.find(p => p.itemId === item.id && p.storageId === storage.id);
-        let priority = priorityObj ? priorityObj.priority : 0;
-        if (storage.id === 's0') priority = 11; // Surstock = Prio max implicite pour affichage
-
-        // Exclusion stricte priorité 0 (sauf s0)
-        if (priority === 0) return;
-
-        const level = stockLevels.find(l => l.itemId === consigne.itemId && l.storageId === consigne.storageId);
-        const currentQty = level?.currentQuantity || 0;
-        const minQty = consigne.minQuantity;
-
-        // LOGIQUE SPÉCIALE : Consigne Décimale (< 1)
-        // Si consigne = 0.X et stock < consigne -> On déclenche +1 mais vers le stock de priorité supérieure
-        if (minQty > 0 && minQty < 1 && currentQty < minQty) {
-            // On cherche un autre stockage pour cet item avec une priorité > à l'actuelle
-            // Trie par priorité ascendante
-            const otherPriorities = priorities
-                .filter(p => p.itemId === item.id && p.storageId !== storage.id)
-                .sort((a, b) => a.priority - b.priority);
+        itemConsignes.forEach(c => {
+            const minQty = c.minQuantity;
             
-            // Trouver le premier stockage avec une priorité supérieure
-            const targetPrio = otherPriorities.find(p => p.priority > priority);
-            
-            if (targetPrio) {
-                const targetStorage = storages.find(s => s.id === targetPrio.storageId);
-                if (targetStorage) {
-                    // On ajoute +1 au besoin du stockage cible
-                    // On note currentQty = 0 pour l'affichage car c'est un besoin "virtuel" ajouté
-                    addNeed(item, targetStorage, 1, 0, 0, targetPrio.priority); 
-                    return; // Stop ici pour cette consigne
+            // Si consigne décimale (ex: 0.5)
+            if (minQty > 0 && minQty < 1) {
+                const level = stockLevels.find(l => l.itemId === item.id && l.storageId === c.storageId);
+                const currentQty = level?.currentQuantity || 0;
+
+                // Si le stock est sous la consigne (ex: 0.4 < 0.5)
+                if (currentQty < minQty) {
+                    const currentPriority = priorities.find(p => p.itemId === item.id && p.storageId === c.storageId)?.priority || 0;
+                    
+                    // Trouver le stockage avec la priorité la plus haute (supérieure à l'actuelle)
+                    // On cherche dans la liste triée le premier qui a une priorité > currentPriority
+                    // Note: Si on veut juste "le supérieur", on prend le max global. 
+                    // Ici on prend le max disponible qui n'est pas le courant.
+                    const targetPrio = itemPriorities.find(p => p.priority > currentPriority);
+
+                    if (targetPrio) {
+                        const targetStorageId = targetPrio.storageId;
+                        
+                        // Initialiser la map pour l'item si pas fait (cas rare si pas de consigne initiale sur la cible)
+                        if (!effectiveConsignes.has(item.id)) effectiveConsignes.set(item.id, new Map());
+                        const itemMap = effectiveConsignes.get(item.id)!;
+
+                        // Incrémenter la consigne de la cible de +1
+                        const currentTargetData = itemMap.get(targetStorageId) || { minQty: 0, isRedirected: false };
+                        itemMap.set(targetStorageId, { 
+                            minQty: currentTargetData.minQty + 1, 
+                            isRedirected: true // Marqueur pour l'affichage
+                        });
+
+                        // Annuler le besoin sur la source (puisqu'on a transféré la demande)
+                        // On met la consigne effective à 0 pour ce tour de calcul
+                        const sourceData = itemMap.get(c.storageId) || { minQty: 0, isRedirected: false };
+                        itemMap.set(c.storageId, { ...sourceData, minQty: 0 });
+                    }
                 }
             }
-            // Si pas de priorité supérieure trouvée, on continue le flux standard (fallback)
-        }
+        });
+    });
 
-        // LOGIQUE STANDARD
-        // Une bouteille entamée (décimale) compte comme 1 pour le seuil
-        const effectiveQty = Math.ceil(currentQty);
+    // 3. Calcul des Besoins basés sur les Consignes Effectives
+    const map = new Map<string, AggregatedNeed>();
 
-        if (effectiveQty < minQty) {
-            const gap = Math.ceil(minQty - effectiveQty); // Toujours demander des entiers
-            if (gap > 0) {
-                addNeed(item, storage, gap, currentQty, minQty, priority);
+    const getPrio = (itemId: string, storageId: string) => {
+        if (storageId === 's0') return 11;
+        return priorities.find(p => p.itemId === itemId && p.storageId === storageId)?.priority || 0;
+    };
+
+    effectiveConsignes.forEach((storageMap, itemId) => {
+        const item = items.find(i => i.id === itemId);
+        if (!item) return;
+
+        storageMap.forEach((data, storageId) => {
+            if (data.minQty <= 0) return; // Pas de besoin si consigne 0 ou annulée
+
+            const storage = storages.find(s => s.id === storageId);
+            if (!storage) return;
+
+            const priority = getPrio(itemId, storageId);
+            // Ignorer priorité 0 (sauf s0)
+            if (priority === 0 && storageId !== 's0') return;
+
+            const level = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
+            const currentQty = level?.currentQuantity || 0;
+
+            // Calcul du manque
+            // On compte les bouteilles entamées comme 1 unité présente (Math.ceil)
+            const effectiveQty = Math.ceil(currentQty);
+            
+            if (effectiveQty < data.minQty) {
+                const gap = Math.ceil(data.minQty - effectiveQty);
+                
+                if (gap > 0) {
+                    if (!map.has(itemId)) {
+                        map.set(itemId, {
+                            item,
+                            totalGap: 0,
+                            maxPriority: 0,
+                            details: [],
+                            isUrgent: isUrgentUnfulfilled(itemId)
+                        });
+                    }
+                    const entry = map.get(itemId)!;
+                    
+                    entry.details.push({
+                        storage,
+                        currentQty,
+                        minQty: data.minQty,
+                        gap,
+                        priority,
+                        isRedirected: data.isRedirected
+                    });
+                    
+                    entry.totalGap += gap;
+                    entry.maxPriority = Math.max(entry.maxPriority, priority);
+                }
             }
-        }
+        });
     });
 
     const list = Array.from(map.values());
@@ -262,6 +296,11 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Manque à combler (Entier)</p>
                       <p className="text-4xl font-black text-rose-500">{selectedDetail.detail.gap}</p>
+                      {selectedDetail.detail.isRedirected && (
+                          <p className="text-[10px] font-bold text-indigo-500 mt-2 bg-indigo-50 px-2 py-1 rounded-lg inline-block">
+                              Besoin déclenché par un stock critique ailleurs
+                          </p>
+                      )}
                   </div>
 
                   <div className="grid grid-cols-1 gap-3">
@@ -431,20 +470,22 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                                 {agg.details.map((detail) => {
                                     const alreadyDone = isRestockedToday(agg.item.id, detail.storage.id);
                                     const isPartial = partialRestocks.has(`${agg.item.id}-${detail.storage.id}`);
-                                    const isRedirected = detail.minQty === 0; // Si minQty est 0, c'est un besoin injecté
                                     
                                     return (
-                                        <div key={detail.storage.id} className={`flex items-center justify-between p-2 rounded-xl border ${isRedirected ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50/50 border-slate-100'}`}>
+                                        <div key={detail.storage.id} className={`flex items-center justify-between p-2 rounded-xl border ${detail.isRedirected ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50/50 border-slate-100'}`}>
                                             <div className="flex flex-col">
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-xs font-black text-slate-700 uppercase">{detail.storage.name}</span>
                                                     <span className={`text-[8px] font-bold px-1.5 rounded text-white ${detail.priority >= 8 ? 'bg-rose-400' : 'bg-slate-400'}`}>P{detail.priority}</span>
                                                     {alreadyDone && <span className="bg-emerald-100 text-emerald-600 text-[8px] font-black px-1.5 rounded uppercase flex items-center gap-1">✓ Fait</span>}
                                                     {isPartial && <span className="bg-amber-100 text-amber-600 text-[8px] font-black px-1.5 rounded uppercase">Partiel</span>}
-                                                    {isRedirected && <span className="bg-indigo-100 text-indigo-600 text-[8px] font-black px-1.5 rounded uppercase">Redirection</span>}
+                                                    {detail.isRedirected && <span className="bg-indigo-100 text-indigo-600 text-[8px] font-black px-1.5 rounded uppercase">Backup Activé</span>}
                                                 </div>
                                                 <div className="text-[10px] text-slate-400 font-bold mt-0.5">
-                                                    {isRedirected ? 'Stock de sécurité déclenché' : `Stock: ${detail.currentQty} / Cons: ${detail.minQty}`}
+                                                    {detail.isRedirected 
+                                                        ? `Stock: ${detail.currentQty} (Cible Backup)` 
+                                                        : `Stock: ${detail.currentQty} / Cons: ${detail.minQty}`
+                                                    }
                                                 </div>
                                             </div>
 
