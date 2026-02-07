@@ -75,6 +75,15 @@ export interface DLCHistory {
   userName?: string;
 }
 
+export interface Loss {
+  id: string;
+  itemId: string;
+  openedAt: string;
+  discardedAt: string;
+  quantity: number;
+  userName?: string;
+}
+
 export interface StockConsigne {
   itemId: string;
   storageId: string;

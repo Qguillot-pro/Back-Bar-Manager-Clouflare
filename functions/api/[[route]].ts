@@ -52,7 +52,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
-      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques] = await Promise.all([
+      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses] = await Promise.all([
         pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
         pool.query('SELECT * FROM users'),
         pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
@@ -70,7 +70,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 200'),
         pool.query('SELECT * FROM glassware ORDER BY name ASC'),
         pool.query('SELECT * FROM recipes ORDER BY name ASC'),
-        pool.query('SELECT * FROM techniques ORDER BY name ASC')
+        pool.query('SELECT * FROM techniques ORDER BY name ASC'),
+        pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 500')
       ]);
 
       const configMap: any = { tempItemDuration: '14_DAYS', defaultMargin: 82 };
@@ -185,11 +186,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               status: r.status,
               createdBy: r.created_by,
               createdAt: r.created_at,
-              ingredients: r.ingredients // PostgreSQL JSONB is automatically parsed by node-postgres
+              ingredients: r.ingredients
           })),
           techniques: techniques.rows.map(t => ({
               id: t.id,
               name: t.name
+          })),
+          losses: losses.rows.map(l => ({
+              id: l.id,
+              itemId: l.item_id,
+              openedAt: l.opened_at,
+              discardedAt: l.discarded_at,
+              quantity: parseFloat(l.quantity || '0'),
+              userName: l.user_name
           }))
       };
 
@@ -294,6 +303,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
         case 'DELETE_DLC_HISTORY': {
             await pool.query('DELETE FROM dlc_history WHERE id = $1', [payload.id]);
+            break;
+        }
+
+        case 'SAVE_LOSS': {
+            const { id, itemId, openedAt, discardedAt, quantity, userName } = payload;
+            await pool.query(`
+                INSERT INTO losses (id, item_id, opened_at, discarded_at, quantity, user_name)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [id, itemId, openedAt, discardedAt, quantity, userName]);
             break;
         }
 

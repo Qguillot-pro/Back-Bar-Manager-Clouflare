@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -43,10 +43,11 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({ tempItemDuration: '14_DAYS', defaultMargin: 82 });
   
-  // New States for Recipes
+  // New States for Recipes & Losses
   const [glassware, setGlassware] = useState<Glassware[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [techniques, setTechniques] = useState<Technique[]>([]);
+  const [losses, setLosses] = useState<Loss[]>([]);
   
   const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes'>('dashboard');
   const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); 
@@ -115,6 +116,7 @@ const App: React.FC = () => {
         setGlassware(data.glassware || []);
         setRecipes(data.recipes || []);
         setTechniques(data.techniques || []);
+        setLosses(data.losses || []);
         if (data.appConfig) setAppConfig(data.appConfig);
       } else {
           throw new Error("Structure de données invalide reçue de l'API");
@@ -189,6 +191,7 @@ const App: React.FC = () => {
         setGlassware(d.glassware || []);
         setRecipes(d.recipes || []);
         setTechniques(d.techniques || []);
+        setLosses(d.losses || []);
         if (d.appConfig) setAppConfig(d.appConfig);
       } catch (e) { initDemoData(); }
     } else { initDemoData(); }
@@ -196,10 +199,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!loading && !isOffline) {
-      const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques };
+      const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses };
       localStorage.setItem('barstock_local_db', JSON.stringify(db));
     }
-  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques]);
+  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses]);
 
   const sortedItems = useMemo(() => [...items].filter(i => !!i).sort((a, b) => (a.order || 0) - (b.order || 0)), [items]);
   const sortedStorages = useMemo(() => [...storages].filter(s => !!s).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)), [storages]);
@@ -488,7 +491,30 @@ const App: React.FC = () => {
   };
 
   const handleDeleteItem = (id: string) => { setItems(prev => prev.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); };
-  const handleDeleteDlcHistory = (id: string) => { setDlcHistory(prev => prev.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', {id}); };
+  
+  // Suppression DLC avec gestion de perte optionnelle
+  const handleDeleteDlcHistory = (id: string, qtyLost: number = 0) => { 
+      // 1. Si perte déclarée, on enregistre
+      if (qtyLost > 0) {
+          const dlcItem = dlcHistory.find(h => h.id === id);
+          if (dlcItem) {
+              const loss: Loss = {
+                  id: 'loss_' + Date.now(),
+                  itemId: dlcItem.itemId,
+                  openedAt: dlcItem.openedAt,
+                  discardedAt: new Date().toISOString(),
+                  quantity: qtyLost,
+                  userName: currentUser?.name
+              };
+              setLosses(prev => [loss, ...prev]);
+              syncData('SAVE_LOSS', loss);
+          }
+      }
+
+      // 2. Suppression de l'historique DLC
+      setDlcHistory(prev => prev.filter(h => h.id !== id)); 
+      syncData('DELETE_DLC_HISTORY', {id}); 
+  };
 
   // Logique de mise à jour des commandes (pour le composant Order)
   const handleOrderUpdate = (orderId: string, quantity: number, status: 'PENDING' | 'ORDERED' | 'RECEIVED' = 'PENDING', ruptureDate?: string) => {
@@ -744,7 +770,7 @@ const App: React.FC = () => {
             />
         )}
         
-        {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={sortedStorages} unfulfilledOrders={unfulfilledOrders} onUpdateOrderQuantity={() => {}} formats={formats} />}
+        {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={sortedStorages} unfulfilledOrders={unfulfilledOrders} onUpdateOrderQuantity={() => {}} formats={formats} losses={losses} />}
         {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
         
         {view === 'orders' && (

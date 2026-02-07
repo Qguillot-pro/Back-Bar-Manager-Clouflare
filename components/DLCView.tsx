@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+
+import React, { useMemo, useState } from 'react';
 import { StockItem, DLCHistory, DLCProfile, StorageSpace } from '../types';
 
 interface DLCViewProps {
@@ -6,10 +7,14 @@ interface DLCViewProps {
   dlcHistory: DLCHistory[];
   dlcProfiles: DLCProfile[];
   storages: StorageSpace[];
-  onDelete: (id: string) => void;
+  onDelete: (id: string, qtyLost?: number) => void;
 }
 
 const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, storages, onDelete }) => {
+  const [lossModalOpen, setLossModalOpen] = useState(false);
+  const [selectedDlcId, setSelectedDlcId] = useState<string | null>(null);
+  const [quantityLost, setQuantityLost] = useState<number>(0);
+
   const activeDlcs = useMemo(() => {
     // 1. Trier l'historique par date d'ouverture décroissante (le plus récent en premier)
     const sortedHistory = [...dlcHistory].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime());
@@ -63,8 +68,61 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
     return `${hours}h ${Math.floor((ms % 3600000) / 60000)}min`;
   };
 
+  const handleOpenLossModal = (id: string) => {
+      setSelectedDlcId(id);
+      setQuantityLost(0);
+      setLossModalOpen(true);
+  };
+
+  const handleConfirmLoss = () => {
+      if (selectedDlcId) {
+          onDelete(selectedDlcId, quantityLost);
+          setLossModalOpen(false);
+          setSelectedDlcId(null);
+          setQuantityLost(0);
+      }
+  };
+
   return (
-    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden relative">
+      
+      {/* MODAL PERTE */}
+      {lossModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 relative overflow-hidden text-center">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-rose-500"></div>
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">Sortie de Stock</h3>
+                  <p className="text-slate-500 text-xs font-bold mb-6">Quelle quantité restait-il dans la bouteille jetée ?</p>
+                  
+                  <div className="flex justify-center mb-6">
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        min="0"
+                        className="w-32 bg-slate-50 border-2 border-slate-200 rounded-2xl p-4 text-center font-black text-3xl outline-none focus:border-rose-500 focus:bg-white transition-all text-slate-900"
+                        value={quantityLost}
+                        onChange={(e) => setQuantityLost(parseFloat(e.target.value) || 0)}
+                      />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                      <button 
+                          onClick={() => setLossModalOpen(false)}
+                          className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                      >
+                          Annuler
+                      </button>
+                      <button 
+                          onClick={handleConfirmLoss}
+                          className="py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-rose-200 active:scale-95 transition-all"
+                      >
+                          Confirmer
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
         <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
             <span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>
@@ -112,9 +170,9 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
                 </td>
                 <td className="p-6 text-center">
                     <button 
-                        onClick={() => onDelete(dlc.id)}
+                        onClick={() => handleOpenLossModal(dlc.id)}
                         className="text-slate-300 hover:text-slate-500 hover:bg-white p-2 rounded-xl transition-all border border-transparent hover:border-slate-200"
-                        title="Archiver / Supprimer"
+                        title="Archiver / Jeter"
                     >
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>

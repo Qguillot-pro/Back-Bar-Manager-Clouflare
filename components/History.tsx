@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
-import { Transaction, PendingOrder, StockItem, StorageSpace, UnfulfilledOrder, Format } from '../types';
+import { Transaction, PendingOrder, StockItem, StorageSpace, UnfulfilledOrder, Format, Loss } from '../types';
 
 interface HistoryProps {
   transactions: Transaction[];
@@ -9,12 +10,13 @@ interface HistoryProps {
   unfulfilledOrders: UnfulfilledOrder[];
   onUpdateOrderQuantity?: (orderIds: string[], newQuantity: number) => void;
   formats: Format[];
+  losses?: Loss[];
 }
 
 type PeriodFilter = 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
 
-const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages, unfulfilledOrders, onUpdateOrderQuantity, formats }) => {
-  const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'CLIENT_RUPTURE' | 'STOCK_RUPTURE' | 'RECEIVED'>('MOVEMENTS');
+const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages, unfulfilledOrders, onUpdateOrderQuantity, formats, losses = [] }) => {
+  const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'CLIENT_RUPTURE' | 'STOCK_RUPTURE' | 'RECEIVED' | 'LOSSES'>('MOVEMENTS');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('DAY');
   
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -127,6 +129,12 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
   const filteredPending = useMemo(() => {
       return orders.filter(o => o.status !== 'RECEIVED' && o.ruptureDate && checkDateInFilter(o.ruptureDate));
   }, [orders, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
+
+  const filteredLosses = useMemo(() => {
+      return losses
+        .filter(l => checkDateInFilter(l.discardedAt))
+        .sort((a, b) => new Date(b.discardedAt).getTime() - new Date(a.discardedAt).getTime());
+  }, [losses, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
 
   const displayTransactions = useMemo(() => {
     const grouped: Transaction[] = [];
@@ -250,6 +258,15 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                csvContent += `"${group.dateLabel}","${it.item.name}","${fmt}","${it.item.category}","${it.totalQty}","${it.initialQty}"\n`;
             });
         });
+    } else if (activeTab === 'LOSSES') {
+        filename = `pertes_${periodFilter}_${new Date().toISOString().slice(0,10)}.csv`;
+        csvContent += "Date Jeté,Heure,Date Ouverture,Produit,Quantité Perdue,Utilisateur\n";
+        filteredLosses.forEach(l => {
+            const item = items.find(i => i.id === l.itemId);
+            const d = new Date(l.discardedAt);
+            const openD = l.openedAt ? new Date(l.openedAt).toLocaleDateString() : '-';
+            csvContent += `"${d.toLocaleDateString()}","${d.toLocaleTimeString()}","${openD}","${item?.name || 'Inconnu'}","${l.quantity}","${l.userName || '-'}"\n`;
+        });
     }
 
     const encodedUri = encodeURI(csvContent);
@@ -270,7 +287,8 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
           
           <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-100">
               <button onClick={() => setActiveTab('MOVEMENTS')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Mouvements</button>
-              <button onClick={() => setActiveTab('CLIENT_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'CLIENT_RUPTURE' ? 'bg-rose-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Ruptures Clients</button>
+              <button onClick={() => setActiveTab('LOSSES')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'LOSSES' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Pertes & Gaspillage</button>
+              <button onClick={() => setActiveTab('CLIENT_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'CLIENT_RUPTURE' ? 'bg-rose-400 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Ruptures Clients</button>
               <button onClick={() => setActiveTab('STOCK_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'STOCK_RUPTURE' ? 'bg-amber-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Sous Tension</button>
               <button onClick={() => setActiveTab('RECEIVED')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'RECEIVED' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Reçus</button>
           </div>
@@ -379,6 +397,51 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                     </tbody>
                 </table>
             </div>
+          )}
+
+          {activeTab === 'LOSSES' && (
+              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                  <div className="p-4 bg-rose-50/30 border-b border-rose-100">
+                      <h3 className="text-rose-800 font-black uppercase text-xs tracking-widest flex items-center gap-2">
+                          <svg className="w-4 h-4 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          Pertes & Gaspillage
+                      </h3>
+                  </div>
+                  <table className="w-full text-left">
+                      <thead className="bg-white text-[9px] font-black text-slate-400 uppercase tracking-widest border-b">
+                          <tr>
+                              <th className="p-4">Date Jeté</th>
+                              <th className="p-4">Utilisateur</th>
+                              <th className="p-4">Produit</th>
+                              <th className="p-4">Ouvert le</th>
+                              <th className="p-4 text-right">Quantité Perdue</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                          {filteredLosses.map(l => {
+                              const item = items.find(i => i.id === l.itemId);
+                              return (
+                                  <tr key={l.id} className="hover:bg-rose-50/10 transition-colors">
+                                      <td className="p-4 text-xs font-bold text-slate-600">
+                                          {new Date(l.discardedAt).toLocaleDateString()} <span className="text-slate-400 text-[10px]">{new Date(l.discardedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                      </td>
+                                      <td className="p-4 text-xs font-bold text-slate-800">{l.userName || '-'}</td>
+                                      <td className="p-4 font-black text-slate-900">{item?.name || 'Inconnu'}</td>
+                                      <td className="p-4 text-xs text-slate-500">
+                                          {l.openedAt ? new Date(l.openedAt).toLocaleDateString() : '-'}
+                                      </td>
+                                      <td className="p-4 text-right font-black text-rose-600">
+                                          {l.quantity}
+                                      </td>
+                                  </tr>
+                              );
+                          })}
+                          {filteredLosses.length === 0 && (
+                              <tr><td colSpan={5} className="p-12 text-center text-slate-400 italic text-sm">Aucune perte enregistrée sur cette période.</td></tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
           )}
 
           {activeTab === 'CLIENT_RUPTURE' && (

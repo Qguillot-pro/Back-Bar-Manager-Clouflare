@@ -140,6 +140,15 @@ CREATE TABLE IF NOT EXISTS dlc_history (
     user_name TEXT
 );
 
+CREATE TABLE IF NOT EXISTS losses (
+    id TEXT PRIMARY KEY,
+    item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
+    opened_at TIMESTAMP,
+    discarded_at TIMESTAMP DEFAULT NOW(),
+    quantity NUMERIC DEFAULT 0,
+    user_name TEXT
+);
+
 CREATE TABLE IF NOT EXISTS unfulfilled_orders (
     id TEXT PRIMARY KEY,
     item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
