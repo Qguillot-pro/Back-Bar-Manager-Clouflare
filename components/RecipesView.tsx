@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { Recipe, StockItem, Glassware, User, AppConfig, RecipeIngredient } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Recipe, StockItem, Glassware, User, AppConfig, RecipeIngredient, Technique } from '../types';
 import { generateCocktailWithAI } from '../services/geminiService';
 
 interface RecipesViewProps {
@@ -11,9 +11,10 @@ interface RecipesViewProps {
   appConfig: AppConfig;
   onSync: (action: string, payload: any) => void;
   setRecipes: React.Dispatch<React.SetStateAction<Recipe[]>>;
+  techniques?: Technique[];
 }
 
-const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes }) => {
+const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   
@@ -21,7 +22,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   const [newName, setNewName] = useState('');
   const [newCat, setNewCat] = useState('Signature');
   const [newGlassId, setNewGlassId] = useState('');
-  const [newTech, setNewTech] = useState<Recipe['technique']>('Shaker');
+  const [newTech, setNewTech] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newHistory, setNewHistory] = useState('');
   const [newDecoration, setNewDecoration] = useState('');
@@ -31,17 +32,18 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   // Search State
   const [search, setSearch] = useState('');
 
+  // Initialiser la technique par défaut si disponible
+  useEffect(() => {
+      if (!newTech && techniques.length > 0) {
+          setNewTech(techniques[0].name);
+      }
+  }, [techniques]);
+
   // --- HELPERS ---
   const getFormatValue = (itemId?: string) => {
       if (!itemId) return 0;
       const item = items.find(i => i.id === itemId);
-      // NOTE: Dans une app réelle on chercherait le Format object. Ici on approxime ou on a besoin du Format value dans l'item
-      // On va supposer une valeur par défaut de 70cl si non trouvé car items n'a pas la valeur du format directement
-      // Pour être précis, il faudrait passer 'formats' en props.
-      // Simplification V1: On hardcode ou on estime. 
-      // Amélioration: On va chercher le formatId de l'item, mais on n'a pas la liste formats ici.
-      // On va utiliser un standard de 70cl pour le calcul si manquant.
-      return 70; 
+      return 70; // Valeur par défaut simplifiée, à améliorer avec props formats
   };
 
   const getIngredientCost = (ing: RecipeIngredient) => {
@@ -52,11 +54,11 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       const formatVal = getFormatValue(item.id); 
       if (formatVal === 0) return 0;
 
-      // Conversion basique (tout ramener en cl pour simplifier)
+      // Conversion basique
       let qtyInCl = ing.quantity;
       if (ing.unit === 'ml') qtyInCl = ing.quantity / 10;
-      if (ing.unit === 'dash') qtyInCl = ing.quantity * 0.1; // approx
-      if (ing.unit === 'piece') qtyInCl = 0; // Compliqué pour les pièces (citron), on met 0 ou on estime un coût unitaire si possible
+      if (ing.unit === 'dash') qtyInCl = ing.quantity * 0.1; 
+      if (ing.unit === 'piece') qtyInCl = 0; 
 
       return (item.pricePerUnit / formatVal) * qtyInCl;
   };
@@ -66,7 +68,6 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   };
 
   const margin = appConfig.defaultMargin || 82;
-  // Prix Vente = Coût / (1 - Marge%)
   const calculateSellingPrice = (cost: number) => {
       if (cost === 0) return 0;
       return cost / (1 - (margin / 100));
@@ -85,15 +86,16 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           setNewDesc(result.description?.slice(0, 150) || '');
           setNewHistory(result.history?.slice(0, 150) || '');
           setNewDecoration(result.decoration || '');
-          // Mapping technique approximatif
-          if (['Shaker', 'Verre à mélange', 'Construit', 'Blender', 'Throwing'].includes(result.technique)) {
-              setNewTech(result.technique as any);
+          
+          // Mapping technique (si existe dans la liste, sinon garde l'actuelle ou ajoute temporairement)
+          if (result.technique) {
+              // Vérifie si la technique existe dans la liste, sinon on prend la plus proche ou on laisse l'IA
+              // Ici on laisse l'IA décider, l'utilisateur corrigera si la technique n'est pas dans la liste officielle
+              setNewTech(result.technique);
           }
           
-          // Mapping Ingredients
           const mappedIngs: RecipeIngredient[] = [];
           result.ingredients?.forEach((apiIng: any) => {
-              // Fuzzy match simple
               const foundItem = items.find(i => i.name.toLowerCase().includes(apiIng.name.toLowerCase()));
               mappedIngs.push({
                   itemId: foundItem?.id,
@@ -120,7 +122,6 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       const copy = [...newIngredients];
       copy[idx] = { ...copy[idx], [field]: value };
       
-      // Si on sélectionne un item, on efface le tempName
       if (field === 'itemId' && value) {
           delete copy[idx].tempName;
       }
@@ -154,7 +155,6 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       onSync('SAVE_RECIPE', recipe);
       setViewMode('LIST');
       
-      // Reset form
       setNewName('');
       setNewIngredients([]);
       setNewDesc('');
@@ -283,12 +283,9 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       </div>
                       <div className="space-y-2">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Technique</label>
-                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newTech} onChange={e => setNewTech(e.target.value as any)}>
-                              <option>Shaker</option>
-                              <option>Verre à mélange</option>
-                              <option>Construit</option>
-                              <option>Blender</option>
-                              <option>Throwing</option>
+                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newTech} onChange={e => setNewTech(e.target.value)}>
+                              {techniques.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                              {!techniques.length && <option value="Shaker">Shaker (Défaut)</option>}
                           </select>
                       </div>
                       <div className="space-y-2">

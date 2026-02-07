@@ -143,6 +143,13 @@ export interface Glassware {
   name: string;
   capacity?: number; // en cl
   imageUrl?: string; // Base64 ou URL
+  quantity?: number; // Nouveau
+  lastUpdated?: string; // Nouveau
+}
+
+export interface Technique {
+  id: string;
+  name: string;
 }
 
 export interface RecipeIngredient {
@@ -157,7 +164,7 @@ export interface Recipe {
   name: string;
   category: string; // Ex: Signature, Classique, Mocktail
   glasswareId: string;
-  technique: 'Shaker' | 'Verre à mélange' | 'Construit' | 'Blender' | 'Throwing';
+  technique: string;
   description: string; // Max 150 cars
   history?: string; // Max 150 cars
   ingredients: RecipeIngredient[];

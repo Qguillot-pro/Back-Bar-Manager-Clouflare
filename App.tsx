@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -46,6 +46,7 @@ const App: React.FC = () => {
   // New States for Recipes
   const [glassware, setGlassware] = useState<Glassware[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [techniques, setTechniques] = useState<Technique[]>([]);
   
   const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes'>('dashboard');
   const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); 
@@ -113,6 +114,7 @@ const App: React.FC = () => {
         setMessages(data.messages || []);
         setGlassware(data.glassware || []);
         setRecipes(data.recipes || []);
+        setTechniques(data.techniques || []);
         if (data.appConfig) setAppConfig(data.appConfig);
       } else {
           throw new Error("Structure de données invalide reçue de l'API");
@@ -186,6 +188,7 @@ const App: React.FC = () => {
         setMessages(d.messages || []);
         setGlassware(d.glassware || []);
         setRecipes(d.recipes || []);
+        setTechniques(d.techniques || []);
         if (d.appConfig) setAppConfig(d.appConfig);
       } catch (e) { initDemoData(); }
     } else { initDemoData(); }
@@ -193,10 +196,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!loading && !isOffline) {
-      const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes };
+      const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques };
       localStorage.setItem('barstock_local_db', JSON.stringify(db));
     }
-  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages, glassware, recipes]);
+  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques]);
 
   const sortedItems = useMemo(() => [...items].filter(i => !!i).sort((a, b) => (a.order || 0) - (b.order || 0)), [items]);
   const sortedStorages = useMemo(() => [...storages].filter(s => !!s).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)), [storages]);
@@ -737,6 +740,7 @@ const App: React.FC = () => {
                 dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} 
                 appConfig={appConfig} setAppConfig={setAppConfig}
                 glassware={glassware} setGlassware={setGlassware}
+                techniques={techniques} setTechniques={setTechniques}
             />
         )}
         
@@ -763,7 +767,8 @@ const App: React.FC = () => {
                 currentUser={currentUser} 
                 appConfig={appConfig} 
                 onSync={syncData} 
-                setRecipes={setRecipes} 
+                setRecipes={setRecipes}
+                techniques={techniques} 
             />
         )}
       </main>

@@ -35,7 +35,6 @@ interface AggregatedNeed {
 }
 
 const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, unfulfilledOrders, onCreateTemporaryItem, orders }) => {
-  // On garde selectedNeed pointant vers un détail spécifique pour réutiliser la modale existante
   const [selectedDetail, setSelectedDetail] = useState<{ item: StockItem, detail: NeedDetail } | null>(null);
   const [isTempItemModalOpen, setIsTempItemModalOpen] = useState(false);
   
@@ -64,14 +63,12 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
     });
   };
   
-  // Vérifie si un item est en rupture client "active" (date < 24h)
   const isUrgentUnfulfilled = (itemId: string) => {
       const limit = new Date();
       limit.setHours(limit.getHours() - 24);
       return unfulfilledOrders.some(u => u.itemId === itemId && new Date(u.date) > limit);
   };
 
-  // Vérifie si un item a été déclaré en rupture (via commande ou rupture client) AUJOURD'HUI
   const isRuptureToday = (itemId: string) => {
       const now = new Date();
       const startOfShift = new Date(now);
@@ -80,18 +77,47 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
       }
       startOfShift.setHours(4, 0, 0, 0);
 
-      // Vérif rupture client
       const hasClientRupture = unfulfilledOrders.some(u => u.itemId === itemId && new Date(u.date) >= startOfShift);
-      
-      // Vérif commande "rupture"
       const hasStockRupture = orders.some(o => o.itemId === itemId && o.ruptureDate && new Date(o.ruptureDate) >= startOfShift);
 
       return hasClientRupture || hasStockRupture;
   };
 
-  // Calcul des besoins de réassort regroupés par Article
+  // --- LOGIQUE CALCUL BESOINS ---
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
     const map = new Map<string, AggregatedNeed>();
+
+    // Helper: Ajouter un besoin à la map
+    const addNeed = (item: StockItem, storage: StorageSpace, gap: number, currentQty: number, minQty: number, priority: number) => {
+        if (!map.has(item.id)) {
+            map.set(item.id, {
+                item,
+                totalGap: 0,
+                maxPriority: 0,
+                details: [],
+                isUrgent: isUrgentUnfulfilled(item.id)
+            });
+        }
+        const entry = map.get(item.id)!;
+        
+        // Vérifie si le détail existe déjà (pour cumuler si besoin, ex: redirection de stock)
+        const existingDetail = entry.details.find(d => d.storage.id === storage.id);
+        if (existingDetail) {
+            existingDetail.gap += gap;
+        } else {
+            entry.details.push({
+                storage,
+                currentQty,
+                minQty,
+                gap,
+                priority
+            });
+        }
+        
+        entry.totalGap += gap;
+        entry.maxPriority = Math.max(entry.maxPriority, priority);
+        if (isUrgentUnfulfilled(item.id)) entry.isUrgent = true;
+    };
 
     consignes.forEach(consigne => {
         const item = items.find(i => i.id === consigne.itemId);
@@ -99,71 +125,65 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
         
         if (!item || !storage) return;
 
-        // 1. Récupération de la priorité
+        // Récupération de la priorité
         const priorityObj = priorities.find(p => p.itemId === item.id && p.storageId === storage.id);
         let priority = priorityObj ? priorityObj.priority : 0;
+        if (storage.id === 's0') priority = 11; // Surstock = Prio max implicite pour affichage
 
-        // Exception pour le Surstock (s0) : Priorité implicite élevée si non définie, pour qu'il apparaisse
-        if (storage.id === 's0') {
-            priority = 11;
-        }
-
-        // 2. EXCLUSION STRICTE DES PRIORITÉS 0 (sauf si forcé ci-dessus)
+        // Exclusion stricte priorité 0 (sauf s0)
         if (priority === 0) return;
 
         const level = stockLevels.find(l => l.itemId === consigne.itemId && l.storageId === consigne.storageId);
         const currentQty = level?.currentQuantity || 0;
         const minQty = consigne.minQuantity;
 
-        // RÈGLE SPÉCIALE : Une bouteille entamée (décimale) compte comme une bouteille présente pour le déclenchement
-        // Ex: 2.2 en stock vs Consigne 3 -> Math.ceil(2.2) = 3 -> 3 >= 3 -> Pas de besoin.
+        // LOGIQUE SPÉCIALE : Consigne Décimale (< 1)
+        // Si consigne = 0.X et stock < consigne -> On déclenche +1 mais vers le stock de priorité supérieure
+        if (minQty > 0 && minQty < 1 && currentQty < minQty) {
+            // On cherche un autre stockage pour cet item avec une priorité > à l'actuelle
+            // Trie par priorité ascendante
+            const otherPriorities = priorities
+                .filter(p => p.itemId === item.id && p.storageId !== storage.id)
+                .sort((a, b) => a.priority - b.priority);
+            
+            // Trouver le premier stockage avec une priorité supérieure
+            const targetPrio = otherPriorities.find(p => p.priority > priority);
+            
+            if (targetPrio) {
+                const targetStorage = storages.find(s => s.id === targetPrio.storageId);
+                if (targetStorage) {
+                    // On ajoute +1 au besoin du stockage cible
+                    // On note currentQty = 0 pour l'affichage car c'est un besoin "virtuel" ajouté
+                    addNeed(item, targetStorage, 1, 0, 0, targetPrio.priority); 
+                    return; // Stop ici pour cette consigne
+                }
+            }
+            // Si pas de priorité supérieure trouvée, on continue le flux standard (fallback)
+        }
+
+        // LOGIQUE STANDARD
+        // Une bouteille entamée (décimale) compte comme 1 pour le seuil
         const effectiveQty = Math.ceil(currentQty);
 
-        // Si on est en dessous de la consigne
         if (effectiveQty < minQty) {
-            const gap = minQty - effectiveQty;
-            
+            const gap = Math.ceil(minQty - effectiveQty); // Toujours demander des entiers
             if (gap > 0) {
-                const detail: NeedDetail = {
-                    storage,
-                    currentQty,
-                    minQty,
-                    gap,
-                    priority
-                };
-
-                if (!map.has(item.id)) {
-                    map.set(item.id, {
-                        item,
-                        totalGap: 0,
-                        maxPriority: 0,
-                        details: [],
-                        isUrgent: isUrgentUnfulfilled(item.id)
-                    });
-                }
-
-                const entry = map.get(item.id)!;
-                entry.details.push(detail);
-                entry.totalGap += gap;
-                entry.maxPriority = Math.max(entry.maxPriority, priority);
-                
-                if (isUrgentUnfulfilled(item.id)) entry.isUrgent = true;
+                addNeed(item, storage, gap, currentQty, minQty, priority);
             }
         }
     });
 
     const list = Array.from(map.values());
 
+    // Tri des détails interne par priorité
     list.forEach(agg => {
         agg.details.sort((a, b) => b.priority - a.priority);
     });
 
+    // Tri global
     return list.sort((a, b) => {
         if (a.isUrgent !== b.isUrgent) return (b.isUrgent ? 1 : 0) - (a.isUrgent ? 1 : 0);
-        
-        if (b.maxPriority !== a.maxPriority) {
-            return b.maxPriority - a.maxPriority;
-        }
+        if (b.maxPriority !== a.maxPriority) return b.maxPriority - a.maxPriority;
         return a.item.name.localeCompare(b.item.name);
     });
 
@@ -172,8 +192,6 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
   const groupedNeeds = useMemo(() => {
     const groups: Record<string, AggregatedNeed[]> = {};
     categories.forEach(c => groups[c] = []);
-    
-    // Assurer que la catégorie temporaire existe
     if (!groups['Produits Temporaires']) groups['Produits Temporaires'] = [];
     if (!groups['Autre']) groups['Autre'] = []; 
 
@@ -413,18 +431,20 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                                 {agg.details.map((detail) => {
                                     const alreadyDone = isRestockedToday(agg.item.id, detail.storage.id);
                                     const isPartial = partialRestocks.has(`${agg.item.id}-${detail.storage.id}`);
+                                    const isRedirected = detail.minQty === 0; // Si minQty est 0, c'est un besoin injecté
                                     
                                     return (
-                                        <div key={detail.storage.id} className="flex items-center justify-between bg-slate-50/50 p-2 rounded-xl border border-slate-100">
+                                        <div key={detail.storage.id} className={`flex items-center justify-between p-2 rounded-xl border ${isRedirected ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50/50 border-slate-100'}`}>
                                             <div className="flex flex-col">
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-xs font-black text-slate-700 uppercase">{detail.storage.name}</span>
                                                     <span className={`text-[8px] font-bold px-1.5 rounded text-white ${detail.priority >= 8 ? 'bg-rose-400' : 'bg-slate-400'}`}>P{detail.priority}</span>
                                                     {alreadyDone && <span className="bg-emerald-100 text-emerald-600 text-[8px] font-black px-1.5 rounded uppercase flex items-center gap-1">✓ Fait</span>}
                                                     {isPartial && <span className="bg-amber-100 text-amber-600 text-[8px] font-black px-1.5 rounded uppercase">Partiel</span>}
+                                                    {isRedirected && <span className="bg-indigo-100 text-indigo-600 text-[8px] font-black px-1.5 rounded uppercase">Redirection</span>}
                                                 </div>
                                                 <div className="text-[10px] text-slate-400 font-bold mt-0.5">
-                                                    Stock: {detail.currentQty} <span className="text-slate-300">/</span> Cons: {detail.minQty}
+                                                    {isRedirected ? 'Stock de sécurité déclenché' : `Stock: ${detail.currentQty} / Cons: ${detail.minQty}`}
                                                 </div>
                                             </div>
 

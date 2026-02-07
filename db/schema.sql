@@ -165,7 +165,17 @@ CREATE TABLE IF NOT EXISTS glassware (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     capacity NUMERIC,
-    image_url TEXT -- Base64 string for small images
+    image_url TEXT,
+    quantity INTEGER DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE glassware ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 0;
+ALTER TABLE glassware ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS techniques (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS recipes (
@@ -211,4 +221,8 @@ INSERT INTO dlc_profiles (id, name, duration_hours) VALUES
 ('d1', '24 Heures', 24), ('d2', '2 Jours', 48), ('d3', '3 Jours', 72),
 ('d4', '5 Jours', 120), ('d5', '1 Semaine', 168), ('d6', '2 Semaines', 336),
 ('d7', '1 Mois', 720)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO techniques (id, name) VALUES
+('t1', 'Shaker'), ('t2', 'Verre à mélange'), ('t3', 'Construit'), ('t4', 'Blender'), ('t5', 'Throwing')
 ON CONFLICT (id) DO NOTHING;

@@ -52,7 +52,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
-      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes] = await Promise.all([
+      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques] = await Promise.all([
         pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
         pool.query('SELECT * FROM users'),
         pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
@@ -69,7 +69,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         pool.query('SELECT * FROM app_config'),
         pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 200'),
         pool.query('SELECT * FROM glassware ORDER BY name ASC'),
-        pool.query('SELECT * FROM recipes ORDER BY name ASC')
+        pool.query('SELECT * FROM recipes ORDER BY name ASC'),
+        pool.query('SELECT * FROM techniques ORDER BY name ASC')
       ]);
 
       const configMap: any = { tempItemDuration: '14_DAYS', defaultMargin: 82 };
@@ -166,7 +167,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               id: g.id,
               name: g.name,
               capacity: parseFloat(g.capacity || '0'),
-              imageUrl: g.image_url
+              imageUrl: g.image_url,
+              quantity: g.quantity || 0,
+              lastUpdated: g.last_updated
           })),
           recipes: recipes.rows.map(r => ({
               id: r.id,
@@ -183,6 +186,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               createdBy: r.created_by,
               createdAt: r.created_at,
               ingredients: r.ingredients // PostgreSQL JSONB is automatically parsed by node-postgres
+          })),
+          techniques: techniques.rows.map(t => ({
+              id: t.id,
+              name: t.name
           }))
       };
 
@@ -441,17 +448,36 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         // --- RECETTES & VERRERIE ---
 
         case 'SAVE_GLASSWARE': {
-            const { id, name, capacity, imageUrl } = payload;
+            const { id, name, capacity, imageUrl, quantity } = payload;
             await pool.query(`
-                INSERT INTO glassware (id, name, capacity, image_url)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, capacity = EXCLUDED.capacity, image_url = EXCLUDED.image_url
-            `, [id, name, capacity, imageUrl]);
+                INSERT INTO glassware (id, name, capacity, image_url, quantity, last_updated)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                ON CONFLICT (id) DO UPDATE SET 
+                    name = EXCLUDED.name, 
+                    capacity = EXCLUDED.capacity, 
+                    image_url = EXCLUDED.image_url,
+                    quantity = EXCLUDED.quantity,
+                    last_updated = NOW()
+            `, [id, name, capacity, imageUrl, quantity]);
             break;
         }
 
         case 'DELETE_GLASSWARE': {
             await pool.query('DELETE FROM glassware WHERE id = $1', [payload.id]);
+            break;
+        }
+
+        case 'SAVE_TECHNIQUE': {
+            const { id, name } = payload;
+            await pool.query(`
+                INSERT INTO techniques (id, name) VALUES ($1, $2)
+                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+            `, [id, name]);
+            break;
+        }
+
+        case 'DELETE_TECHNIQUE': {
+            await pool.query('DELETE FROM techniques WHERE id = $1', [payload.id]);
             break;
         }
 
