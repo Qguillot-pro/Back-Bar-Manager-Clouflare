@@ -63,6 +63,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [newDlcName, setNewDlcName] = useState('');
   const [newDlcDuration, setNewDlcDuration] = useState(24);
   const [newDlcUnit, setNewDlcUnit] = useState<'HOURS' | 'DAYS'>('HOURS');
+  const [newDlcType, setNewDlcType] = useState<'OPENING' | 'PRODUCTION'>('OPENING');
 
   React.useEffect(() => {
       if (!itemCat && categories && categories.length > 0) setItemCat(categories[0]);
@@ -181,12 +182,14 @@ const Configuration: React.FC<ConfigProps> = ({
     const newProfile: DLCProfile = {
       id: 'd' + Date.now(),
       name: newDlcName,
-      durationHours: durationInHours
+      durationHours: durationInHours,
+      type: newDlcType
     };
     setDlcProfiles(prev => [...prev, newProfile]);
     onSync('SAVE_DLC_PROFILE', newProfile);
     setNewDlcName('');
     setNewDlcDuration(24);
+    setNewDlcType('OPENING');
   };
 
   const deleteDlcProfile = (id: string) => {
@@ -257,8 +260,6 @@ const Configuration: React.FC<ConfigProps> = ({
 
       {activeSubTab === 'general' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* ... [CODE EXISTING FOR GENERAL TAB] ... */}
-          {/* Note: I'm keeping the structure but omitting the unchanged parts for brevity as requested by the system prompt, but for safety I will include the whole block to ensure correctness */}
           <div className="space-y-8">
             <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
               <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>Nouveau Produit</h3>
@@ -276,7 +277,7 @@ const Configuration: React.FC<ConfigProps> = ({
                   </label>
                   <div className="border-t border-slate-200 my-1"></div>
                   <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500" checked={itemIsDlc} onChange={e => setItemIsDlc(e.target.checked)} /><span className="font-bold text-sm text-slate-700">Activer le Tracking DLC</span></label>
-                  {itemIsDlc && (<select className="w-full bg-white p-3 border rounded-xl font-bold text-sm outline-none" value={itemDlcProfile} onChange={e => setItemDlcProfile(e.target.value)}><option value="">-- Sélectionner un profil --</option>{dlcProfiles.map(p => (<option key={p.id} value={p.id}>{p.name} ({p.durationHours}h)</option>))}</select>)}
+                  {itemIsDlc && (<select className="w-full bg-white p-3 border rounded-xl font-bold text-sm outline-none" value={itemDlcProfile} onChange={e => setItemDlcProfile(e.target.value)}><option value="">-- Sélectionner un profil --</option>{dlcProfiles.map(p => (<option key={p.id} value={p.id}>{p.name} ({p.durationHours}h) - {p.type === 'PRODUCTION' ? 'Prod' : 'Ouv'}</option>))}</select>)}
                 </div>
               </div>
               <button onClick={addProduct} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700">Ajouter</button>
@@ -404,26 +405,58 @@ const Configuration: React.FC<ConfigProps> = ({
       {activeSubTab === 'dlc' && currentUser?.role === 'ADMIN' && (
         <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
            <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>Profils de DLC</h3>
-           <div className="mb-8 p-6 bg-amber-50 rounded-3xl border border-amber-100 flex flex-col md:flex-row gap-4 items-end">
-             <div className="flex-1 w-full space-y-2">
-                <label className="text-[9px] font-black text-amber-600 uppercase tracking-widest ml-1">Nom du profil</label>
-                <input type="text" className="w-full bg-white border border-amber-200 rounded-2xl p-4 font-bold outline-none" value={newDlcName} onChange={(e) => setNewDlcName(e.target.value)} />
+           <div className="mb-8 p-6 bg-amber-50 rounded-3xl border border-amber-100 flex flex-col gap-4">
+             <div className="flex flex-col md:flex-row gap-4 items-end">
+                <div className="flex-1 w-full space-y-2">
+                    <label className="text-[9px] font-black text-amber-600 uppercase tracking-widest ml-1">Nom du profil</label>
+                    <input type="text" className="w-full bg-white border border-amber-200 rounded-2xl p-4 font-bold outline-none" value={newDlcName} onChange={(e) => setNewDlcName(e.target.value)} />
+                </div>
+                <div className="w-full md:w-32 space-y-2">
+                    <label className="text-[9px] font-black text-amber-600 uppercase tracking-widest ml-1">Durée</label>
+                    <input type="number" min="1" className="w-full bg-white border border-amber-200 rounded-2xl p-4 font-bold outline-none text-center" value={newDlcDuration} onChange={(e) => setNewDlcDuration(parseInt(e.target.value) || 0)} />
+                </div>
+                <div className="w-full md:w-32 space-y-2">
+                    <label className="text-[9px] font-black text-amber-600 uppercase tracking-widest ml-1">Unité</label>
+                    <select className="w-full bg-white border border-amber-200 rounded-2xl p-4 font-bold outline-none" value={newDlcUnit} onChange={(e) => setNewDlcUnit(e.target.value as 'HOURS' | 'DAYS')}><option value="HOURS">Heure(s)</option><option value="DAYS">Jour(s)</option></select>
+                </div>
              </div>
-             <div className="w-full md:w-48 space-y-2">
-                <label className="text-[9px] font-black text-amber-600 uppercase tracking-widest ml-1">Durée</label>
-                <input type="number" min="1" className="w-full bg-white border border-amber-200 rounded-2xl p-4 font-bold outline-none text-center" value={newDlcDuration} onChange={(e) => setNewDlcDuration(parseInt(e.target.value) || 0)} />
+             
+             <div className="space-y-2 w-full">
+                 <label className="text-[9px] font-black text-amber-600 uppercase tracking-widest ml-1">Type de déclenchement</label>
+                 <div className="flex gap-4">
+                     <label className="flex items-center gap-2 bg-white px-4 py-3 rounded-2xl border border-amber-200 cursor-pointer flex-1">
+                         <input type="radio" name="dlcType" value="OPENING" checked={newDlcType === 'OPENING'} onChange={() => setNewDlcType('OPENING')} className="text-amber-500 focus:ring-amber-500" />
+                         <div className="flex flex-col">
+                             <span className="font-bold text-sm text-slate-700">À l'Ouverture / Sortie</span>
+                             <span className="text-[10px] text-slate-400">Le décompte commence quand on sort la bouteille (Mouvements)</span>
+                         </div>
+                     </label>
+                     <label className="flex items-center gap-2 bg-white px-4 py-3 rounded-2xl border border-amber-200 cursor-pointer flex-1">
+                         <input type="radio" name="dlcType" value="PRODUCTION" checked={newDlcType === 'PRODUCTION'} onChange={() => setNewDlcType('PRODUCTION')} className="text-amber-500 focus:ring-amber-500" />
+                         <div className="flex flex-col">
+                             <span className="font-bold text-sm text-slate-700">À la Production / Entrée</span>
+                             <span className="text-[10px] text-slate-400">Le décompte commence dès l'entrée en stock ou remontée cave (Ex: Jus, Sirops)</span>
+                         </div>
+                     </label>
+                 </div>
              </div>
-             <div className="w-full md:w-48 space-y-2">
-                <label className="text-[9px] font-black text-amber-600 uppercase tracking-widest ml-1">Unité</label>
-                <select className="w-full bg-white border border-amber-200 rounded-2xl p-4 font-bold outline-none" value={newDlcUnit} onChange={(e) => setNewDlcUnit(e.target.value as 'HOURS' | 'DAYS')}><option value="HOURS">Heure(s)</option><option value="DAYS">Jour(s)</option></select>
-             </div>
-             <button onClick={addDlcProfile} className="bg-amber-500 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-amber-600 shadow-lg shadow-amber-200">Ajouter</button>
+
+             <button onClick={addDlcProfile} className="bg-amber-500 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-amber-600 shadow-lg shadow-amber-200 w-full mt-2">Ajouter</button>
            </div>
+           
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
              {dlcProfiles.map(p => p && (
-               <div key={p.id} className="flex items-center justify-between p-5 rounded-2xl border border-slate-100 bg-white hover:shadow-md transition-all group">
-                 <div><p className="font-black text-slate-800">{p.name || 'Profil'}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{p.durationHours >= 24 ? `${Number((p.durationHours / 24).toFixed(1))} Jour(s)` : `${p.durationHours} Heure(s)`}</p></div>
-                 <button onClick={() => deleteDlcProfile(p.id)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 bg-slate-50 hover:bg-rose-50 p-2 rounded-xl"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+               <div key={p.id} className="flex flex-col p-5 rounded-2xl border border-slate-100 bg-white hover:shadow-md transition-all group gap-3 relative">
+                 <button onClick={() => deleteDlcProfile(p.id)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 bg-slate-50 hover:bg-rose-50 p-2 rounded-xl transition-all"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                 <div>
+                     <p className="font-black text-slate-800">{p.name || 'Profil'}</p>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{p.durationHours >= 24 ? `${Number((p.durationHours / 24).toFixed(1))} Jour(s)` : `${p.durationHours} Heure(s)`}</p>
+                 </div>
+                 <div className="pt-2 border-t border-slate-50">
+                     <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest ${p.type === 'PRODUCTION' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                         {p.type === 'PRODUCTION' ? 'Production' : 'Ouverture'}
+                     </span>
+                 </div>
                </div>
              ))}
            </div>

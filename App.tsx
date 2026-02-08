@@ -275,6 +275,28 @@ const App: React.FC = () => {
       syncData('MARK_MESSAGE_READ', { messageId, userId: currentUser.id });
   };
 
+  // Helper pour ajouter une entrée DLC
+  const trackDlcEntry = (itemId: string, storageId: string) => {
+      const item = items.find(i => i.id === itemId);
+      const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+      if (!item || !item.isDLC || !profile) return;
+
+      const newDlc: DLCHistory = {
+          id: 'dlc_' + Date.now() + Math.random().toString(36).substr(2, 5),
+          itemId,
+          storageId,
+          openedAt: new Date().toISOString(),
+          userName: currentUser?.name
+      };
+      setDlcHistory(prev => [newDlc, ...prev]);
+      syncData('SAVE_DLC_HISTORY', newDlc);
+      
+      // Petit feedback visuel pour la DLC Production
+      if (profile.type === 'PRODUCTION') {
+          alert(`🔔 PRODUIT DLC PRODUCTION : ${item.name}\n\nMerci d'apposer une étiquette DLC immédiatement.\nDurée : ${profile.durationHours >= 24 ? profile.durationHours/24 + ' Jours' : profile.durationHours + ' Heures'}`);
+      }
+  };
+
   const handleRestockAction = (itemId: string, storageId: string, qtyToAdd: number, qtyToOrder: number = 0, isRupture: boolean = false) => {
       // 1. Mise à jour du stock (Remontée)
       if (qtyToAdd > 0) {
@@ -304,6 +326,34 @@ const App: React.FC = () => {
           };
           setTransactions(prev => [trans, ...prev]);
           syncData('SAVE_TRANSACTION', trans);
+
+          // --- GESTION DLC PRODUCTION (Sur Remontée Cave) ---
+          const item = items.find(i => i.id === itemId);
+          if (item && item.isDLC) {
+              const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
+              if (profile && profile.type === 'PRODUCTION') {
+                  // On trace chaque unité remontée si nécessaire, ou une fois par lot. 
+                  // Ici on trace une entrée pour le lot.
+                  trackDlcEntry(itemId, storageId);
+              }
+          }
+
+          // --- GESTION ARCHIVAGE COMMANDE ---
+          // Si on remonte du stock (qu'on a trouvé la bouteille), on supprime la demande d'achat "En attente" correspondante
+          // pour éviter de commander un produit qu'on avait finalement en stock.
+          const pendingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
+          if (pendingOrder) {
+              // Option 1: Supprimer complètement
+              // handleDeleteOrder(pendingOrder.id);
+              
+              // Option 2: Archiver (Passer en 'ARCHIVED' ou 'RECEIVED' fictif)
+              // Le prompt demande "Archiver le produit dans 'A commander'", ce qui est ambigu.
+              // Mais "Si un produit est noté en arrivée complet... Archiver".
+              // On va le passer en statut 'ARCHIVED' pour le sortir de la liste active mais garder une trace si besoin.
+              const updatedOrder = { ...pendingOrder, status: 'ARCHIVED' as const };
+              setOrders(prev => prev.map(o => o.id === pendingOrder.id ? updatedOrder : o));
+              syncData('SAVE_ORDER', updatedOrder);
+          }
       }
 
       // 2. Gestion Commande / Rupture
@@ -345,6 +395,9 @@ const App: React.FC = () => {
           if (firstStorage) targetStorageId = firstStorage.id;
       }
 
+      const item = items.find(i => i.id === itemId);
+      const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+
       // --- LOGIQUE ENTRÉE (IN) ---
       if (type === 'IN') {
           const targetLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
@@ -370,12 +423,24 @@ const App: React.FC = () => {
           };
           setTransactions(prev => [trans, ...prev]);
           syncData('SAVE_TRANSACTION', trans);
+
+          // --- SUIVI DLC PRODUCTION (IN) ---
+          if (item?.isDLC && profile?.type === 'PRODUCTION') {
+              trackDlcEntry(itemId, targetStorageId);
+          }
       } 
       
       // --- LOGIQUE SORTIE (OUT) ---
       else {
           const currentLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
           const currentQty = currentLevel?.currentQuantity || 0;
+
+          // --- SUIVI DLC OUVERTURE (OUT) ---
+          // Si le produit est DLC 'OPENING' et qu'on le sort, on le track
+          // (Note: La modal Mouvements.tsx prévient l'utilisateur, ici on enregistre l'action)
+          if (item?.isDLC && (!profile || profile.type === 'OPENING')) {
+              trackDlcEntry(itemId, targetStorageId);
+          }
 
           // CAS SPÉCIAL : Sortie d'une bouteille entamée (décimale) -> Remplacement auto
           if (qty === 1 && currentQty % 1 !== 0) {
@@ -517,7 +582,7 @@ const App: React.FC = () => {
   };
 
   // Logique de mise à jour des commandes (pour le composant Order)
-  const handleOrderUpdate = (orderId: string, quantity: number, status: 'PENDING' | 'ORDERED' | 'RECEIVED' = 'PENDING', ruptureDate?: string) => {
+  const handleOrderUpdate = (orderId: string, quantity: number, status: 'PENDING' | 'ORDERED' | 'RECEIVED' | 'ARCHIVED' = 'PENDING', ruptureDate?: string) => {
       setOrders(prev => prev.map(o => {
           if (o.id === orderId) {
               const updated = { 

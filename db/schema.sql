@@ -49,8 +49,11 @@ ALTER TABLE categories ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
 CREATE TABLE IF NOT EXISTS dlc_profiles (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    duration_hours INTEGER NOT NULL
+    duration_hours INTEGER NOT NULL,
+    type TEXT DEFAULT 'OPENING' -- 'OPENING' ou 'PRODUCTION'
 );
+
+ALTER TABLE dlc_profiles ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'OPENING';
 
 -- 2. Table Principale Articles
 CREATE TABLE IF NOT EXISTS items (
@@ -226,11 +229,11 @@ INSERT INTO categories (name, sort_order) VALUES
 ('Spiritueux', 0), ('Vins', 1), ('Bières', 2), ('Softs', 3), ('Ingrédients Cocktail', 4), ('Autre', 5)
 ON CONFLICT (name) DO NOTHING;
 
-INSERT INTO dlc_profiles (id, name, duration_hours) VALUES 
-('d1', '24 Heures', 24), ('d2', '2 Jours', 48), ('d3', '3 Jours', 72),
-('d4', '5 Jours', 120), ('d5', '1 Semaine', 168), ('d6', '2 Semaines', 336),
-('d7', '1 Mois', 720)
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO dlc_profiles (id, name, duration_hours, type) VALUES 
+('d1', '24 Heures', 24, 'OPENING'), ('d2', '2 Jours', 48, 'OPENING'), ('d3', '3 Jours', 72, 'OPENING'),
+('d4', '5 Jours', 120, 'OPENING'), ('d5', '1 Semaine', 168, 'OPENING'), ('d6', '2 Semaines', 336, 'OPENING'),
+('d7', '1 Mois', 720, 'OPENING')
+ON CONFLICT (id) DO UPDATE SET type = EXCLUDED.type;
 
 INSERT INTO techniques (id, name) VALUES
 ('t1', 'Shaker'), ('t2', 'Verre à mélange'), ('t3', 'Construit'), ('t4', 'Blender'), ('t5', 'Throwing')

@@ -145,7 +145,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           formats: formats.rows.map(f => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0') })),
           categories: categories.rows.map(c => c.name),
           priorities: priorities.rows.map(p => ({ itemId: p.item_id, storageId: p.storage_id, priority: p.priority })),
-          dlcProfiles: dlcProfiles.rows.map(p => ({ id: p.id, name: p.name, durationHours: p.duration_hours })),
+          dlcProfiles: dlcProfiles.rows.map(p => ({ id: p.id, name: p.name, durationHours: p.duration_hours, type: p.type || 'OPENING' })),
           unfulfilledOrders: unfulfilledOrders.rows.map(u => ({ id: u.id, itemId: u.item_id, date: u.date, userName: u.user_name })),
           appConfig: configMap,
           messages: messages.rows.map(m => {
@@ -405,12 +405,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         
         case 'SAVE_DLC_PROFILE': {
-            const { id, name, durationHours } = payload;
+            const { id, name, durationHours, type } = payload;
             await pool.query(`
-                INSERT INTO dlc_profiles (id, name, duration_hours)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, duration_hours = EXCLUDED.duration_hours
-            `, [id, name, durationHours]);
+                INSERT INTO dlc_profiles (id, name, duration_hours, type)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, duration_hours = EXCLUDED.duration_hours, type = EXCLUDED.type
+            `, [id, name, durationHours, type || 'OPENING']);
             break;
         }
 

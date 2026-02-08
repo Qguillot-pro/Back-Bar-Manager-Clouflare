@@ -36,6 +36,7 @@ export interface DLCProfile {
   id: string;
   name: string;
   durationHours: number;
+  type?: 'OPENING' | 'PRODUCTION'; // Nouveau champ
 }
 
 export interface StorageSpace {
@@ -122,7 +123,7 @@ export interface PendingOrder {
   date: string;
   ruptureDate?: string;
   orderedAt?: string;
-  status: 'PENDING' | 'ORDERED' | 'RECEIVED';
+  status: 'PENDING' | 'ORDERED' | 'RECEIVED' | 'ARCHIVED'; // Ajout de ARCHIVED
   receivedAt?: string;
   userName?: string;
 }

@@ -18,7 +18,8 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   
-  // Create Form State
+  // Create/Edit Form State
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newCat, setNewCat] = useState('Signature');
   const [newGlassId, setNewGlassId] = useState('');
@@ -87,10 +88,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           setNewHistory(result.history?.slice(0, 150) || '');
           setNewDecoration(result.decoration || '');
           
-          // Mapping technique (si existe dans la liste, sinon garde l'actuelle ou ajoute temporairement)
           if (result.technique) {
-              // Vérifie si la technique existe dans la liste, sinon on prend la plus proche ou on laisse l'IA
-              // Ici on laisse l'IA décider, l'utilisateur corrigera si la technique n'est pas dans la liste officielle
               setNewTech(result.technique);
           }
           
@@ -134,8 +132,10 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       const cost = calculateTotalCost(newIngredients);
       const selling = calculateSellingPrice(cost);
 
+      const recipeId = editingId || 'r' + Date.now();
+
       const recipe: Recipe = {
-          id: 'r' + Date.now(),
+          id: recipeId,
           name: newName,
           category: newCat,
           glasswareId: newGlassId,
@@ -146,19 +146,39 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           ingredients: newIngredients,
           costPrice: cost,
           sellingPrice: selling,
-          status: 'DRAFT',
-          createdBy: currentUser.name,
-          createdAt: new Date().toISOString()
+          status: editingId ? 'VALIDATED' : 'DRAFT', // Si admin edit, on valide auto ou on garde le status ? Disons VALIDATED si admin save.
+          createdBy: editingId ? (recipes.find(r => r.id === editingId)?.createdBy || currentUser.name) : currentUser.name,
+          createdAt: editingId ? (recipes.find(r => r.id === editingId)?.createdAt || new Date().toISOString()) : new Date().toISOString()
       };
 
-      setRecipes(prev => [...prev, recipe]);
+      if (editingId) {
+          setRecipes(prev => prev.map(r => r.id === editingId ? recipe : r));
+      } else {
+          setRecipes(prev => [...prev, recipe]);
+      }
+      
       onSync('SAVE_RECIPE', recipe);
       setViewMode('LIST');
       
+      // Reset
+      setEditingId(null);
       setNewName('');
       setNewIngredients([]);
       setNewDesc('');
       setNewHistory('');
+  };
+
+  const handleEdit = (recipe: Recipe) => {
+      setEditingId(recipe.id);
+      setNewName(recipe.name);
+      setNewCat(recipe.category);
+      setNewGlassId(recipe.glasswareId);
+      setNewTech(recipe.technique);
+      setNewDesc(recipe.description);
+      setNewHistory(recipe.history || '');
+      setNewDecoration(recipe.decoration || '');
+      setNewIngredients(recipe.ingredients);
+      setViewMode('CREATE');
   };
 
   const handleValidate = (recipe: Recipe) => {
@@ -199,7 +219,12 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                         onChange={e => setSearch(e.target.value)}
                       />
                       <button 
-                        onClick={() => setViewMode('CREATE')}
+                        onClick={() => {
+                            setEditingId(null);
+                            setNewName('');
+                            setNewIngredients([]);
+                            setViewMode('CREATE');
+                        }}
                         className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 shadow-lg"
                       >
                           + Créer
@@ -212,8 +237,14 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       <div 
                         key={r.id} 
                         onClick={() => { setSelectedRecipe(r); setViewMode('DETAIL'); }}
-                        className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-pink-200 transition-all cursor-pointer group"
+                        className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-pink-200 transition-all cursor-pointer group relative overflow-hidden"
                       >
+                          {r.status === 'VALIDATED' && (
+                              <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-black px-2 py-1 rounded-bl-xl uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                  Vérifié
+                              </div>
+                          )}
                           <div className="flex justify-between items-start mb-4">
                               <div>
                                   <h3 className="font-black text-lg text-slate-800 group-hover:text-pink-600 transition-colors">{r.name}</h3>
@@ -240,7 +271,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       return (
           <div className="max-w-4xl mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
               <div className="p-8 border-b bg-slate-50 flex justify-between items-center">
-                  <h2 className="font-black text-xl text-slate-800 uppercase tracking-tight">Créer un Cocktail</h2>
+                  <h2 className="font-black text-xl text-slate-800 uppercase tracking-tight">{editingId ? 'Modifier le Cocktail' : 'Créer un Cocktail'}</h2>
                   <button onClick={() => setViewMode('LIST')} className="text-slate-400 hover:text-slate-600 font-bold text-xs uppercase">Annuler</button>
               </div>
               
@@ -365,7 +396,9 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                               <p className="text-xl font-black text-emerald-600">{currentPrice.toFixed(2)} €</p>
                           </div>
                       </div>
-                      <button onClick={handleSaveRecipe} disabled={!newName || newIngredients.length === 0} className="w-full md:w-auto bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 shadow-xl">Enregistrer le Cocktail</button>
+                      <button onClick={handleSaveRecipe} disabled={!newName || newIngredients.length === 0} className="w-full md:w-auto bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 shadow-xl">
+                          {editingId ? 'Mettre à jour' : 'Enregistrer le Cocktail'}
+                      </button>
                   </div>
               </div>
           </div>
@@ -381,6 +414,12 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                   <div className="relative h-32 bg-slate-900 flex items-center justify-center p-6 shrink-0">
                       <div className="text-center">
                           <h2 className="text-3xl font-black text-white uppercase tracking-tighter">{selectedRecipe.name}</h2>
+                          {selectedRecipe.status === 'VALIDATED' && (
+                              <div className="absolute top-4 right-4 bg-emerald-500 text-white text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-lg">
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                  Vérifié
+                              </div>
+                          )}
                           <p className="text-indigo-300 font-bold uppercase tracking-widest text-xs mt-1">{selectedRecipe.category}</p>
                       </div>
                       <button onClick={() => { setViewMode('LIST'); setSelectedRecipe(null); }} className="absolute top-6 right-6 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all">
@@ -435,19 +474,6 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           {currentUser.role === 'ADMIN' && (
                               <>
                                 <button onClick={() => handleDelete(selectedRecipe.id)} className="px-4 py-2 bg-white border border-rose-200 text-rose-600 rounded-xl font-bold text-xs uppercase hover:bg-rose-50">Supprimer</button>
+                                <button onClick={() => handleEdit(selectedRecipe)} className="px-4 py-2 bg-white border border-indigo-200 text-indigo-600 rounded-xl font-bold text-xs uppercase hover:bg-indigo-50 shadow-sm">Modifier</button>
                                 {selectedRecipe.status === 'DRAFT' && (
-                                    <button onClick={() => handleValidate(selectedRecipe)} className="px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold text-xs uppercase hover:bg-emerald-600 shadow-lg shadow-emerald-200">Valider</button>
-                                )}
-                              </>
-                          )}
-                      </div>
-                  </div>
-              </div>
-          </div>
-      );
-  }
-
-  return null;
-};
-
-export default RecipesView;
+                                    <button onClick={() => handleValidate(selectedRecipe)} className="px-4 py-2 bg-emerald-500 text-white rounded-xl
