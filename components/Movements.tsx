@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format } from '../types';
+import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile } from '../types';
 
 interface MovementsProps {
   items: StockItem[];
@@ -12,9 +12,10 @@ interface MovementsProps {
   onReportUnfulfilled: (itemId: string) => void;
   onCreateTemporaryItem?: (name: string, quantity: number) => void;
   formats: Format[];
+  dlcProfiles?: DLCProfile[];
 }
 
-const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats }) => {
+const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [] }) => {
   const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'UNFULFILLED'>('MOVEMENTS');
   
   const [search, setSearch] = useState('');
@@ -25,6 +26,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   // DLC Modal State
   const [dlcModalOpen, setDlcModalOpen] = useState(false);
   const [pendingDlcItem, setPendingDlcItem] = useState<StockItem | null>(null);
+  const [pendingDlcAction, setPendingDlcAction] = useState<'IN' | 'OUT'>('OUT');
 
   // Consigne Modal State
   const [consigneModalOpen, setConsigneModalOpen] = useState(false);
@@ -51,18 +53,39 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
         quantity = 1;
     }
 
-    if (type === 'OUT') {
-        // Logique de priorité : d'abord Consigne, ensuite DLC
-        if (item.isConsigne) {
-            setPendingConsigneItem(item);
-            setConsigneModalOpen(true);
-            // La suite sera gérée par confirmConsigneAction qui appellera potentiellement la modal DLC
-            return;
+    // --- LOGIQUE DLC ---
+    // OUT: Toujours vérifié si isDLC
+    // IN: Vérifié SEULEMENT si profile.type === 'PRODUCTION'
+    if (item.isDLC) {
+        const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
+        
+        // Cas OUT (Ouverture Standard ou Production en sortie)
+        if (type === 'OUT') {
+             // Priorité Consigne d'abord
+             if (item.isConsigne) {
+                setPendingConsigneItem(item);
+                setConsigneModalOpen(true);
+                return;
+             }
+             // Sinon DLC check (pour tout produit DLC en sortie, on rappelle)
+             setPendingDlcItem(item);
+             setPendingDlcAction('OUT');
+             setDlcModalOpen(true);
+             return;
         }
 
-        if (item.isDLC) {
-            setPendingDlcItem(item);
-            setDlcModalOpen(true);
+        // Cas IN (Entrée Production)
+        if (type === 'IN' && profile?.type === 'PRODUCTION') {
+             setPendingDlcItem(item);
+             setPendingDlcAction('IN');
+             setDlcModalOpen(true);
+             return;
+        }
+    } else {
+        // Pas de DLC, mais peut-être Consigne en Sortie
+        if (type === 'OUT' && item.isConsigne) {
+            setPendingConsigneItem(item);
+            setConsigneModalOpen(true);
             return;
         }
     }
@@ -73,12 +96,12 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     setQty('1');
   };
 
-  const executeTransactionAfterChecks = (item: StockItem) => {
+  const executeTransactionAfterChecks = (item: StockItem, type: 'IN' | 'OUT' = 'OUT') => {
       let normalized = qty.replace(',', '.');
       if (normalized === '.') normalized = '0';
       const quantity = parseFloat(normalized) || 1;
       
-      onTransaction(item.id, 'OUT', quantity);
+      onTransaction(item.id, type, quantity);
       setSearch('');
       setQty('1');
       
@@ -94,19 +117,30 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
           // Si l'item a AUSSI une DLC, on enchaîne vers la modal DLC
           if (pendingConsigneItem.isDLC) {
               setPendingDlcItem(pendingConsigneItem);
+              setPendingDlcAction('OUT'); // Consigne is only for OUT
               setDlcModalOpen(true); // Ouvre la modal DLC
               setConsigneModalOpen(false); // Ferme celle de la consigne
           } else {
               // Sinon on exécute
-              executeTransactionAfterChecks(pendingConsigneItem);
+              executeTransactionAfterChecks(pendingConsigneItem, 'OUT');
           }
       }
   };
 
   const confirmDlcAction = () => {
     if (pendingDlcItem) {
-        executeTransactionAfterChecks(pendingDlcItem);
+        executeTransactionAfterChecks(pendingDlcItem, pendingDlcAction);
     }
+  };
+
+  // Helper pour afficher la durée
+  const getDlcDurationLabel = (item: StockItem) => {
+      const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
+      if (!profile) return "Inconnue";
+      if (profile.durationHours >= 24) {
+          return `${Number((profile.durationHours / 24).toFixed(1))} Jour(s)`;
+      }
+      return `${profile.durationHours} Heure(s)`;
   };
 
   const handleAddUnfulfilled = () => {
@@ -210,6 +244,11 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                     <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Rappel DLC</h3>
                     <p className="text-slate-500 font-bold">Merci d'apposer l'étiquette DLC sur le produit :</p>
                     <p className="text-xl font-black text-indigo-600">{pendingDlcItem.name}</p>
+                    <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl inline-block mt-2">
+                        <p className="text-xs font-black text-amber-600 uppercase tracking-widest">
+                            DURÉE : {getDlcDurationLabel(pendingDlcItem)}
+                        </p>
+                    </div>
                 </div>
                 <div className="flex gap-4 pt-4">
                     <button onClick={() => setDlcModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">Annuler</button>

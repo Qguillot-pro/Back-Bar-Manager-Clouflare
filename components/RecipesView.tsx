@@ -476,4 +476,18 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                                 <button onClick={() => handleDelete(selectedRecipe.id)} className="px-4 py-2 bg-white border border-rose-200 text-rose-600 rounded-xl font-bold text-xs uppercase hover:bg-rose-50">Supprimer</button>
                                 <button onClick={() => handleEdit(selectedRecipe)} className="px-4 py-2 bg-white border border-indigo-200 text-indigo-600 rounded-xl font-bold text-xs uppercase hover:bg-indigo-50 shadow-sm">Modifier</button>
                                 {selectedRecipe.status === 'DRAFT' && (
-                                    <button onClick={() => handleValidate(selectedRecipe)} className="px-4 py-2 bg-emerald-500 text-white rounded-xl
+                                    <button onClick={() => handleValidate(selectedRecipe)} className="px-4 py-2 bg-emerald-500 text-white rounded-xl font-black text-xs uppercase hover:bg-emerald-600 shadow-lg">Valider</button>
+                                )}
+                              </>
+                          )}
+                      </div>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
+  return null;
+};
+
+export default RecipesView;

@@ -290,11 +290,6 @@ const App: React.FC = () => {
       };
       setDlcHistory(prev => [newDlc, ...prev]);
       syncData('SAVE_DLC_HISTORY', newDlc);
-      
-      // Petit feedback visuel pour la DLC Production
-      if (profile.type === 'PRODUCTION') {
-          alert(`🔔 PRODUIT DLC PRODUCTION : ${item.name}\n\nMerci d'apposer une étiquette DLC immédiatement.\nDurée : ${profile.durationHours >= 24 ? profile.durationHours/24 + ' Jours' : profile.durationHours + ' Heures'}`);
-      }
   };
 
   const handleRestockAction = (itemId: string, storageId: string, qtyToAdd: number, qtyToOrder: number = 0, isRupture: boolean = false) => {
@@ -343,13 +338,6 @@ const App: React.FC = () => {
           // pour éviter de commander un produit qu'on avait finalement en stock.
           const pendingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
           if (pendingOrder) {
-              // Option 1: Supprimer complètement
-              // handleDeleteOrder(pendingOrder.id);
-              
-              // Option 2: Archiver (Passer en 'ARCHIVED' ou 'RECEIVED' fictif)
-              // Le prompt demande "Archiver le produit dans 'A commander'", ce qui est ambigu.
-              // Mais "Si un produit est noté en arrivée complet... Archiver".
-              // On va le passer en statut 'ARCHIVED' pour le sortir de la liste active mais garder une trace si besoin.
               const updatedOrder = { ...pendingOrder, status: 'ARCHIVED' as const };
               setOrders(prev => prev.map(o => o.id === pendingOrder.id ? updatedOrder : o));
               syncData('SAVE_ORDER', updatedOrder);
@@ -815,7 +803,7 @@ const App: React.FC = () => {
             />
         )}
         {view === 'inventory' && <StockTable items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleStockUpdate} consignes={consignes} />}
-        {view === 'movements' && <Movements items={sortedItems} transactions={transactions} storages={sortedStorages} onTransaction={handleTransaction} onOpenKeypad={() => {}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleUnfulfilledOrder} onCreateTemporaryItem={handleCreateTemporaryItem} formats={formats} />}
+        {view === 'movements' && <Movements items={sortedItems} transactions={transactions} storages={sortedStorages} onTransaction={handleTransaction} onOpenKeypad={() => {}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleUnfulfilledOrder} onCreateTemporaryItem={handleCreateTemporaryItem} formats={formats} dlcProfiles={dlcProfiles} />}
         {view === 'restock' && <CaveRestock items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={handleCreateTemporaryItem} orders={orders} />}
         {view === 'articles' && <ArticlesList items={sortedItems} setItems={setItems} formats={formats} categories={categories} userRole={currentUser?.role || 'BARMAN'} onDelete={handleDeleteItem} onSync={syncData} dlcProfiles={dlcProfiles} filter={articlesFilter} />}
         {view === 'consignes' && <Consignes items={sortedItems} storages={sortedStorages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
