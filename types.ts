@@ -32,40 +32,48 @@ export interface User {
   pin: string;
 }
 
+export interface UserLog {
+  id: string;
+  userName: string;
+  action: string;
+  details: string;
+  timestamp: string;
+}
+
 export interface DLCProfile {
   id: string;
   name: string;
   durationHours: number;
-  type?: 'OPENING' | 'PRODUCTION'; // Nouveau champ
+  type?: 'OPENING' | 'PRODUCTION'; 
 }
 
 export interface StorageSpace {
   id: string;
   name: string;
-  order?: number; // Ordre d'affichage des colonnes
+  order?: number; 
 }
 
 export interface Format {
   id: string;
   name: string;
-  value?: number; // Contenance ou quantité unitaire (ex: 70 pour 70cl)
+  value?: number; 
 }
 
 export interface StockItem {
   id: string;
-  articleCode?: string; // Nouveau champ pour le code article (ex: ID POS Astério)
+  articleCode?: string; 
   name: string;
   category: Category;
   formatId: string;
   pricePerUnit: number;
   lastUpdated: string;
-  createdAt?: string; // Date de création pour gestion temporaire
+  createdAt?: string; 
   isDLC?: boolean;
   dlcProfileId?: string;
-  isConsigne?: boolean; // Nouveau champ pour les produits consignés
+  isConsigne?: boolean; 
   order: number;
   isDraft?: boolean;
-  isTemporary?: boolean; // Indicateur produit non prévu
+  isTemporary?: boolean; 
 }
 
 export interface DLCHistory {
@@ -89,7 +97,7 @@ export interface StockConsigne {
   itemId: string;
   storageId: string;
   minQuantity: number;
-  maxCapacity?: number; // NOUVEAU : Capacité physique max (entier)
+  maxCapacity?: number; 
 }
 
 export interface StockPriority {
@@ -120,11 +128,11 @@ export interface PendingOrder {
   id: string;
   itemId: string;
   quantity: number;
-  initialQuantity?: number; // Quantité initialement commandée
+  initialQuantity?: number; 
   date: string;
   ruptureDate?: string;
   orderedAt?: string;
-  status: 'PENDING' | 'ORDERED' | 'RECEIVED' | 'ARCHIVED'; // Ajout de ARCHIVED
+  status: 'PENDING' | 'ORDERED' | 'RECEIVED' | 'ARCHIVED'; 
   receivedAt?: string;
   userName?: string;
 }
@@ -134,7 +142,7 @@ export interface UnfulfilledOrder {
   itemId: string;
   date: string;
   userName?: string;
-  quantity?: number; // NOUVEAU
+  quantity?: number;
 }
 
 export interface Message {
@@ -145,18 +153,18 @@ export interface Message {
   isArchived: boolean;
   adminReply?: string;
   replyDate?: string;
-  readBy?: string[]; // Liste des IDs utilisateurs ayant lu le message
+  readBy?: string[]; 
 }
 
-// --- NOUVEAUX TYPES POUR LES RECETTES ---
+// --- RECETTES ---
 
 export interface Glassware {
   id: string;
   name: string;
-  capacity?: number; // en cl
-  imageUrl?: string; // Base64 ou URL
-  quantity?: number; // Nouveau
-  lastUpdated?: string; // Nouveau
+  capacity?: number; 
+  imageUrl?: string; 
+  quantity?: number; 
+  lastUpdated?: string; 
 }
 
 export interface Technique {
@@ -165,8 +173,8 @@ export interface Technique {
 }
 
 export interface RecipeIngredient {
-  itemId?: string; // Lien vers StockItem si existant
-  tempName?: string; // Nom si pas dans la base
+  itemId?: string; 
+  tempName?: string; 
   quantity: number;
   unit: 'cl' | 'ml' | 'dash' | 'piece' | 'cuillere';
 }
@@ -174,16 +182,48 @@ export interface RecipeIngredient {
 export interface Recipe {
   id: string;
   name: string;
-  category: string; // Ex: Signature, Classique, Mocktail
+  category: string; 
   glasswareId: string;
   technique: string;
-  description: string; // Max 150 cars
-  history?: string; // Max 150 cars
+  description: string; 
+  history?: string; 
   ingredients: RecipeIngredient[];
   decoration?: string;
   sellingPrice?: number;
-  costPrice?: number; // Calculé
+  costPrice?: number; 
   status: 'DRAFT' | 'VALIDATED';
   createdBy?: string;
+  createdAt: string;
+}
+
+// --- VIE QUOTIDIENNE ---
+
+export interface Task {
+  id: string;
+  content: string;
+  createdBy: string;
+  createdAt: string;
+  isDone: boolean;
+  doneBy?: string;
+  doneAt?: string;
+}
+
+export interface EventComment {
+  id: string;
+  eventId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface Event {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  location?: string;
+  guestsCount?: number;
+  description?: string; // Max 150 chars
+  productsJson?: string; // JSON array of itemIds
   createdAt: string;
 }

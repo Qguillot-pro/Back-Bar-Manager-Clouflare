@@ -5,7 +5,6 @@ interface Env {
   DATABASE_URL: string;
 }
 
-// Define Cloudflare Pages types locally to avoid compilation errors
 interface EventContext<Env, P extends string, Data> {
   request: Request;
   functionPath: string;
@@ -21,7 +20,6 @@ type PagesFunction<Env = unknown, Params extends string = any, Data extends Reco
   context: EventContext<Env, Params, Data>
 ) => Response | Promise<Response>;
 
-// Helper pour les réponses CORS
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -31,7 +29,6 @@ const corsHeaders = {
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
 
-  // Gestion des requêtes OPTIONS (Pre-flight CORS)
   if (request.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -43,7 +40,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
-  // Initialisation du Pool Neon
   const pool = new Pool({ connectionString: env.DATABASE_URL });
 
   try {
@@ -52,7 +48,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
-      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses] = await Promise.all([
+      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, logs, tasks, events, comments] = await Promise.all([
         pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
         pool.query('SELECT * FROM users'),
         pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
@@ -71,7 +67,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         pool.query('SELECT * FROM glassware ORDER BY name ASC'),
         pool.query('SELECT * FROM recipes ORDER BY name ASC'),
         pool.query('SELECT * FROM techniques ORDER BY name ASC'),
-        pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 500')
+        pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 500'),
+        pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 500'),
+        pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200'),
+        pool.query('SELECT * FROM events ORDER BY start_time ASC LIMIT 100'),
+        pool.query('SELECT * FROM event_comments ORDER BY created_at ASC')
       ]);
 
       const configMap: any = { tempItemDuration: '14_DAYS', defaultMargin: 82 };
@@ -80,11 +80,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
       });
 
-      // Nettoyage automatique des items temporaires
+      // Nettoyage items temporaires
       try {
         let interval = null;
         const durationSetting = configMap.tempItemDuration;
-        
         if (durationSetting === '3_DAYS') interval = "3 days";
         else if (durationSetting === '7_DAYS') interval = "7 days";
         else if (durationSetting === '14_DAYS') interval = "14 days";
@@ -92,11 +91,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         else if (durationSetting === '3_MONTHS') interval = "3 months";
         
         if (interval) {
-            await pool.query(`
-                DELETE FROM items 
-                WHERE is_temporary = true 
-                AND created_at < NOW() - INTERVAL '${interval}'
-            `);
+            await pool.query(`DELETE FROM items WHERE is_temporary = true AND created_at < NOW() - INTERVAL '${interval}'`);
         }
       } catch (e) { console.error("Cleanup error", e); }
 
@@ -161,56 +156,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           appConfig: configMap,
           messages: messages.rows.map(m => {
              let readBy: string[] = [];
-             try {
-                 if (m.read_by) readBy = JSON.parse(m.read_by);
-             } catch(e) {}
-             return { 
-                 id: m.id, 
-                 content: m.content, 
-                 userName: m.user_name, 
-                 date: m.date, 
-                 isArchived: m.is_archived,
-                 adminReply: m.admin_reply,
-                 replyDate: m.reply_date,
-                 readBy
-             };
+             try { if (m.read_by) readBy = JSON.parse(m.read_by); } catch(e) {}
+             return { id: m.id, content: m.content, userName: m.user_name, date: m.date, isArchived: m.is_archived, adminReply: m.admin_reply, replyDate: m.reply_date, readBy };
           }),
           glassware: glassware.rows.map(g => ({
-              id: g.id,
-              name: g.name,
-              capacity: parseFloat(g.capacity || '0'),
-              imageUrl: g.image_url,
-              quantity: g.quantity || 0,
-              lastUpdated: g.last_updated
+              id: g.id, name: g.name, capacity: parseFloat(g.capacity || '0'), imageUrl: g.image_url, quantity: g.quantity || 0, lastUpdated: g.last_updated
           })),
           recipes: recipes.rows.map(r => ({
-              id: r.id,
-              name: r.name,
-              category: r.category,
-              glasswareId: r.glassware_id,
-              technique: r.technique,
-              description: r.description,
-              history: r.history,
-              decoration: r.decoration,
-              sellingPrice: parseFloat(r.selling_price || '0'),
-              costPrice: parseFloat(r.cost_price || '0'),
-              status: r.status,
-              createdBy: r.created_by,
-              createdAt: r.created_at,
-              ingredients: r.ingredients
+              id: r.id, name: r.name, category: r.category, glasswareId: r.glassware_id, technique: r.technique, description: r.description, history: r.history, decoration: r.decoration, sellingPrice: parseFloat(r.selling_price || '0'), costPrice: parseFloat(r.cost_price || '0'), status: r.status, createdBy: r.created_by, createdAt: r.created_at, ingredients: r.ingredients
           })),
-          techniques: techniques.rows.map(t => ({
-              id: t.id,
-              name: t.name
-          })),
-          losses: losses.rows.map(l => ({
-              id: l.id,
-              itemId: l.item_id,
-              openedAt: l.opened_at,
-              discardedAt: l.discarded_at,
-              quantity: parseFloat(l.quantity || '0'),
-              userName: l.user_name
-          }))
+          techniques: techniques.rows.map(t => ({ id: t.id, name: t.name })),
+          losses: losses.rows.map(l => ({ id: l.id, itemId: l.item_id, openedAt: l.opened_at, discardedAt: l.discarded_at, quantity: parseFloat(l.quantity || '0'), userName: l.user_name })),
+          userLogs: logs.rows.map(l => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
+          tasks: tasks.rows.map(t => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at })),
+          events: events.rows.map(e => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, createdAt: e.created_at })),
+          eventComments: comments.rows.map(c => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }))
       };
 
       return new Response(JSON.stringify(responseBody), {
@@ -221,341 +181,180 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- POST ROUTE: ACTIONS (/api/action) ---
     if (request.method === 'POST') {
-      
       const bodyText = await request.text();
       const { action, payload } = JSON.parse(bodyText || '{}');
 
-      if (!action) {
-           return new Response(JSON.stringify({ error: 'Action manquante' }), { status: 400, headers: corsHeaders });
-      }
+      if (!action) return new Response(JSON.stringify({ error: 'Action manquante' }), { status: 400, headers: corsHeaders });
 
       switch (action) {
-        case 'SAVE_CONFIG': {
-            const { key, value } = payload;
-            await pool.query(`
-                INSERT INTO app_config (key, value) VALUES ($1, $2)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            `, [key, String(value)]);
+        case 'SAVE_LOG': {
+            await pool.query(`INSERT INTO user_logs (id, user_name, action, details, timestamp) VALUES ($1, $2, $3, $4, NOW())`, [payload.id, payload.userName, payload.action, payload.details]);
             break;
         }
-
+        case 'SAVE_TASK': {
+            const { id, content, createdBy, isDone, doneBy, doneAt } = payload;
+            await pool.query(`
+                INSERT INTO tasks (id, content, created_by, is_done, done_by, done_at, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                ON CONFLICT (id) DO UPDATE SET is_done = EXCLUDED.is_done, done_by = EXCLUDED.done_by, done_at = EXCLUDED.done_at
+            `, [id, content, createdBy, isDone, doneBy, doneAt]);
+            break;
+        }
+        case 'DELETE_TASK': {
+            await pool.query('DELETE FROM tasks WHERE id = $1', [payload.id]);
+            break;
+        }
+        case 'SAVE_EVENT': {
+            const { id, title, startTime, endTime, location, guestsCount, description, productsJson } = payload;
+            await pool.query(`
+                INSERT INTO events (id, title, start_time, end_time, location, guests_count, description, products_json, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+                ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, location = EXCLUDED.location, guests_count = EXCLUDED.guests_count, description = EXCLUDED.description, products_json = EXCLUDED.products_json
+            `, [id, title, startTime, endTime, location, guestsCount, description, productsJson]);
+            break;
+        }
+        case 'DELETE_EVENT': {
+            await pool.query('DELETE FROM events WHERE id = $1', [payload.id]);
+            break;
+        }
+        case 'SAVE_EVENT_COMMENT': {
+            await pool.query(`INSERT INTO event_comments (id, event_id, user_name, content, created_at) VALUES ($1, $2, $3, $4, NOW())`, [payload.id, payload.eventId, payload.userName, payload.content]);
+            break;
+        }
+        
+        // --- EXISTING ACTIONS ---
+        case 'SAVE_CONFIG': {
+            await pool.query(`INSERT INTO app_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [payload.key, String(payload.value)]);
+            break;
+        }
         case 'SAVE_ITEM': {
           const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt } = payload;
           await pool.query(`
             INSERT INTO items (id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, is_consigne, sort_order, is_draft, is_temporary, created_at, last_updated)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, NOW()), NOW())
             ON CONFLICT (id) DO UPDATE SET
-              article_code = EXCLUDED.article_code,
-              name = EXCLUDED.name, category = EXCLUDED.category, format_id = EXCLUDED.format_id,
-              price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, 
-              dlc_profile_id = EXCLUDED.dlc_profile_id, is_consigne = EXCLUDED.is_consigne, sort_order = EXCLUDED.sort_order, 
+              article_code = EXCLUDED.article_code, name = EXCLUDED.name, category = EXCLUDED.category, format_id = EXCLUDED.format_id,
+              price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, dlc_profile_id = EXCLUDED.dlc_profile_id, is_consigne = EXCLUDED.is_consigne, sort_order = EXCLUDED.sort_order, 
               is_draft = EXCLUDED.is_draft, is_temporary = EXCLUDED.is_temporary, last_updated = NOW()
           `, [id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt]);
           break;
         }
-
-        case 'DELETE_ITEM': {
-          await pool.query('DELETE FROM items WHERE id = $1', [payload.id]);
-          break;
-        }
-
+        case 'DELETE_ITEM': { await pool.query('DELETE FROM items WHERE id = $1', [payload.id]); break; }
         case 'SAVE_STOCK': {
-          const { itemId, storageId, currentQuantity } = payload;
-          await pool.query(`
-            INSERT INTO stock_levels (item_id, storage_id, quantity)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (item_id, storage_id) DO UPDATE SET quantity = EXCLUDED.quantity
-          `, [itemId, storageId, currentQuantity]);
+          await pool.query(`INSERT INTO stock_levels (item_id, storage_id, quantity) VALUES ($1, $2, $3) ON CONFLICT (item_id, storage_id) DO UPDATE SET quantity = EXCLUDED.quantity`, [payload.itemId, payload.storageId, payload.currentQuantity]);
           break;
         }
-
         case 'SAVE_TRANSACTION': {
-          const { id, itemId, storageId, type, quantity, date, note, isCaveTransfer, userName } = payload;
-          await pool.query(`
-            INSERT INTO transactions (id, item_id, storage_id, type, quantity, date, note, is_cave_transfer, user_name)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          `, [id, itemId, storageId, type, quantity, date, note, isCaveTransfer, userName]);
+          await pool.query(`INSERT INTO transactions (id, item_id, storage_id, type, quantity, date, note, is_cave_transfer, user_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [payload.id, payload.itemId, payload.storageId, payload.type, payload.quantity, payload.date, payload.note, payload.isCaveTransfer, payload.userName]);
           break;
         }
-
         case 'SAVE_ORDER': {
           const { id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, orderedAt, receivedAt } = payload;
           await pool.query(`
             INSERT INTO orders (id, item_id, quantity, initial_quantity, date, status, user_name, rupture_date, ordered_at, received_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (id) DO UPDATE SET
-              status = EXCLUDED.status,
-              quantity = EXCLUDED.quantity,
-              initial_quantity = EXCLUDED.initial_quantity,
-              rupture_date = EXCLUDED.rupture_date,
-              ordered_at = EXCLUDED.ordered_at,
-              received_at = EXCLUDED.received_at
+            ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, quantity = EXCLUDED.quantity, initial_quantity = EXCLUDED.initial_quantity, rupture_date = EXCLUDED.rupture_date, ordered_at = EXCLUDED.ordered_at, received_at = EXCLUDED.received_at
           `, [id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, orderedAt, receivedAt]);
           break;
         }
-
         case 'SAVE_UNFULFILLED_ORDER': {
-            const { id, itemId, date, userName, quantity } = payload;
-            await pool.query(`
-                INSERT INTO unfulfilled_orders (id, item_id, date, user_name, quantity)
-                VALUES ($1, $2, $3, $4, $5)
-            `, [id, itemId, date, userName, quantity || 1]);
+            await pool.query(`INSERT INTO unfulfilled_orders (id, item_id, date, user_name, quantity) VALUES ($1, $2, $3, $4, $5)`, [payload.id, payload.itemId, payload.date, payload.userName, payload.quantity || 1]);
             break;
         }
-
         case 'SAVE_DLC_HISTORY': {
-            const { id, itemId, storageId, openedAt, userName } = payload;
-            await pool.query(`
-                INSERT INTO dlc_history (id, item_id, storage_id, opened_at, user_name)
-                VALUES ($1, $2, $3, $4, $5)
-            `, [id, itemId, storageId, openedAt, userName]);
+            await pool.query(`INSERT INTO dlc_history (id, item_id, storage_id, opened_at, user_name) VALUES ($1, $2, $3, $4, $5)`, [payload.id, payload.itemId, payload.storageId, payload.openedAt, payload.userName]);
             break;
         }
-
-        case 'DELETE_DLC_HISTORY': {
-            await pool.query('DELETE FROM dlc_history WHERE id = $1', [payload.id]);
-            break;
-        }
-
+        case 'DELETE_DLC_HISTORY': { await pool.query('DELETE FROM dlc_history WHERE id = $1', [payload.id]); break; }
         case 'SAVE_LOSS': {
-            const { id, itemId, openedAt, discardedAt, quantity, userName } = payload;
-            await pool.query(`
-                INSERT INTO losses (id, item_id, opened_at, discarded_at, quantity, user_name)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            `, [id, itemId, openedAt, discardedAt, quantity, userName]);
+            await pool.query(`INSERT INTO losses (id, item_id, opened_at, discarded_at, quantity, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [payload.id, payload.itemId, payload.openedAt, payload.discardedAt, payload.quantity, payload.userName]);
             break;
         }
-
         case 'SAVE_USER': {
-            const { id, name, role, pin } = payload;
-            await pool.query(`
-                INSERT INTO users (id, name, role, pin)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, pin = EXCLUDED.pin
-            `, [id, name, role, pin]);
+            await pool.query(`INSERT INTO users (id, name, role, pin) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, pin = EXCLUDED.pin`, [payload.id, payload.name, payload.role, payload.pin]);
             break;
         }
-
         case 'SAVE_STORAGE': {
-            const { id, name } = payload;
-            await pool.query(`
-                INSERT INTO storage_spaces (id, name) VALUES ($1, $2)
-                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
-            `, [id, name]);
+            await pool.query(`INSERT INTO storage_spaces (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [payload.id, payload.name]);
             break;
         }
-
-        case 'SAVE_STORAGE_ORDER': {
-            const { id, order } = payload;
-            await pool.query(`
-                UPDATE storage_spaces SET sort_order = $2 WHERE id = $1
-            `, [id, order]);
-            break;
-        }
-
-        case 'DELETE_STORAGE': {
-            await pool.query('DELETE FROM storage_spaces WHERE id = $1', [payload.id]);
-            break;
-        }
-
+        case 'SAVE_STORAGE_ORDER': { await pool.query(`UPDATE storage_spaces SET sort_order = $2 WHERE id = $1`, [payload.id, payload.order]); break; }
+        case 'DELETE_STORAGE': { await pool.query('DELETE FROM storage_spaces WHERE id = $1', [payload.id]); break; }
         case 'SAVE_FORMAT': {
-            const { id, name, value } = payload;
-            await pool.query(`
-                INSERT INTO formats (id, name, value) VALUES ($1, $2, $3)
-                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, value = EXCLUDED.value
-            `, [id, name, value]);
+            await pool.query(`INSERT INTO formats (id, name, value) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, value = EXCLUDED.value`, [payload.id, payload.name, payload.value]);
             break;
         }
-        
-        case 'DELETE_FORMAT': {
-            await pool.query('DELETE FROM formats WHERE id = $1', [payload.id]);
-            break;
-        }
-
+        case 'DELETE_FORMAT': { await pool.query('DELETE FROM formats WHERE id = $1', [payload.id]); break; }
         case 'SAVE_CATEGORY': {
-            const { name } = payload;
-            await pool.query(`
-                INSERT INTO categories (name, sort_order) 
-                VALUES ($1, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories))
-                ON CONFLICT (name) DO NOTHING
-            `, [name]);
+            await pool.query(`INSERT INTO categories (name, sort_order) VALUES ($1, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories)) ON CONFLICT (name) DO NOTHING`, [payload.name]);
             break;
         }
-
-        case 'DELETE_CATEGORY': {
-            await pool.query('DELETE FROM categories WHERE name = $1', [payload.name]);
-            break;
-        }
-
+        case 'DELETE_CATEGORY': { await pool.query('DELETE FROM categories WHERE name = $1', [payload.name]); break; }
         case 'REORDER_CATEGORIES': {
-            const { categories } = payload; 
-            for (let i = 0; i < categories.length; i++) {
-                await pool.query('UPDATE categories SET sort_order = $1 WHERE name = $2', [i, categories[i]]);
-            }
+            for (let i = 0; i < payload.categories.length; i++) await pool.query('UPDATE categories SET sort_order = $1 WHERE name = $2', [i, payload.categories[i]]);
             break;
         }
-
         case 'SAVE_PRIORITY': {
-            const { itemId, storageId, priority } = payload;
-            await pool.query(`
-                INSERT INTO stock_priorities (item_id, storage_id, priority)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (item_id, storage_id) DO UPDATE SET priority = EXCLUDED.priority
-            `, [itemId, storageId, priority]);
+            await pool.query(`INSERT INTO stock_priorities (item_id, storage_id, priority) VALUES ($1, $2, $3) ON CONFLICT (item_id, storage_id) DO UPDATE SET priority = EXCLUDED.priority`, [payload.itemId, payload.storageId, payload.priority]);
             break;
         }
-
         case 'SAVE_CONSIGNE': {
-            const { itemId, storageId, minQuantity, maxCapacity } = payload;
-            await pool.query(`
-                INSERT INTO stock_consignes (item_id, storage_id, min_quantity, max_capacity)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (item_id, storage_id) DO UPDATE SET min_quantity = EXCLUDED.min_quantity, max_capacity = EXCLUDED.max_capacity
-            `, [itemId, storageId, minQuantity, maxCapacity]);
+            await pool.query(`INSERT INTO stock_consignes (item_id, storage_id, min_quantity, max_capacity) VALUES ($1, $2, $3, $4) ON CONFLICT (item_id, storage_id) DO UPDATE SET min_quantity = EXCLUDED.min_quantity, max_capacity = EXCLUDED.max_capacity`, [payload.itemId, payload.storageId, payload.minQuantity, payload.maxCapacity]);
             break;
         }
-        
         case 'SAVE_DLC_PROFILE': {
-            const { id, name, durationHours, type } = payload;
-            await pool.query(`
-                INSERT INTO dlc_profiles (id, name, duration_hours, type)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, duration_hours = EXCLUDED.duration_hours, type = EXCLUDED.type
-            `, [id, name, durationHours, type || 'OPENING']);
+            await pool.query(`INSERT INTO dlc_profiles (id, name, duration_hours, type) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, duration_hours = EXCLUDED.duration_hours, type = EXCLUDED.type`, [payload.id, payload.name, payload.durationHours, payload.type || 'OPENING']);
             break;
         }
-
-        case 'DELETE_DLC_PROFILE': {
-            await pool.query('DELETE FROM dlc_profiles WHERE id = $1', [payload.id]);
-            break;
-        }
-
+        case 'DELETE_DLC_PROFILE': { await pool.query('DELETE FROM dlc_profiles WHERE id = $1', [payload.id]); break; }
         case 'SAVE_MESSAGE': {
-            const { id, content, userName, date, isArchived, readBy } = payload;
-            await pool.query(`
-                INSERT INTO messages (id, content, user_name, date, is_archived, read_by)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            `, [id, content, userName, date, isArchived, JSON.stringify(readBy || [])]);
+            await pool.query(`INSERT INTO messages (id, content, user_name, date, is_archived, read_by) VALUES ($1, $2, $3, $4, $5, $6)`, [payload.id, payload.content, payload.userName, payload.date, payload.isArchived, JSON.stringify(payload.readBy || [])]);
             break;
         }
-
         case 'UPDATE_MESSAGE': {
-            const { id, isArchived, adminReply, replyDate } = payload;
-            // On met à jour ce qui est fourni
-            if (adminReply !== undefined) {
-                await pool.query(`UPDATE messages SET admin_reply = $2, reply_date = $3 WHERE id = $1`, [id, adminReply, replyDate]);
-            }
-            if (isArchived !== undefined) {
-                await pool.query(`UPDATE messages SET is_archived = $2 WHERE id = $1`, [id, isArchived]);
-            }
+            if (payload.adminReply !== undefined) await pool.query(`UPDATE messages SET admin_reply = $2, reply_date = $3 WHERE id = $1`, [payload.id, payload.adminReply, payload.replyDate]);
+            if (payload.isArchived !== undefined) await pool.query(`UPDATE messages SET is_archived = $2 WHERE id = $1`, [payload.id, payload.isArchived]);
             break;
         }
-
         case 'MARK_MESSAGE_READ': {
-            const { messageId, userId } = payload;
-            // Récupérer le read_by actuel
-            const res = await pool.query('SELECT read_by FROM messages WHERE id = $1', [messageId]);
+            const res = await pool.query('SELECT read_by FROM messages WHERE id = $1', [payload.messageId]);
             if (res.rows.length > 0) {
                 let currentReadBy: string[] = [];
-                try {
-                    currentReadBy = JSON.parse(res.rows[0].read_by || '[]');
-                } catch(e) {}
-                
-                if (!currentReadBy.includes(userId)) {
-                    currentReadBy.push(userId);
-                    await pool.query('UPDATE messages SET read_by = $2 WHERE id = $1', [messageId, JSON.stringify(currentReadBy)]);
+                try { currentReadBy = JSON.parse(res.rows[0].read_by || '[]'); } catch(e) {}
+                if (!currentReadBy.includes(payload.userId)) {
+                    currentReadBy.push(payload.userId);
+                    await pool.query('UPDATE messages SET read_by = $2 WHERE id = $1', [payload.messageId, JSON.stringify(currentReadBy)]);
                 }
             }
             break;
         }
-
-        case 'DELETE_MESSAGE': {
-            await pool.query('DELETE FROM messages WHERE id = $1', [payload.id]);
-            break;
-        }
-
-        // --- RECETTES & VERRERIE ---
-
+        case 'DELETE_MESSAGE': { await pool.query('DELETE FROM messages WHERE id = $1', [payload.id]); break; }
         case 'SAVE_GLASSWARE': {
-            const { id, name, capacity, imageUrl, quantity } = payload;
-            await pool.query(`
-                INSERT INTO glassware (id, name, capacity, image_url, quantity, last_updated)
-                VALUES ($1, $2, $3, $4, $5, NOW())
-                ON CONFLICT (id) DO UPDATE SET 
-                    name = EXCLUDED.name, 
-                    capacity = EXCLUDED.capacity, 
-                    image_url = EXCLUDED.image_url,
-                    quantity = EXCLUDED.quantity,
-                    last_updated = NOW()
-            `, [id, name, capacity, imageUrl, quantity]);
+            await pool.query(`INSERT INTO glassware (id, name, capacity, image_url, quantity, last_updated) VALUES ($1, $2, $3, $4, $5, NOW()) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, capacity = EXCLUDED.capacity, image_url = EXCLUDED.image_url, quantity = EXCLUDED.quantity, last_updated = NOW()`, [payload.id, payload.name, payload.capacity, payload.imageUrl, payload.quantity]);
             break;
         }
-
-        case 'DELETE_GLASSWARE': {
-            await pool.query('DELETE FROM glassware WHERE id = $1', [payload.id]);
-            break;
-        }
-
+        case 'DELETE_GLASSWARE': { await pool.query('DELETE FROM glassware WHERE id = $1', [payload.id]); break; }
         case 'SAVE_TECHNIQUE': {
-            const { id, name } = payload;
-            await pool.query(`
-                INSERT INTO techniques (id, name) VALUES ($1, $2)
-                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
-            `, [id, name]);
+            await pool.query(`INSERT INTO techniques (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [payload.id, payload.name]);
             break;
         }
-
-        case 'DELETE_TECHNIQUE': {
-            await pool.query('DELETE FROM techniques WHERE id = $1', [payload.id]);
-            break;
-        }
-
+        case 'DELETE_TECHNIQUE': { await pool.query('DELETE FROM techniques WHERE id = $1', [payload.id]); break; }
         case 'SAVE_RECIPE': {
-            const { id, name, category, glasswareId, technique, description, history, decoration, sellingPrice, costPrice, status, createdBy, createdAt, ingredients } = payload;
-            await pool.query(`
-                INSERT INTO recipes (id, name, category, glassware_id, technique, description, history, decoration, selling_price, cost_price, status, created_by, created_at, ingredients)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                ON CONFLICT (id) DO UPDATE SET 
-                    name = EXCLUDED.name, category = EXCLUDED.category, glassware_id = EXCLUDED.glassware_id,
-                    technique = EXCLUDED.technique, description = EXCLUDED.description, history = EXCLUDED.history,
-                    decoration = EXCLUDED.decoration, selling_price = EXCLUDED.selling_price, cost_price = EXCLUDED.cost_price,
-                    status = EXCLUDED.status, ingredients = EXCLUDED.ingredients
-            `, [id, name, category, glasswareId, technique, description, history, decoration, sellingPrice, costPrice, status, createdBy, createdAt, JSON.stringify(ingredients)]);
+            await pool.query(`INSERT INTO recipes (id, name, category, glassware_id, technique, description, history, decoration, selling_price, cost_price, status, created_by, created_at, ingredients) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category, glassware_id = EXCLUDED.glassware_id, technique = EXCLUDED.technique, description = EXCLUDED.description, history = EXCLUDED.history, decoration = EXCLUDED.decoration, selling_price = EXCLUDED.selling_price, cost_price = EXCLUDED.cost_price, status = EXCLUDED.status, ingredients = EXCLUDED.ingredients`, [payload.id, payload.name, payload.category, payload.glasswareId, payload.technique, payload.description, payload.history, payload.decoration, payload.sellingPrice, payload.costPrice, payload.status, payload.createdBy, payload.createdAt, JSON.stringify(payload.ingredients)]);
             break;
         }
-
-        case 'DELETE_RECIPE': {
-            await pool.query('DELETE FROM recipes WHERE id = $1', [payload.id]);
-            break;
-        }
-
-        case 'VALIDATE_RECIPE': {
-            await pool.query('UPDATE recipes SET status = $2 WHERE id = $1', [payload.id, 'VALIDATED']);
-            break;
-        }
-
-        default:
-          return new Response(JSON.stringify({ error: 'Action inconnue' }), { status: 400, headers: corsHeaders });
+        case 'DELETE_RECIPE': { await pool.query('DELETE FROM recipes WHERE id = $1', [payload.id]); break; }
+        case 'VALIDATE_RECIPE': { await pool.query('UPDATE recipes SET status = $2 WHERE id = $1', [payload.id, 'VALIDATED']); break; }
+        default: return new Response(JSON.stringify({ error: 'Action inconnue' }), { status: 400, headers: corsHeaders });
       }
 
-      return new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      });
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
 
     return new Response("Not Found", { status: 404, headers: corsHeaders });
 
   } catch (error: any) {
     console.error('Erreur DB:', error);
-    return new Response(JSON.stringify({ 
-        error: 'Erreur Base de Données', 
-        details: error.message 
-    }), { 
-        status: 500, 
-        headers: { 'Content-Type': 'application/json', ...corsHeaders } 
-    });
-  } finally {
-    // context.waitUntil(pool.end()); // Optionnel sur Serverless, le pool gère
+    return new Response(JSON.stringify({ error: 'Erreur Base de Données', details: error.message }), { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   }
 };

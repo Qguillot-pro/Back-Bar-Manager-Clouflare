@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, UnfulfilledOrder, PendingOrder, User } from '../types';
+import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, UnfulfilledOrder, PendingOrder, User, Event } from '../types';
 
 interface RestockProps {
   items: StockItem[];
@@ -15,6 +15,7 @@ interface RestockProps {
   onCreateTemporaryItem: (name: string, quantity: number) => void;
   orders: PendingOrder[];
   currentUser: User | null;
+  events?: Event[];
 }
 
 interface NeedDetail {
@@ -32,29 +33,23 @@ interface AggregatedNeed {
   maxPriority: number; 
   details: NeedDetail[];
   isUrgent?: boolean;
+  isEventRelated?: boolean; // NOUVEAU
 }
 
-const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, unfulfilledOrders, onCreateTemporaryItem, orders, currentUser }) => {
+const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, unfulfilledOrders, onCreateTemporaryItem, orders, currentUser, events = [] }) => {
   const [selectedDetail, setSelectedDetail] = useState<{ item: StockItem, detail: NeedDetail } | null>(null);
   const [isTempItemModalOpen, setIsTempItemModalOpen] = useState(false);
-  
   const [partialQty, setPartialQty] = useState<string>('');
   const [partialRestocks, setPartialRestocks] = useState<Set<string>>(new Set());
-
-  // Pré-commande (Admin)
   const [preOrderQty, setPreOrderQty] = useState<string>('');
-
   const [tempItemName, setTempItemName] = useState('');
   const [tempItemQty, setTempItemQty] = useState<number>(0);
 
   const isRestockedToday = (itemId: string, storageId: string) => {
     const now = new Date();
     const startOfShift = new Date(now);
-    if (now.getHours() < 4) {
-        startOfShift.setDate(now.getDate() - 1);
-    }
+    if (now.getHours() < 4) startOfShift.setDate(now.getDate() - 1);
     startOfShift.setHours(4, 0, 0, 0);
-
     return transactions.some(t => {
         const tDate = new Date(t.date);
         return t.isCaveTransfer && t.itemId === itemId && t.storageId === storageId && tDate >= startOfShift;
@@ -70,15 +65,29 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
   const isRuptureToday = (itemId: string) => {
       const now = new Date();
       const startOfShift = new Date(now);
-      if (now.getHours() < 4) {
-          startOfShift.setDate(now.getDate() - 1);
-      }
+      if (now.getHours() < 4) startOfShift.setDate(now.getDate() - 1);
       startOfShift.setHours(4, 0, 0, 0);
-
       const hasClientRupture = unfulfilledOrders.some(u => u.itemId === itemId && new Date(u.date) >= startOfShift);
       const hasStockRupture = orders.some(o => o.itemId === itemId && o.ruptureDate && new Date(o.ruptureDate) >= startOfShift);
-
       return hasClientRupture || hasStockRupture;
+  };
+
+  // Check if item is in upcoming event (7 days)
+  const isEventItem = (itemId: string) => {
+      const now = new Date();
+      const limit = new Date();
+      limit.setDate(limit.getDate() + 7);
+      
+      return events.some(e => {
+          const eDate = new Date(e.startTime);
+          if (eDate >= now && eDate <= limit && e.productsJson) {
+              try {
+                  const products: string[] = JSON.parse(e.productsJson);
+                  return products.includes(itemId);
+              } catch (err) { return false; }
+          }
+          return false;
+      });
   };
 
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
@@ -118,7 +127,6 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
     });
 
     const map = new Map<string, AggregatedNeed>();
-
     const getPrio = (itemId: string, storageId: string) => {
         if (storageId === 's0') return 11;
         return priorities.find(p => p.itemId === itemId && p.storageId === storageId)?.priority || 0;
@@ -143,7 +151,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                 const gap = Math.ceil(data.minQty - effectiveQty);
                 if (gap > 0) {
                     if (!map.has(itemId)) {
-                        map.set(itemId, { item, totalGap: 0, maxPriority: 0, details: [], isUrgent: isUrgentUnfulfilled(itemId) });
+                        map.set(itemId, { item, totalGap: 0, maxPriority: 0, details: [], isUrgent: isUrgentUnfulfilled(itemId), isEventRelated: isEventItem(itemId) });
                     }
                     const entry = map.get(itemId)!;
                     entry.details.push({ storage, currentQty, minQty: data.minQty, gap, priority, isRedirected: data.isRedirected });
@@ -157,20 +165,17 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
     const list = Array.from(map.values());
     list.forEach(agg => { agg.details.sort((a, b) => b.priority - a.priority); });
 
-    // TRI : Urgent -> Nom -> Fait/Rupture à la fin
     return list.sort((a, b) => {
-        // Est-ce que "a" est fait ou rupture ?
         const aDone = isRuptureToday(a.item.id) || a.details.every(d => isRestockedToday(a.item.id, d.storage.id));
         const bDone = isRuptureToday(b.item.id) || b.details.every(d => isRestockedToday(b.item.id, d.storage.id));
-
-        if (aDone !== bDone) return (aDone ? 1 : -1); // Fait à la fin (1)
-
+        if (aDone !== bDone) return (aDone ? 1 : -1); 
         if (a.isUrgent !== b.isUrgent) return (b.isUrgent ? 1 : 0) - (a.isUrgent ? 1 : 0);
+        if (a.isEventRelated !== b.isEventRelated) return (b.isEventRelated ? 1 : 0) - (a.isEventRelated ? 1 : 0);
         if (b.maxPriority !== a.maxPriority) return b.maxPriority - a.maxPriority;
         return a.item.name.localeCompare(b.item.name);
     });
 
-  }, [consignes, items, storages, stockLevels, priorities, unfulfilledOrders, transactions, orders]);
+  }, [consignes, items, storages, stockLevels, priorities, unfulfilledOrders, transactions, orders, events]);
 
   const groupedNeeds = useMemo(() => {
     const groups: Record<string, AggregatedNeed[]> = {};
@@ -194,11 +199,13 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
   const handleComplete = () => {
     if (selectedDetail) {
+        // Remontée physique (Stock)
         onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, selectedDetail.detail.gap);
-        // Si pré-commande remplie par l'admin
+        
+        // Commande Anticipée (Panier seulement)
         if (currentUser?.role === 'ADMIN' && preOrderQty && parseInt(preOrderQty) > 0) {
-             // On ajoute une commande avec quantité, mais sans flag "Rupture" immédiate pour le bar
-             // C'est une demande pour l'économe
+             // onAction avec qtyToAdd=0 et qtyToOrder=XXX. 
+             // Le 3ème argument est la remontée, le 4ème est la commande.
              onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, 0, parseInt(preOrderQty), false);
         }
         setSelectedDetail(null);
@@ -251,9 +258,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Manque à combler (Entier)</p>
                       <p className="text-4xl font-black text-rose-500">{selectedDetail.detail.gap}</p>
                       {selectedDetail.detail.isRedirected && (
-                          <p className="text-[10px] font-bold text-indigo-500 mt-2 bg-indigo-50 px-2 py-1 rounded-lg inline-block">
-                              Besoin déclenché par un stock critique ailleurs
-                          </p>
+                          <p className="text-[10px] font-bold text-indigo-500 mt-2 bg-indigo-50 px-2 py-1 rounded-lg inline-block">Besoin déclenché par un stock critique ailleurs</p>
                       )}
                   </div>
 
@@ -262,10 +267,10 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                           <input type="checkbox" className="w-5 h-5 rounded text-amber-600" checked={!!preOrderQty} onChange={() => {}} />
                           <div className="flex-1 text-left">
                               <p className="text-[10px] font-black uppercase text-amber-800">Anticipation Cave (Pré-commande)</p>
-                              <p className="text-[9px] text-amber-600 leading-tight mb-1">Signaler à l'économe que la cave est presque vide.</p>
+                              <p className="text-[9px] text-amber-600 leading-tight mb-1">Ajoute au panier SANS modifier la remontée.</p>
                               <input 
                                 type="number" 
-                                placeholder="Qté à demander..." 
+                                placeholder="Qté à commander..." 
                                 className="w-full mt-1 p-1 bg-white border border-amber-200 rounded text-xs font-bold outline-none"
                                 value={preOrderQty}
                                 onChange={e => setPreOrderQty(e.target.value)}
@@ -276,7 +281,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
                   <div className="grid grid-cols-1 gap-3">
                       <button onClick={handleComplete} className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-emerald-200 active:scale-95 transition-all">
-                          {preOrderQty ? `Remonter & Signaler (+${preOrderQty})` : `Remontée Complète (+${selectedDetail.detail.gap})`}
+                          {preOrderQty ? `Remonter (+${selectedDetail.detail.gap}) & Commander (+${preOrderQty})` : `Remontée Complète (+${selectedDetail.detail.gap})`}
                       </button>
                       
                       <div className="relative border-t border-slate-100 pt-3 mt-2">
@@ -297,26 +302,19 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
           </div>
       )}
 
+      {/* Temp Item Modal ... (same as before) */}
       {isTempItemModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500"></div>
                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Produit Non Prévu</h3>
-                  <p className="text-slate-500 text-xs font-bold">Création rapide d'un article temporaire en Surstock.</p>
                   <div className="space-y-4">
-                      <div className="text-left space-y-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du produit</label>
-                          <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none focus:border-amber-500 transition-colors" value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} placeholder="Ex: Vin Spécial..." autoFocus />
-                      </div>
-                      <div className="text-left space-y-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Consigne Surstock (Objectif)</label>
-                          <input type="number" step="1" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none focus:border-amber-500 transition-colors text-center" value={tempItemQty} onChange={(e) => setTempItemQty(parseInt(e.target.value) || 0)} />
-                          <p className="text-[9px] text-slate-400 italic">Si &gt; 0, l'article apparaîtra dans la liste des besoins (Stock actuel: 0).</p>
-                      </div>
+                      <div className="text-left space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du produit</label><input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none" value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} autoFocus /></div>
+                      <div className="text-left space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Consigne Surstock</label><input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none text-center" value={tempItemQty} onChange={(e) => setTempItemQty(parseInt(e.target.value) || 0)} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-2">
                       <button onClick={() => setIsTempItemModalOpen(false)} className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all">Annuler</button>
-                      <button onClick={handleCreateTempItem} disabled={!tempItemName} className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-amber-200 active:scale-95 transition-all disabled:opacity-50">Créer</button>
+                      <button onClick={handleCreateTempItem} disabled={!tempItemName} className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-amber-200 active:scale-95 transition-all">Créer</button>
                   </div>
               </div>
           </div>
@@ -325,12 +323,11 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
       <header className="bg-slate-900 rounded-[2rem] p-8 text-white shadow-2xl border border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
             <h1 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-white">Préparation Cave</h1>
-            <p className="text-slate-400 text-xs font-bold mt-1">Trié par priorité décroissante. Stockages à priorité 0 masqués.</p>
+            <p className="text-slate-400 text-xs font-bold mt-1">Trié par priorité décroissante.</p>
         </div>
         <div className="flex items-center gap-4">
-            <button onClick={() => setIsTempItemModalOpen(true)} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-amber-900/50 active:scale-95 transition-all flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
-                Produit non prévu
+            <button onClick={() => setIsTempItemModalOpen(true)} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg active:scale-95 transition-all flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Produit non prévu
             </button>
             <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
                 <span className="block text-2xl font-black">{aggregatedNeeds.length}</span>
@@ -341,7 +338,6 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
       {Object.entries(groupedNeeds).map(([category, aggProducts]: [string, AggregatedNeed[]]) => {
           if (aggProducts.length === 0) return null;
-          
           return (
             <div key={category} className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="bg-slate-50 px-6 py-4 border-b flex items-center gap-3">
@@ -352,14 +348,14 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                     {aggProducts.map((agg) => {
                         const hasRuptureBadge = isRuptureToday(agg.item.id);
                         const isDone = agg.details.every(d => isRestockedToday(agg.item.id, d.storage.id));
-                        
                         return (
-                        <div key={agg.item.id} className={`p-5 hover:bg-slate-50 transition-colors ${agg.isUrgent ? 'bg-rose-50/40' : ''} ${isDone ? 'opacity-60 bg-slate-50' : ''}`}>
+                        <div key={agg.item.id} className={`p-5 hover:bg-slate-50 transition-colors ${agg.isUrgent ? 'bg-rose-50/40' : ''} ${agg.isEventRelated ? 'bg-purple-50/40' : ''} ${isDone ? 'opacity-60 bg-slate-50' : ''}`}>
                             <div className="flex items-start justify-between mb-3">
                                 <div>
                                     <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
                                         {agg.item.name}
                                         {agg.isUrgent && <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest animate-pulse">URGENT</span>}
+                                        {agg.isEventRelated && <span className="bg-purple-500 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest animate-pulse">EVENT</span>}
                                         {agg.item.isTemporary && <span className="bg-amber-500 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest">TEMP</span>}
                                         {hasRuptureBadge && <span className="bg-slate-700 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest font-black">FAIT / RUPTURE</span>}
                                     </h3>

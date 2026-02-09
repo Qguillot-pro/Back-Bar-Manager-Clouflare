@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS stock_consignes (
     item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
     storage_id TEXT REFERENCES storage_spaces(id) ON DELETE CASCADE,
     min_quantity NUMERIC DEFAULT 0,
-    max_capacity NUMERIC, -- NOUVEAU
+    max_capacity NUMERIC, 
     PRIMARY KEY (item_id, storage_id)
 );
 
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS unfulfilled_orders (
     item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
     date TIMESTAMP DEFAULT NOW(),
     user_name TEXT,
-    quantity NUMERIC DEFAULT 1 -- NOUVEAU
+    quantity NUMERIC DEFAULT 1
 );
 
 ALTER TABLE unfulfilled_orders ADD COLUMN IF NOT EXISTS quantity NUMERIC DEFAULT 1;
@@ -213,7 +213,47 @@ CREATE TABLE IF NOT EXISTS recipes (
     ingredients JSONB -- Stocke la liste des ingrédients en JSON
 );
 
--- 5. Données Initiales
+-- 5. MODULE VIE QUOTIDIENNE & LOGS
+
+CREATE TABLE IF NOT EXISTS user_logs (
+    id TEXT PRIMARY KEY,
+    user_name TEXT,
+    action TEXT,
+    details TEXT,
+    timestamp TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    created_by TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    is_done BOOLEAN DEFAULT FALSE,
+    done_by TEXT,
+    done_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
+    location TEXT,
+    guests_count INTEGER,
+    description TEXT,
+    products_json TEXT, -- JSON string array of item IDs to plan
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS event_comments (
+    id TEXT PRIMARY KEY,
+    event_id TEXT REFERENCES events(id) ON DELETE CASCADE,
+    user_name TEXT,
+    content TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 6. Données Initiales
 INSERT INTO storage_spaces (id, name, sort_order) VALUES 
 ('s1', 'Frigo Soft', 1), ('s2', 'Frigo Vin', 2), ('s3', 'Speed Rack', 3),
 ('s4', 'Etg Sirops', 4), ('s5', 'Etg Liqueurs', 5), ('s6', 'Pyramide', 6),
