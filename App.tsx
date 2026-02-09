@@ -270,66 +270,73 @@ const App: React.FC = () => {
           }
 
           // 2. RÈGLE REMPLACEMENT BOUTEILLE (Sortie "1" sur Bouteille Entamée)
-          if (remaining === 1 && itemPriorities.length > 0) {
-              // Trouver le stock actif (Prio Max hors S0)
-              const activeStorage = itemPriorities.find(p => p.storageId !== 's0') || itemPriorities[0]; 
+          if (remaining === 1) {
+              // Trouver une bouteille entamée (décimale entre 0.01 et 0.99)
+              const openStorageEntry = stockLevels.find(l => l.itemId === itemId && l.currentQuantity % 1 > 0.01 && l.currentQuantity % 1 < 0.99);
               
-              if (activeStorage) {
-                  const activeQty = getStorageQty(activeStorage.storageId);
-                  const decimalPart = activeQty % 1;
+              if (openStorageEntry) {
+                  // On a trouvé une bouteille entamée (ex: 0.4)
+                  // On cherche une bouteille pleine pour remplacer (>= 1), hors de l'emplacement entamé
+                  const backupEntry = stockLevels.find(l => 
+                      l.itemId === itemId && 
+                      l.storageId !== openStorageEntry.storageId && 
+                      l.currentQuantity >= 1
+                  );
 
-                  // Si une bouteille est entamée (ex: 0.3)
-                  if (decimalPart > 0.001 && decimalPart < 0.999) {
-                      // On vide la bouteille entamée (Perte/Conso)
-                      handleStockUpdate(itemId, activeStorage.storageId, Math.floor(activeQty)); // 0.3 -> 0
+                  if (backupEntry) {
+                      // CAS A : ON A DU STOCK POUR REMPLACER
+                      // 1. On enlève 1 à la réserve
+                      handleStockUpdate(itemId, backupEntry.storageId, backupEntry.currentQuantity - 1);
+                      // 2. On met 1 à l'emplacement actif (0.4 devient 1, on considère que le 0.4 est fini et remplacé par le 1.0)
+                      handleStockUpdate(itemId, openStorageEntry.storageId, 1);
+
+                      // LOGS
+                      // Transaction 1: Fin bouteille (Sortie de 0.X)
+                      const transFin: Transaction = {
+                          id: Math.random().toString(36).substr(2, 9) + '_1',
+                          itemId, storageId: openStorageEntry.storageId, type: 'OUT', quantity: openStorageEntry.currentQuantity, // On vide tout
+                          date: new Date().toISOString(), userName: currentUser?.name, note: 'Fin bouteille (Auto)'
+                      };
+                      setTransactions(prev => [transFin, ...prev]);
+                      syncData('SAVE_TRANSACTION', transFin);
+
+                      // Transaction 2: Transfert interne (P10 -> P5)
+                      const transTransfer: Transaction = {
+                          id: Math.random().toString(36).substr(2, 9) + '_2',
+                          itemId, storageId: openStorageEntry.storageId, type: 'IN', quantity: 1,
+                          date: new Date().toISOString(), userName: 'Système', isCaveTransfer: true,
+                          note: `Remplacement depuis ${storages.find(s=>s.id===backupEntry.storageId)?.name}`
+                      };
+                      // On doit aussi décrémenter la source, mais pour le log Transaction 'IN', on cible le destination.
+                      // Pour la cohérence comptable, c'est un mouvement nul (Transfert). 
+                      // Mais pour l'app, on loggue juste l'entrée sur le bar. 
+                      // Ou mieux : on log une sortie sur la réserve aussi ? Non, simplifions : on loggue juste l'action utilisateur "Sortie 1" transformée.
+                      setTransactions(prev => [transTransfer, ...prev]);
+                      syncData('SAVE_TRANSACTION', transTransfer);
                       
-                      // On cherche une bouteille pleine en réserve pour remplacer
-                      let sourceId = null;
-                      // Chercher dans les priorités inférieures
-                      for (const p of itemPriorities) {
-                          if (p.priority < activeStorage.priority && getStorageQty(p.storageId) >= 1) {
-                              sourceId = p.storageId;
-                              break;
-                          }
-                      }
-                      // Sinon Surstock
-                      if (!sourceId && getStorageQty('s0') >= 1) sourceId = 's0';
-
-                      if (sourceId) {
-                          // Transfert 1 depuis réserve vers actif
-                          const sourceQty = getStorageQty(sourceId);
-                          handleStockUpdate(itemId, sourceId, sourceQty - 1);
-                          handleStockUpdate(itemId, activeStorage.storageId, Math.floor(activeQty) + 1); // 0 + 1 = 1
-
-                          const transRep: Transaction = {
-                              id: Math.random().toString(36).substr(2, 9),
-                              itemId, storageId: activeStorage.storageId, type: 'IN', quantity: 1, // On note IN pour simplifier la logique de stock final, mais c'est un transfert
-                              date: new Date().toISOString(), userName: currentUser?.name, 
-                              isCaveTransfer: true, // Marque comme mouvement interne
-                              note: `Remplacement auto: ${decimalPart.toFixed(2)} jetés, 1 remplacé depuis ${storages.find(s=>s.id===sourceId)?.name}`
-                          };
-                          setTransactions(prev => [transRep, ...prev]);
-                          syncData('SAVE_TRANSACTION', transRep);
-                      } else {
-                          // Pas de réserve : on a juste fini la bouteille
-                          const transFin: Transaction = {
-                              id: Math.random().toString(36).substr(2, 9),
-                              itemId, storageId: activeStorage.storageId, type: 'OUT', quantity: decimalPart,
-                              date: new Date().toISOString(), userName: currentUser?.name, note: 'Fin bouteille (Pas de réserve)'
-                          };
-                          setTransactions(prev => [transFin, ...prev]);
-                          syncData('SAVE_TRANSACTION', transFin);
-                      }
-                      return; // Stop
+                      return; // STOP
+                  } else {
+                      // CAS B : PAS DE STOCK POUR REMPLACER
+                      // On vide juste la bouteille entamée
+                      handleStockUpdate(itemId, openStorageEntry.storageId, 0);
+                      const transFin: Transaction = {
+                          id: Math.random().toString(36).substr(2, 9),
+                          itemId, storageId: openStorageEntry.storageId, type: 'OUT', quantity: openStorageEntry.currentQuantity,
+                          date: new Date().toISOString(), userName: currentUser?.name, note: 'Fin bouteille (Pas de réserve)'
+                      };
+                      setTransactions(prev => [transFin, ...prev]);
+                      syncData('SAVE_TRANSACTION', transFin);
+                      return; // STOP
                   }
               }
           }
 
           // 3. SORTIE STANDARD (Cascade)
-          // Priorité aux décimales d'abord
+          // Si on arrive ici, c'est que soit qty != 1, soit pas de bouteille entamée (que des entiers ou des vides)
           for (const prio of itemPriorities) {
               if (remaining <= 0) break;
               const q = getStorageQty(prio.storageId);
+              // Priorité absolue aux décimales d'abord (cas où on sort 0.X)
               const dec = q % 1;
               if (dec > 0.001) {
                   const take = Math.min(dec, remaining);
@@ -343,7 +350,7 @@ const App: React.FC = () => {
           if (remaining > 0) {
               for (const prio of itemPriorities) {
                   if (remaining <= 0) break;
-                  if (prio.storageId === 's0') continue; // Déjà vérifié en 1, mais au cas où
+                  if (prio.storageId === 's0') continue;
                   const q = getStorageQty(prio.storageId);
                   if (q >= 1) {
                       const take = Math.min(Math.floor(q), remaining);
@@ -431,18 +438,27 @@ const App: React.FC = () => {
   
   const handleUndoLastTransaction = () => {
       if (transactions.length === 0) return;
-      if (!window.confirm("Êtes-vous sûr de vouloir annuler le dernier mouvement ?")) return;
+      const last = transactions[0]; // La plus récente (triée DESC)
+      
+      if (!window.confirm(`Annuler le mouvement : ${last.type} ${last.quantity} (${items.find(i=>i.id===last.itemId)?.name}) ?`)) return;
 
-      const last = transactions[0]; 
       const currentLevel = stockLevels.find(l => l.itemId === last.itemId && l.storageId === last.storageId);
       const currentQty = currentLevel?.currentQuantity || 0;
       let newQty = currentQty;
 
-      if (last.type === 'IN') newQty = Math.max(0, currentQty - last.quantity);
-      else newQty = currentQty + last.quantity;
+      // Inversion logique
+      if (last.type === 'IN') {
+          newQty = Math.max(0, currentQty - last.quantity);
+      } else {
+          newQty = currentQty + last.quantity;
+      }
 
       handleStockUpdate(last.itemId, last.storageId, newQty);
-      setTransactions(prev => prev.slice(1));
+      
+      // Mise à jour visuelle immédiate
+      setTransactions(prev => prev.filter(t => t.id !== last.id));
+      
+      // Suppression DB
       syncData('DELETE_TRANSACTION', { id: last.id });
   };
 
