@@ -16,6 +16,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
   const [activeTab, setActiveTab] = useState<'PENDING' | 'ORDERED'>('PENDING');
   const [manualSearch, setManualSearch] = useState('');
   const [manualQty, setManualQty] = useState(1);
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
 
   // Filtres
   const pendingOrders = useMemo(() => orders.filter(o => o.status === 'PENDING'), [orders]);
@@ -26,6 +27,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
           pendingOrders.forEach(o => {
              onUpdateOrder(o.id, o.quantity, 'ORDERED');
           });
+          setSelectedOrders(new Set());
       }
   };
 
@@ -38,6 +40,39 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
       } else {
           alert("Produit introuvable. Veuillez sélectionner un produit de la liste.");
       }
+  };
+
+  const toggleSelection = (id: string) => {
+      const newSet = new Set(selectedOrders);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setSelectedOrders(newSet);
+  };
+
+  const toggleAll = () => {
+      if (selectedOrders.size === pendingOrders.length) setSelectedOrders(new Set());
+      else setSelectedOrders(new Set(pendingOrders.map(o => o.id)));
+  };
+
+  const handleExportSelected = () => {
+      if (selectedOrders.size === 0) return;
+      
+      const ordersToExport = pendingOrders.filter(o => selectedOrders.has(o.id));
+      let csv = "\uFEFFProduit,Format,Quantité,Note\n";
+      
+      ordersToExport.forEach(o => {
+          const item = items.find(i => i.id === o.itemId);
+          const fmt = formats.find(f => f.id === item?.formatId)?.name || '';
+          const note = o.ruptureDate ? 'Rupture' : '';
+          csv += `"${item?.name}","${fmt}","${o.quantity}","${note}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `commande_selection_${new Date().toISOString().slice(0,10)}.csv`;
+      link.click();
   };
 
   const getFormatName = (formatId?: string) => formats.find(f => f.id === formatId)?.name || '-';
@@ -101,17 +136,31 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
               <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
                   <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                       <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest">Panier Commande</h3>
-                      <button 
-                        onClick={handleValidateAll}
-                        disabled={pendingOrders.length === 0}
-                        className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-200 active:scale-95 transition-all"
-                      >
-                          Valider la commande
-                      </button>
+                      <div className="flex gap-2">
+                          {selectedOrders.size > 0 && (
+                              <button 
+                                onClick={handleExportSelected}
+                                className="bg-slate-800 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-900 shadow-lg active:scale-95 transition-all flex items-center gap-2"
+                              >
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4 4m4-4v12" /></svg>
+                                  Export CSV ({selectedOrders.size})
+                              </button>
+                          )}
+                          <button 
+                            onClick={handleValidateAll}
+                            disabled={pendingOrders.length === 0}
+                            className="bg-emerald-500 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-200 active:scale-95 transition-all"
+                          >
+                              Valider la commande
+                          </button>
+                      </div>
                   </div>
                   <table className="w-full text-left">
                       <thead className="bg-white text-[9px] font-black text-slate-400 uppercase tracking-widest border-b">
                           <tr>
+                              <th className="p-4 w-12 text-center">
+                                  <input type="checkbox" className="w-4 h-4 rounded text-indigo-600 cursor-pointer" onChange={toggleAll} checked={pendingOrders.length > 0 && selectedOrders.size === pendingOrders.length} />
+                              </th>
                               <th className="p-4">Produit</th>
                               <th className="p-4">Format</th>
                               <th className="p-4">Détail</th>
@@ -124,7 +173,10 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
                               const item = items.find(i => i.id === o.itemId);
                               if (!item) return null;
                               return (
-                                  <tr key={o.id} className="hover:bg-slate-50">
+                                  <tr key={o.id} className={`hover:bg-slate-50 ${selectedOrders.has(o.id) ? 'bg-indigo-50/30' : ''}`}>
+                                      <td className="p-4 text-center">
+                                          <input type="checkbox" className="w-4 h-4 rounded text-indigo-600 cursor-pointer" checked={selectedOrders.has(o.id)} onChange={() => toggleSelection(o.id)} />
+                                      </td>
                                       <td className="p-4 font-black text-slate-800">{item.name}</td>
                                       <td className="p-4 text-xs font-bold text-slate-500">{getFormatName(item.formatId)}</td>
                                       <td className="p-4 text-[10px] font-bold text-slate-400">
@@ -150,7 +202,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
                               );
                           })}
                           {pendingOrders.length === 0 && (
-                              <tr><td colSpan={5} className="p-10 text-center text-slate-400 italic">Aucune commande en préparation.</td></tr>
+                              <tr><td colSpan={6} className="p-10 text-center text-slate-400 italic">Aucune commande en préparation.</td></tr>
                           )}
                       </tbody>
                   </table>

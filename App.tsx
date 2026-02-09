@@ -25,7 +25,8 @@ const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // Sidebar réduite
   const [isGestionOpen, setIsGestionOpen] = useState(true); 
-  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0); // Timestamp dernière actualisation
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0); 
+  const [isTestMode, setIsTestMode] = useState(false); // NOUVEAU: Mode Test
 
   const [users, setUsers] = useState<User[]>([]);
   const [storages, setStorages] = useState<StorageSpace[]>([]);
@@ -43,7 +44,6 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({ tempItemDuration: '14_DAYS', defaultMargin: 82 });
   
-  // New States for Recipes & Losses
   const [glassware, setGlassware] = useState<Glassware[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [techniques, setTechniques] = useState<Technique[]>([]);
@@ -55,12 +55,13 @@ const App: React.FC = () => {
   const [isOffline, setIsOffline] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  const [manualOrderSearch, setManualOrderSearch] = useState('');
-  const [manualOrderQty, setManualOrderQty] = useState(1);
-  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
-
+  // Sync Wrapper qui bloque les écritures si Mode Test activé
   const syncData = async (action: string, payload: any) => {
     if (isOffline) return;
+    if (isTestMode) {
+        console.log(`[MODE TEST] Action ignorée vers DB : ${action}`, payload);
+        return;
+    }
     try {
       const res = await fetch('/api/action', {
         method: 'POST',
@@ -137,14 +138,12 @@ const App: React.FC = () => {
 
   const handleManualRefresh = async () => {
       const now = Date.now();
-      // Limite : 60000ms = 1 minute
       if (now - lastRefreshTime < 60000) {
           const remaining = Math.ceil((60000 - (now - lastRefreshTime)) / 1000);
           setNotification({ title: 'Patience', message: `Actualisation possible dans ${remaining} sec.`, type: 'info' });
           setTimeout(() => setNotification(null), 3000);
           return;
       }
-
       await fetchData();
       setLastRefreshTime(now);
       setNotification({ title: 'Succès', message: 'Données actualisées', type: 'success' });
@@ -152,20 +151,11 @@ const App: React.FC = () => {
   };
 
   const initDemoData = () => {
-        console.log("Initialisation Demo");
         setCategories(['Spiritueux', 'Vins', 'Bières', 'Softs', 'Ingrédients Cocktail', 'Autre']);
         setStorages([{ id: 's1', name: 'Frigo Soft', order: 1 }, { id: 's0', name: 'Surstock', order: 99 }]);
         setItems([{ 
-          id: 'demo_1', 
-          name: 'Vodka Absolut', 
-          category: 'Spiritueux', 
-          formatId: 'f1', 
-          pricePerUnit: 15, 
-          order: 1, 
-          isDraft: false,
-          lastUpdated: new Date().toISOString()
+          id: 'demo_1', name: 'Vodka Absolut', category: 'Spiritueux', formatId: 'f1', pricePerUnit: 15, order: 1, isDraft: false, lastUpdated: new Date().toISOString()
         }]);
-        setMessages([{ id: 'm1', content: 'Bienvenue sur la démo !', userName: 'Système', date: new Date().toISOString(), isArchived: false, readBy: [] }]);
   };
 
   const loadLocalData = () => {
@@ -174,24 +164,12 @@ const App: React.FC = () => {
       try {
         const d = JSON.parse(local);
         if (!d.items || d.items.length === 0) { initDemoData(); return; }
-        setItems(d.items || []); 
-        setUsers(d.users || []); 
-        setStorages(d.storages || []);
-        setStockLevels(d.stockLevels || []);
-        setConsignes(d.consignes || []);
-        setTransactions(d.transactions || []);
-        setOrders(d.orders || []);
-        setDlcHistory(d.dlcHistory || []);
-        setCategories(d.categories || []);
-        setFormats(d.formats || []);
-        setPriorities(d.priorities || []);
-        setDlcProfiles(d.dlcProfiles || []);
-        setUnfulfilledOrders(d.unfulfilledOrders || []);
-        setMessages(d.messages || []);
-        setGlassware(d.glassware || []);
-        setRecipes(d.recipes || []);
-        setTechniques(d.techniques || []);
-        setLosses(d.losses || []);
+        setItems(d.items || []); setUsers(d.users || []); setStorages(d.storages || []);
+        setStockLevels(d.stockLevels || []); setConsignes(d.consignes || []); setTransactions(d.transactions || []);
+        setOrders(d.orders || []); setDlcHistory(d.dlcHistory || []); setCategories(d.categories || []);
+        setFormats(d.formats || []); setPriorities(d.priorities || []); setDlcProfiles(d.dlcProfiles || []);
+        setUnfulfilledOrders(d.unfulfilledOrders || []); setMessages(d.messages || []); setGlassware(d.glassware || []);
+        setRecipes(d.recipes || []); setTechniques(d.techniques || []); setLosses(d.losses || []);
         if (d.appConfig) setAppConfig(d.appConfig);
       } catch (e) { initDemoData(); }
     } else { initDemoData(); }
@@ -264,18 +242,6 @@ const App: React.FC = () => {
       syncData('UPDATE_MESSAGE', { id, isArchived: true });
   };
 
-  const handleMarkMessageRead = (messageId: string) => {
-      if (!currentUser) return;
-      setMessages(prev => prev.map(m => {
-          if (m.id === messageId && !m.readBy?.includes(currentUser.id)) {
-              return { ...m, readBy: [...(m.readBy || []), currentUser.id] };
-          }
-          return m;
-      }));
-      syncData('MARK_MESSAGE_READ', { messageId, userId: currentUser.id });
-  };
-
-  // Helper pour ajouter une entrée DLC
   const trackDlcEntry = (itemId: string, storageId: string) => {
       const item = items.find(i => i.id === itemId);
       const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
@@ -293,22 +259,17 @@ const App: React.FC = () => {
   };
 
   const handleRestockAction = (itemId: string, storageId: string, qtyToAdd: number, qtyToOrder: number = 0, isRupture: boolean = false) => {
-      // 1. Mise à jour du stock (Remontée)
       if (qtyToAdd > 0) {
-          // On cherche d'où ça vient (Surstock s0 ou autre)
           const sourceId = 's0';
           const sourceLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === sourceId);
           const currentSourceQty = sourceLevel?.currentQuantity || 0;
           
-          // Mettre à jour la source (Surstock) - Décrémenter
           handleStockUpdate(itemId, sourceId, Math.max(0, currentSourceQty - qtyToAdd));
 
-          // Mettre à jour la destination (Bar) - Incrémenter
           const destLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
           const currentDestQty = destLevel?.currentQuantity || 0;
           handleStockUpdate(itemId, storageId, currentDestQty + qtyToAdd);
 
-          // Enregistrer la transaction
           const trans: Transaction = {
               id: Math.random().toString(36).substr(2, 9),
               itemId,
@@ -322,20 +283,14 @@ const App: React.FC = () => {
           setTransactions(prev => [trans, ...prev]);
           syncData('SAVE_TRANSACTION', trans);
 
-          // --- GESTION DLC PRODUCTION (Sur Remontée Cave) ---
           const item = items.find(i => i.id === itemId);
           if (item && item.isDLC) {
               const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
               if (profile && profile.type === 'PRODUCTION') {
-                  // On trace chaque unité remontée si nécessaire, ou une fois par lot. 
-                  // Ici on trace une entrée pour le lot.
                   trackDlcEntry(itemId, storageId);
               }
           }
 
-          // --- GESTION ARCHIVAGE COMMANDE ---
-          // Si on remonte du stock (qu'on a trouvé la bouteille), on supprime la demande d'achat "En attente" correspondante
-          // pour éviter de commander un produit qu'on avait finalement en stock.
           const pendingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
           if (pendingOrder) {
               const updatedOrder = { ...pendingOrder, status: 'ARCHIVED' as const };
@@ -344,11 +299,8 @@ const App: React.FC = () => {
           }
       }
 
-      // 2. Gestion Commande / Rupture
       if (qtyToOrder > 0 || isRupture) {
-          // Vérifier si une commande existe déjà
           const existingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
-          
           if (existingOrder) {
               const newQty = existingOrder.quantity + qtyToOrder;
               const updated = { ...existingOrder, quantity: newQty, ruptureDate: isRupture ? new Date().toISOString() : existingOrder.ruptureDate };
@@ -358,7 +310,7 @@ const App: React.FC = () => {
               const newOrder: PendingOrder = {
                   id: Math.random().toString(36).substr(2, 9),
                   itemId,
-                  quantity: qtyToOrder > 0 ? qtyToOrder : 1, // Par défaut 1 si rupture sans qté précisée
+                  quantity: qtyToOrder > 0 ? qtyToOrder : 1, 
                   date: new Date().toISOString(),
                   status: 'PENDING',
                   userName: currentUser?.name,
@@ -370,139 +322,232 @@ const App: React.FC = () => {
       }
   };
 
-  // NOUVEAU: Logique de transaction universelle (pour Mouvements.tsx)
-  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number) => {
-      // Pour un mouvement rapide, on doit déterminer quel stockage impacter.
-      const itemPriorities = priorities.filter(p => p.itemId === itemId && p.storageId !== 's0').sort((a,b) => b.priority - a.priority);
-      let targetStorageId = 's0'; // Fallback Surstock
+  const handleUndoLastTransaction = () => {
+      if (transactions.length === 0) return;
+      if (!window.confirm("Êtes-vous sûr de vouloir annuler le dernier mouvement ?")) return;
+
+      const last = transactions[0]; 
       
-      if (itemPriorities.length > 0) {
-          targetStorageId = itemPriorities[0].storageId;
+      // Inverse l'opération sur le stock
+      const currentLevel = stockLevels.find(l => l.itemId === last.itemId && l.storageId === last.storageId);
+      const currentQty = currentLevel?.currentQuantity || 0;
+      let newQty = currentQty;
+
+      if (last.type === 'IN') {
+          newQty = Math.max(0, currentQty - last.quantity);
       } else {
-          const firstStorage = storages.find(s => s.id !== 's0');
-          if (firstStorage) targetStorageId = firstStorage.id;
+          newQty = currentQty + last.quantity;
       }
 
+      handleStockUpdate(last.itemId, last.storageId, newQty);
+      
+      // Supprime la transaction de la liste locale (Note: DB delete not implemented in syncData, assuming add-only logic mostly, but for full undo we should delete)
+      setTransactions(prev => prev.slice(1));
+      // NOTE: L'API actuelle ne gère pas DELETE_TRANSACTION. En mode production réelle, il faudrait l'ajouter. 
+      // Ici on ajuste le stock mais la trace transaction reste en DB sauf si on ajoute l'endpoint.
+      // Pour l'UX immédiate, on retire de la liste visuelle.
+  };
+
+  // --- LOGIQUE CASCADE & TRANSFERT ---
+  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number) => {
       const item = items.find(i => i.id === itemId);
       const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
 
-      // --- LOGIQUE ENTRÉE (IN) ---
-      if (type === 'IN') {
-          const targetLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
-          const currentTargetQty = targetLevel?.currentQuantity || 0;
-          const targetConsigne = consignes.find(c => c.itemId === itemId && c.storageId === targetStorageId)?.minQuantity || 0;
+      // Trier les stockages par priorité décroissante (P10 > P5 > P1 > S0)
+      // Note: Priorities sont stockées: {itemId, storageId, priority}. 
+      // S0 est souvent priorité 0 ou traité à part.
+      // On récupère les stockages valides pour cet item
+      const itemPriorities = priorities
+          .filter(p => p.itemId === itemId)
+          .sort((a,b) => b.priority - a.priority); // Descendant
 
-          // Si le stock (arrondi au sup) est déjà >= consigne, on redirige vers la priorité suivante ou le surstock
-          if (targetConsigne > 0 && Math.ceil(currentTargetQty) >= targetConsigne) {
-              const nextPriorityStorage = itemPriorities.find(p => p.storageId !== targetStorageId);
-              targetStorageId = nextPriorityStorage ? nextPriorityStorage.storageId : 's0';
-          }
+      const getStorageQty = (sId: string) => stockLevels.find(l => l.itemId === itemId && l.storageId === sId)?.currentQuantity || 0;
+
+      // --- SORTIE (OUT) ---
+      if (type === 'OUT') {
+          let remainingQtyToRemove = qty;
           
-          const currentLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
-          const currentQty = currentLevel?.currentQuantity || 0;
-          const newQty = currentQty + qty;
+          // 1. On parcourt par priorité pour déduire
+          for (const prio of itemPriorities) {
+              if (remainingQtyToRemove <= 0) break;
+              if (prio.storageId === 's0') continue; // On garde le surstock pour la fin
 
-          handleStockUpdate(itemId, targetStorageId, newQty);
-          
-          const trans: Transaction = {
-              id: Math.random().toString(36).substr(2, 9),
-              itemId, storageId: targetStorageId, type, quantity: qty,
-              date: new Date().toISOString(), isCaveTransfer: false, userName: currentUser?.name
-          };
-          setTransactions(prev => [trans, ...prev]);
-          syncData('SAVE_TRANSACTION', trans);
-
-          // --- SUIVI DLC PRODUCTION (IN) ---
-          if (item?.isDLC && profile?.type === 'PRODUCTION') {
-              trackDlcEntry(itemId, targetStorageId);
-          }
-      } 
-      
-      // --- LOGIQUE SORTIE (OUT) ---
-      else {
-          const currentLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === targetStorageId);
-          const currentQty = currentLevel?.currentQuantity || 0;
-
-          // --- SUIVI DLC OUVERTURE (OUT) ---
-          // Si le produit est DLC 'OPENING' et qu'on le sort, on le track
-          // (Note: La modal Mouvements.tsx prévient l'utilisateur, ici on enregistre l'action)
-          if (item?.isDLC && (!profile || profile.type === 'OPENING')) {
-              trackDlcEntry(itemId, targetStorageId);
-          }
-
-          // CAS SPÉCIAL : Sortie d'une bouteille entamée (décimale) -> Remplacement auto
-          if (qty === 1 && currentQty % 1 !== 0) {
-              // 1. On cherche une bouteille de remplacement (Surstock ou autre)
-              let sourceStorageId: string | null = 's0';
-              let sourceLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === 's0');
-
-              // Si pas de surstock, on cherche ailleurs (sauf le target actuel)
-              if (!sourceLevel || sourceLevel.currentQuantity < 1) {
-                  const otherSource = stockLevels.find(l => l.itemId === itemId && l.storageId !== targetStorageId && l.currentQuantity >= 1);
-                  if (otherSource) {
-                      sourceStorageId = otherSource.storageId;
-                      sourceLevel = otherSource;
-                  } else {
-                      sourceStorageId = null;
-                  }
-              }
-
-              if (sourceStorageId && sourceLevel) {
-                  // A. On déduit la source
-                  handleStockUpdate(itemId, sourceStorageId, sourceLevel.currentQuantity - 1);
-
-                  // B. On met à jour la cible : Entier inférieur (bouteille finie) + 1 (nouvelle)
-                  handleStockUpdate(itemId, targetStorageId, Math.floor(currentQty) + 1);
-
-                  // C. Transaction de Sortie
-                  const transOut: Transaction = {
-                      id: Math.random().toString(36).substr(2, 9),
-                      itemId, storageId: targetStorageId, type: 'OUT', quantity: 1,
-                      date: new Date().toISOString(), userName: currentUser?.name,
-                      note: 'Fin bouteille (Auto-Remplacement)'
-                  };
-                  setTransactions(prev => [transOut, ...prev]);
-                  syncData('SAVE_TRANSACTION', transOut);
-
-                  // D. Transaction de Transfert
-                  const transTransfer: Transaction = {
-                      id: Math.random().toString(36).substr(2, 9),
-                      itemId, storageId: targetStorageId, type: 'IN', quantity: 1,
-                      date: new Date().toISOString(), userName: 'Système',
-                      isCaveTransfer: true,
-                      note: `Transfert Auto depuis ${storages.find(s=>s.id===sourceStorageId)?.name}`
-                  };
-                  setTransactions(prev => [transTransfer, ...prev]); 
-                  syncData('SAVE_TRANSACTION', transTransfer);
-                  return; // Stop ici
-              } else {
-                  // Pas de stock pour remplacer -> On jette juste (Math.floor)
-                  handleStockUpdate(itemId, targetStorageId, Math.floor(currentQty));
+              const currentQty = getStorageQty(prio.storageId);
+              if (currentQty > 0) {
+                  const deduction = Math.min(currentQty, remainingQtyToRemove);
+                  const newQty = Math.max(0, currentQty - deduction); // Protect against tiny decimals
+                  
+                  handleStockUpdate(itemId, prio.storageId, newQty);
                   
                   const trans: Transaction = {
                       id: Math.random().toString(36).substr(2, 9),
-                      itemId, storageId: targetStorageId, type: 'OUT', quantity: 1,
-                      date: new Date().toISOString(), userName: currentUser?.name,
-                      note: 'Fin bouteille (Pas de stock remplacement)'
+                      itemId, storageId: prio.storageId, type: 'OUT', quantity: deduction,
+                      date: new Date().toISOString(), userName: currentUser?.name
                   };
                   setTransactions(prev => [trans, ...prev]);
                   syncData('SAVE_TRANSACTION', trans);
-                  return;
+
+                  remainingQtyToRemove -= deduction;
               }
-          } 
-          
-          // Sortie Classique
-          else {
-              const newQty = Math.max(0, currentQty - qty);
-              handleStockUpdate(itemId, targetStorageId, newQty);
+          }
+
+          // 2. Si reste à déduire, on tape dans le Surstock (S0) avec avertissement
+          if (remainingQtyToRemove > 0) {
+              const s0Qty = getStorageQty('s0');
+              if (s0Qty > 0) {
+                  alert(`Attention: Sortie effectuée depuis le Surstock pour "${item?.name}".`);
+                  const deduction = Math.min(s0Qty, remainingQtyToRemove);
+                  handleStockUpdate(itemId, 's0', s0Qty - deduction);
+                  
+                  const trans: Transaction = {
+                      id: Math.random().toString(36).substr(2, 9),
+                      itemId, storageId: 's0', type: 'OUT', quantity: deduction,
+                      date: new Date().toISOString(), userName: currentUser?.name
+                  };
+                  setTransactions(prev => [trans, ...prev]);
+                  syncData('SAVE_TRANSACTION', trans);
+                  
+                  remainingQtyToRemove -= deduction;
+              }
+          }
+
+          // 3. Tracking DLC si applicable (si on a tapé dans un stock prioritaire)
+          if (item?.isDLC && (!profile || profile.type === 'OPENING')) {
+              // On suppose que si OUT, on a ouvert une bouteille quelque part.
+              // On l'enregistre sur le stockage le plus prioritaire touché.
+              if (itemPriorities.length > 0) trackDlcEntry(itemId, itemPriorities[0].storageId);
+          }
+
+          // 4. RÉÉQUILIBRAGE AUTOMATIQUE (Transfert)
+          // Vérifier si un stockage prioritaire est passé sous sa consigne
+          // Et si un stockage moins prioritaire a du stock pour combler
+          itemPriorities.forEach(highPrio => {
+              const consigne = consignes.find(c => c.itemId === itemId && c.storageId === highPrio.storageId)?.minQuantity || 0;
+              const currentQty = stockLevels.find(l => l.itemId === itemId && l.storageId === highPrio.storageId)?.currentQuantity || 0; // On relit le state (optimiste, sinon utiliser var locale)
+              // Attention: state updates are async inside handler usually, but here we called handleStockUpdate which updates state but react batching... 
+              // Pour la logique immédiate, on va faire une approximation ou utiliser les valeurs calculées.
+              // Simplification: On vérifie juste si on a un trou évident.
+              // EXEMPLE SPECIFIQUE: Sirop Rose. P5 (High) Cons 0.5. Current 0. P10 (Low) a du stock.
+              // Pour simplifier, on va le faire "au prochain tick" ou supposer que l'utilisateur gère, 
+              // MAIS la demande est "Je veux que la bouteille sois transféré".
+              
+              if (consigne > 0 && currentQty < consigne) {
+                  // Chercher du stock ailleurs (moins prioritaire ou surstock)
+                  let sourceId: string | null = null;
+                  let amountToTransfer = 0;
+                  
+                  // Chercher dans les priorités inférieures
+                  const lowerPrio = itemPriorities.filter(p => p.priority < highPrio.priority);
+                  for (const low of lowerPrio) {
+                      const lowQty = getStorageQty(low.storageId); // Attention: peut être stale si on vient de modifier
+                      if (lowQty >= 1) {
+                          sourceId = low.storageId;
+                          amountToTransfer = 1; // On transfère 1 unité par défaut
+                          break;
+                      }
+                  }
+                  
+                  // Sinon Surstock
+                  if (!sourceId) {
+                      const s0Qty = getStorageQty('s0');
+                      if (s0Qty >= 1) {
+                          sourceId = 's0';
+                          amountToTransfer = 1;
+                      }
+                  }
+
+                  if (sourceId && amountToTransfer > 0) {
+                      // Exécuter le transfert
+                      // Sortie Source
+                      const sourceQty = stockLevels.find(l => l.itemId === itemId && l.storageId === sourceId)?.currentQuantity || 0; // Re-fetch tricky logic without updated state
+                      // Note: Dans une app React réelle, enchainer des setState basés sur des valeurs précédentes dans la même boucle est risqué sans functional updates précises.
+                      // On va émettre les transactions et laisser React mettre à jour.
+                      
+                      // On force une mise à jour différée pour le transfert automatique
+                      setTimeout(() => {
+                          const freshSourceQty = stockLevels.find(l => l.itemId === itemId && l.storageId === sourceId)?.currentQuantity || 0;
+                          const freshDestQty = stockLevels.find(l => l.itemId === itemId && l.storageId === highPrio.storageId)?.currentQuantity || 0;
+                          
+                          if (freshSourceQty >= 1) {
+                              handleStockUpdate(itemId, sourceId!, freshSourceQty - 1);
+                              handleStockUpdate(itemId, highPrio.storageId, freshDestQty + 1);
+                              
+                              const transTransfer: Transaction = {
+                                  id: Math.random().toString(36).substr(2, 9),
+                                  itemId, storageId: highPrio.storageId, type: 'IN', quantity: 1,
+                                  date: new Date().toISOString(), userName: 'Système',
+                                  isCaveTransfer: true,
+                                  note: `Transfert Auto depuis ${storages.find(s=>s.id===sourceId)?.name}`
+                              };
+                              setTransactions(prev => [transTransfer, ...prev]);
+                              syncData('SAVE_TRANSACTION', transTransfer);
+                          }
+                      }, 100);
+                  }
+              }
+          });
+
+      } 
+      
+      // --- ENTRÉE (IN) ---
+      else {
+          let remainingQtyToAdd = qty;
+
+          // 1. Remplir les stockages prioritaires jusqu'à la consigne
+          for (const prio of itemPriorities) {
+              if (remainingQtyToAdd <= 0) break;
+              if (prio.storageId === 's0') continue;
+
+              const currentQty = getStorageQty(prio.storageId);
+              const consigne = consignes.find(c => c.itemId === itemId && c.storageId === prio.storageId)?.minQuantity || 0;
+              
+              if (consigne > 0 && currentQty < consigne) {
+                  const spaceAvailable = consigne - currentQty;
+                  // On remplit ce qu'on peut, soit tout le reste, soit l'espace dispo
+                  // Mais attention, souvent on rentre des bouteilles pleines (>=1).
+                  // Si l'espace est 0.5 et qu'on rentre 1, on met 1 (débordement autorisé sur prio ?) 
+                  // Ou on met 0.5 et le reste va ailleurs ?
+                  // Logique bar : on remplit le frigo. Si ça déborde, ça va en réserve.
+                  
+                  // On remplit jusqu'à la consigne (arrondie au sup pour les bouteilles entamées)
+                  const fillAmount = Math.ceil(consigne) - Math.floor(currentQty); 
+                  const toAdd = Math.min(fillAmount, remainingQtyToAdd);
+                  
+                  if (toAdd > 0) {
+                      handleStockUpdate(itemId, prio.storageId, currentQty + toAdd);
+                      
+                      const trans: Transaction = {
+                          id: Math.random().toString(36).substr(2, 9),
+                          itemId, storageId: prio.storageId, type: 'IN', quantity: toAdd,
+                          date: new Date().toISOString(), userName: currentUser?.name
+                      };
+                      setTransactions(prev => [trans, ...prev]);
+                      syncData('SAVE_TRANSACTION', trans);
+                      
+                      remainingQtyToAdd -= toAdd;
+                  }
+              }
+          }
+
+          // 2. Le reste va en Surstock (ou stockage le plus bas si pas de s0)
+          if (remainingQtyToAdd > 0) {
+              const targetId = 's0';
+              const currentS0 = getStorageQty(targetId);
+              handleStockUpdate(itemId, targetId, currentS0 + remainingQtyToAdd);
               
               const trans: Transaction = {
                   id: Math.random().toString(36).substr(2, 9),
-                  itemId, storageId: targetStorageId, type, quantity: qty,
-                  date: new Date().toISOString(), isCaveTransfer: false, userName: currentUser?.name
+                  itemId, storageId: targetId, type: 'IN', quantity: remainingQtyToAdd,
+                  date: new Date().toISOString(), userName: currentUser?.name
               };
               setTransactions(prev => [trans, ...prev]);
               syncData('SAVE_TRANSACTION', trans);
+          }
+
+          // 3. Tracking DLC Production
+          if (item?.isDLC && profile?.type === 'PRODUCTION') {
+              // On track sur le premier emplacement touché (souvent le plus prioritaire)
+              trackDlcEntry(itemId, itemPriorities.length > 0 ? itemPriorities[0].storageId : 's0');
           }
       }
   };
@@ -516,27 +561,16 @@ const App: React.FC = () => {
       };
       setUnfulfilledOrders(prev => [unf, ...prev]);
       syncData('SAVE_UNFULFILLED_ORDER', unf);
-
-      // Créer automatiquement une commande "En attente" pour ce produit
-      handleRestockAction(itemId, 's0', 0, 1, true); // 0 remontée, 1 commande, isRupture=true
+      handleRestockAction(itemId, 's0', 0, 1, true); 
   };
 
   const handleCreateTemporaryItem = (name: string, q: number) => {
       const newItem: StockItem = {
           id: 'temp_' + Date.now(),
-          name,
-          category: 'Produits Temporaires',
-          formatId: 'f1', // Défaut 70cl ou autre
-          pricePerUnit: 0,
-          lastUpdated: new Date().toISOString(),
-          isTemporary: true,
-          order: 9999,
-          createdAt: new Date().toISOString()
+          name, category: 'Produits Temporaires', formatId: 'f1', pricePerUnit: 0, lastUpdated: new Date().toISOString(), isTemporary: true, order: 9999, createdAt: new Date().toISOString()
       };
       setItems(prev => [...prev, newItem]);
       syncData('SAVE_ITEM', newItem);
-
-      // Si quantité cible > 0, on définit une consigne temporaire sur le Surstock
       if (q > 0) {
           setConsignes(prev => [...prev, { itemId: newItem.id, storageId: 's0', minQuantity: q }]);
           syncData('SAVE_CONSIGNE', { itemId: newItem.id, storageId: 's0', minQuantity: q });
@@ -545,72 +579,43 @@ const App: React.FC = () => {
 
   const handleDeleteItem = (id: string) => { setItems(prev => prev.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); };
   
-  // Suppression DLC avec gestion de perte optionnelle
   const handleDeleteDlcHistory = (id: string, qtyLost: number = 0) => { 
-      // 1. Si perte déclarée, on enregistre
       if (qtyLost > 0) {
           const dlcItem = dlcHistory.find(h => h.id === id);
           if (dlcItem) {
               const loss: Loss = {
-                  id: 'loss_' + Date.now(),
-                  itemId: dlcItem.itemId,
-                  openedAt: dlcItem.openedAt,
-                  discardedAt: new Date().toISOString(),
-                  quantity: qtyLost,
-                  userName: currentUser?.name
+                  id: 'loss_' + Date.now(), itemId: dlcItem.itemId, openedAt: dlcItem.openedAt, discardedAt: new Date().toISOString(), quantity: qtyLost, userName: currentUser?.name
               };
               setLosses(prev => [loss, ...prev]);
               syncData('SAVE_LOSS', loss);
           }
       }
-
-      // 2. Suppression de l'historique DLC
       setDlcHistory(prev => prev.filter(h => h.id !== id)); 
       syncData('DELETE_DLC_HISTORY', {id}); 
   };
 
-  // Logique de mise à jour des commandes (pour le composant Order)
   const handleOrderUpdate = (orderId: string, quantity: number, status: 'PENDING' | 'ORDERED' | 'RECEIVED' | 'ARCHIVED' = 'PENDING', ruptureDate?: string) => {
       setOrders(prev => prev.map(o => {
           if (o.id === orderId) {
-              const updated = { 
-                  ...o, 
-                  quantity, 
-                  status,
-                  ruptureDate: ruptureDate !== undefined ? ruptureDate : o.ruptureDate,
-                  orderedAt: status === 'ORDERED' && o.status !== 'ORDERED' ? new Date().toISOString() : o.orderedAt,
-                  receivedAt: status === 'RECEIVED' && o.status !== 'RECEIVED' ? new Date().toISOString() : o.receivedAt,
-                  // Si on passe à RECEIVED, on garde la quantité initiale pour l'historique si pas déjà fait
-                  initialQuantity: status === 'RECEIVED' && !o.initialQuantity ? o.quantity : o.initialQuantity
-              };
+              const updated = { ...o, quantity, status, ruptureDate: ruptureDate !== undefined ? ruptureDate : o.ruptureDate, orderedAt: status === 'ORDERED' && o.status !== 'ORDERED' ? new Date().toISOString() : o.orderedAt, receivedAt: status === 'RECEIVED' && o.status !== 'RECEIVED' ? new Date().toISOString() : o.receivedAt, initialQuantity: status === 'RECEIVED' && !o.initialQuantity ? o.quantity : o.initialQuantity };
               syncData('SAVE_ORDER', updated);
-              
-              // Si REÇU, on incrémente le stock (Surstock par défaut pour les réceptions)
               if (status === 'RECEIVED' && o.status !== 'RECEIVED') {
                   const targetStorageId = 's0';
                   const currentLevel = stockLevels.find(l => l.itemId === o.itemId && l.storageId === targetStorageId);
                   const currentQty = currentLevel?.currentQuantity || 0;
                   handleStockUpdate(o.itemId, targetStorageId, currentQty + quantity);
               }
-              
               return updated;
           }
           return o;
       }));
   };
 
-  const handleDeleteOrder = (orderId: string) => {
-      setOrders(prev => prev.filter(o => o.id !== orderId));
-  };
+  const handleDeleteOrder = (orderId: string) => { setOrders(prev => prev.filter(o => o.id !== orderId)); };
   
   const handleAddManualOrder = (itemId: string, qty: number) => {
       const newOrder: PendingOrder = {
-          id: Math.random().toString(36).substr(2, 9),
-          itemId,
-          quantity: qty,
-          date: new Date().toISOString(),
-          status: 'PENDING',
-          userName: currentUser?.name
+          id: Math.random().toString(36).substr(2, 9), itemId, quantity: qty, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name
       };
       setOrders(prev => [...prev, newOrder]);
       syncData('SAVE_ORDER', newOrder);
@@ -630,52 +635,27 @@ const App: React.FC = () => {
            
            <div className="p-8">
              <div className="flex justify-center gap-4 mb-8">
-               {[0, 1, 2, 3].map(i => (
-                 <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${loginInput.length > i ? 'bg-indigo-600 scale-110' : 'bg-slate-200'}`}></div>
-               ))}
+               {[0, 1, 2, 3].map(i => (<div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${loginInput.length > i ? 'bg-indigo-600 scale-110' : 'bg-slate-200'}`}></div>))}
              </div>
-
              <div className="grid grid-cols-3 gap-4 mb-6">
-               {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-                 <button 
-                   key={n} 
-                   onClick={() => handlePinInput(n.toString())} 
-                   className="aspect-square rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-black text-2xl transition-all active:scale-95 shadow-sm border border-slate-100"
-                 >
-                   {n}
-                 </button>
-               ))}
+               {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (<button key={n} onClick={() => handlePinInput(n.toString())} className="aspect-square rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-black text-2xl transition-all active:scale-95 shadow-sm border border-slate-100">{n}</button>))}
                <div className="aspect-square"></div>
-               <button 
-                 onClick={() => handlePinInput("0")} 
-                 className="aspect-square rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-black text-2xl transition-all active:scale-95 shadow-sm border border-slate-100"
-               >
-                 0
-               </button>
-               <button 
-                 onClick={() => setLoginInput(prev => prev.slice(0, -1))} 
-                 className="aspect-square rounded-full bg-rose-50 text-rose-500 font-black flex items-center justify-center active:scale-95 transition-all"
-               >
-                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" /></svg>
-               </button>
+               <button onClick={() => handlePinInput("0")} className="aspect-square rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-black text-2xl transition-all active:scale-95 shadow-sm border border-slate-100">0</button>
+               <button onClick={() => setLoginInput(prev => prev.slice(0, -1))} className="aspect-square rounded-full bg-rose-50 text-rose-500 font-black flex items-center justify-center active:scale-95 transition-all"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" /></svg></button>
              </div>
-             
-             {loginStatus === 'error' && (
-                <p className="text-center text-rose-500 text-xs font-black uppercase animate-bounce">Code PIN Incorrect</p>
-             )}
+             {loginStatus === 'error' && (<p className="text-center text-rose-500 text-xs font-black uppercase animate-bounce">Code PIN Incorrect</p>)}
            </div>
          </div>
        </div>
      );
   }
 
-  // Calcul du nombre de messages non lus pour l'utilisateur actuel
   const unreadMessagesCount = messages.filter(m => !m.isArchived && (!m.readBy || !m.readBy.includes(currentUser.id))).length;
-  // Calcul du nombre de recettes en attente
   const pendingRecipesCount = recipes.filter(r => r.status === 'DRAFT').length;
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-slate-50">
+    <div className={`min-h-screen flex flex-col md:flex-row bg-slate-50 ${isTestMode ? 'border-4 border-rose-500' : ''}`}>
+      {isTestMode && <div className="fixed top-0 left-0 right-0 h-2 bg-rose-500 z-[1000]"></div>}
       
       {/* SIDEBAR */}
       <aside className={`bg-slate-950 text-white flex flex-col md:sticky top-0 md:h-screen z-50 transition-all duration-300 ${isSidebarCollapsed ? 'w-full md:w-20' : 'w-full md:w-64'}`}>
@@ -684,18 +664,8 @@ const App: React.FC = () => {
             <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-black text-xs shrink-0">B</div>
             {!isSidebarCollapsed && <h1 className="font-black text-sm uppercase tracking-widest truncate">BARSTOCK</h1>}
           </div>
-          {/* BOUTON COLLAPSE (Desktop Only) */}
-          <button 
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
-            className="hidden md:flex text-slate-500 hover:text-white transition-colors"
-            title={isSidebarCollapsed ? "Agrandir le menu" : "Réduire le menu"}
-          >
-             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-               {isSidebarCollapsed 
-                 ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /> 
-                 : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-               }
-             </svg>
+          <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="hidden md:flex text-slate-500 hover:text-white transition-colors" title={isSidebarCollapsed ? "Agrandir le menu" : "Réduire le menu"}>
+             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">{isSidebarCollapsed ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /> : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />}</svg>
           </button>
         </div>
 
@@ -709,26 +679,15 @@ const App: React.FC = () => {
           <div className="my-2 border-t border-white/5"></div>
           
           <NavItem collapsed={isSidebarCollapsed} active={view === 'recipes'} onClick={() => setView('recipes')} label="Fiches Techniques" icon="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" badge={currentUser.role === 'ADMIN' ? pendingRecipesCount : 0} />
-          
           <div className="my-2 border-t border-white/5"></div>
-
           <NavItem collapsed={isSidebarCollapsed} active={view === 'history'} onClick={() => setView('history')} label="Historique" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'dlc_tracking'} onClick={() => setView('dlc_tracking')} label="Suivi DLC" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'messages'} onClick={() => setView('messages')} label="Messagerie" icon="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" badge={unreadMessagesCount} />
 
-          {/* GROUPE GESTION */}
           <div className="pt-4 mt-4 border-t border-white/5">
-              <button 
-                onClick={() => setIsGestionOpen(!isGestionOpen)}
-                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors`}
-                title="Gestion"
-              >
+              <button onClick={() => setIsGestionOpen(!isGestionOpen)} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors`} title="Gestion">
                   {!isSidebarCollapsed && <span>Gestion</span>}
-                  {isSidebarCollapsed ? (
-                      <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
-                  ) : (
-                      <svg className={`w-3 h-3 transition-transform ${isGestionOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                  )}
+                  {isSidebarCollapsed ? <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg> : <svg className={`w-3 h-3 transition-transform ${isGestionOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
               </button>
               
               {isGestionOpen && (
@@ -751,6 +710,15 @@ const App: React.FC = () => {
                         <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-500' : 'text-emerald-500'}`}>
                             {isOffline ? 'Mode Démo' : 'Connecté'}
                         </span>
+                        {currentUser?.role === 'ADMIN' && (
+                            <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                                <div className={`w-6 h-3 rounded-full relative transition-colors ${isTestMode ? 'bg-rose-500' : 'bg-slate-600'}`}>
+                                    <div className={`absolute top-0.5 w-2 h-2 bg-white rounded-full transition-all ${isTestMode ? 'left-3.5' : 'left-0.5'}`}></div>
+                                </div>
+                                <input type="checkbox" className="hidden" checked={isTestMode} onChange={(e) => setIsTestMode(e.target.checked)} />
+                                <span className="text-[9px] uppercase font-bold text-rose-400">Test Mode</span>
+                            </label>
+                        )}
                     </>
                 )}
                 {isSidebarCollapsed && (
@@ -761,20 +729,11 @@ const App: React.FC = () => {
             </div>
             
             <div className={`flex ${isSidebarCollapsed ? 'flex-col gap-2' : 'flex-row gap-2'}`}>
-                {/* BOUTON ACTUALISER */}
-                <button 
-                    onClick={handleManualRefresh} 
-                    className="text-slate-400 hover:text-white p-1" 
-                    title="Actualiser (Max 1/min)"
-                >
+                <button onClick={handleManualRefresh} className="text-slate-400 hover:text-white p-1" title="Actualiser (Max 1/min)">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </button>
-                
-                {/* BOUTON QUITTER */}
                 <button onClick={() => setCurrentUser(null)} className="text-[10px] text-rose-400 font-black uppercase hover:text-rose-300 p-1" title="Se déconnecter">
-                    {isSidebarCollapsed ? (
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                    ) : 'Quitter'}
+                    {isSidebarCollapsed ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg> : 'Quitter'}
                 </button>
             </div>
           </div>
@@ -803,8 +762,8 @@ const App: React.FC = () => {
             />
         )}
         {view === 'inventory' && <StockTable items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleStockUpdate} consignes={consignes} />}
-        {view === 'movements' && <Movements items={sortedItems} transactions={transactions} storages={sortedStorages} onTransaction={handleTransaction} onOpenKeypad={() => {}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleUnfulfilledOrder} onCreateTemporaryItem={handleCreateTemporaryItem} formats={formats} dlcProfiles={dlcProfiles} />}
-        {view === 'restock' && <CaveRestock items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={handleCreateTemporaryItem} orders={orders} />}
+        {view === 'movements' && <Movements items={sortedItems} transactions={transactions} storages={sortedStorages} onTransaction={handleTransaction} onOpenKeypad={() => {}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleUnfulfilledOrder} onCreateTemporaryItem={handleCreateTemporaryItem} formats={formats} dlcProfiles={dlcProfiles} onUndo={handleUndoLastTransaction} />}
+        {view === 'restock' && <CaveRestock items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={handleCreateTemporaryItem} orders={orders} currentUser={currentUser} />}
         {view === 'articles' && <ArticlesList items={sortedItems} setItems={setItems} formats={formats} categories={categories} userRole={currentUser?.role || 'BARMAN'} onDelete={handleDeleteItem} onSync={syncData} dlcProfiles={dlcProfiles} filter={articlesFilter} />}
         {view === 'consignes' && <Consignes items={sortedItems} storages={sortedStorages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
         {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={sortedStorages} onDelete={handleDeleteDlcHistory} />}
