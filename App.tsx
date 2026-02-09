@@ -14,6 +14,7 @@ import MessagesView from './components/MessagesView';
 import Order from './components/Order';
 import RecipesView from './components/RecipesView';
 import DailyLife from './components/DailyLife';
+import ConnectionLogs from './components/ConnectionLogs';
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -56,7 +57,7 @@ const App: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [eventComments, setEventComments] = useState<EventComment[]>([]);
   
-  const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes' | 'daily_life'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes' | 'daily_life' | 'logs'>('dashboard');
   const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); 
   const [notification, setNotification] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -75,7 +76,6 @@ const App: React.FC = () => {
         const logId = 'log_' + Date.now() + Math.random().toString(36).substr(2,5);
         const logDetails = typeof payload === 'object' ? JSON.stringify(payload).slice(0, 100) : String(payload);
         
-        // On envoie le log en parallèle, sans attendre
         fetch('/api/action', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -161,7 +161,6 @@ const App: React.FC = () => {
           return eDate.toDateString() === now.toDateString();
       });
       if (todayEvents.length > 0 && !notification) {
-          // Simple "notification" via state (could be improved)
           // setNotification({ title: 'Agenda', message: `${todayEvents.length} événement(s) prévu(s) aujourd'hui !`, type: 'info' });
       }
   }, [events]);
@@ -180,8 +179,8 @@ const App: React.FC = () => {
       setTimeout(() => setNotification(null), 3000);
   };
 
-  const initDemoData = () => { /* ... (Demo logic remains similar) ... */ };
-  const loadLocalData = () => { /* ... (Local storage logic) ... */ };
+  const initDemoData = () => { /* ... */ };
+  const loadLocalData = () => { /* ... */ };
 
   useEffect(() => {
     if (!loading && !isOffline) {
@@ -193,7 +192,6 @@ const App: React.FC = () => {
   const sortedItems = useMemo(() => [...items].filter(i => !!i).sort((a, b) => (a.order || 0) - (b.order || 0)), [items]);
   const sortedStorages = useMemo(() => [...storages].filter(s => !!s).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)), [storages]);
 
-  // Auth & PIN Logic ... (remains same)
   const handlePinInput = useCallback((num: string) => {
     if (loginStatus !== 'idle') return;
     if (loginInput.length >= 4) return;
@@ -204,6 +202,14 @@ const App: React.FC = () => {
       if (found) {
         setTempUser(found); 
         setLoginStatus('success');
+        
+        // LOG LOGIN
+        fetch('/api/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'SAVE_LOG', payload: { id: 'log_' + Date.now(), userName: found.name, action: 'LOGIN', details: 'Connexion réussie', timestamp: new Date().toISOString() } })
+        }).catch(console.error);
+
         setTimeout(() => { setCurrentUser(found); setLoginStatus('idle'); setLoginInput(''); }, 800);
       } else {
         setLoginStatus('error'); 
@@ -239,7 +245,6 @@ const App: React.FC = () => {
       const item = items.find(i => i.id === itemId);
       const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
       
-      // Stockages par priorité décroissante (P10 -> P1)
       const itemPriorities = priorities.filter(p => p.itemId === itemId).sort((a,b) => b.priority - a.priority);
       const getStorageQty = (sId: string) => stockLevels.find(l => l.itemId === itemId && l.storageId === sId)?.currentQuantity || 0;
 
@@ -247,57 +252,81 @@ const App: React.FC = () => {
       if (type === 'OUT') {
           let remaining = qty;
           
-          // CAS SPECIAL : Remplacement Bouteille Entamée
-          // Si on sort "1" (bouteille finie) et qu'on a un décimal sur la priorité haute (ex: 0.3 sur P5)
-          // On vide le décimal, on prend une pleine en réserve (P10), on la met en P5.
-          if (qty === 1 && itemPriorities.length > 0) {
-              const highestPrio = itemPriorities[0]; // ex: P5
-              const currentHighQty = getStorageQty(highestPrio.storageId);
-              const decimalPart = currentHighQty % 1;
+          // 1. PRIORITÉ SURSTOCK (S0)
+          const s0Qty = getStorageQty('s0');
+          if (s0Qty > 0) {
+              alert(`⚠️ Article disponible en Surstock ! Sortie effectuée depuis le Surstock pour "${item?.name}".`);
+              const deduction = Math.min(s0Qty, remaining);
+              handleStockUpdate(itemId, 's0', s0Qty - deduction);
+              
+              const trans: Transaction = {
+                  id: Math.random().toString(36).substr(2, 9),
+                  itemId, storageId: 's0', type: 'OUT', quantity: deduction,
+                  date: new Date().toISOString(), userName: currentUser?.name, note: 'Sortie Prioritaire Surstock'
+              };
+              setTransactions(prev => [trans, ...prev]);
+              syncData('SAVE_TRANSACTION', trans);
+              return; // On arrête là pour l'action immédiate si Surstock dispo
+          }
 
-              if (decimalPart > 0.001 && decimalPart < 0.999) {
-                  // C'est une bouteille entamée qu'on finit.
-                  // 1. Vider le reste (Loss/Sale)
-                  handleStockUpdate(itemId, highestPrio.storageId, Math.floor(currentHighQty)); // 0.3 -> 0
-                  
-                  // Transaction de "fin de bouteille"
-                  const transOut: Transaction = {
-                      id: Math.random().toString(36).substr(2, 9),
-                      itemId, storageId: highestPrio.storageId, type: 'OUT', quantity: decimalPart, // On sort ce qui restait
-                      date: new Date().toISOString(), userName: currentUser?.name, note: 'Fin bouteille entamée'
-                  };
-                  setTransactions(prev => [transOut, ...prev]);
-                  syncData('SAVE_TRANSACTION', transOut);
+          // 2. RÈGLE REMPLACEMENT BOUTEILLE (Sortie "1" sur Bouteille Entamée)
+          if (remaining === 1 && itemPriorities.length > 0) {
+              // Trouver le stock actif (Prio Max hors S0)
+              const activeStorage = itemPriorities.find(p => p.storageId !== 's0') || itemPriorities[0]; 
+              
+              if (activeStorage) {
+                  const activeQty = getStorageQty(activeStorage.storageId);
+                  const decimalPart = activeQty % 1;
 
-                  // 2. Chercher une bouteille pleine en réserve pour remplacer
-                  // On cherche dans les prio inférieures ou surstock
-                  let sourceId = null;
-                  for (let i = 1; i < itemPriorities.length; i++) {
-                      if (getStorageQty(itemPriorities[i].storageId) >= 1) { sourceId = itemPriorities[i].storageId; break; }
+                  // Si une bouteille est entamée (ex: 0.3)
+                  if (decimalPart > 0.001 && decimalPart < 0.999) {
+                      // On vide la bouteille entamée (Perte/Conso)
+                      handleStockUpdate(itemId, activeStorage.storageId, Math.floor(activeQty)); // 0.3 -> 0
+                      
+                      // On cherche une bouteille pleine en réserve pour remplacer
+                      let sourceId = null;
+                      // Chercher dans les priorités inférieures
+                      for (const p of itemPriorities) {
+                          if (p.priority < activeStorage.priority && getStorageQty(p.storageId) >= 1) {
+                              sourceId = p.storageId;
+                              break;
+                          }
+                      }
+                      // Sinon Surstock
+                      if (!sourceId && getStorageQty('s0') >= 1) sourceId = 's0';
+
+                      if (sourceId) {
+                          // Transfert 1 depuis réserve vers actif
+                          const sourceQty = getStorageQty(sourceId);
+                          handleStockUpdate(itemId, sourceId, sourceQty - 1);
+                          handleStockUpdate(itemId, activeStorage.storageId, Math.floor(activeQty) + 1); // 0 + 1 = 1
+
+                          const transRep: Transaction = {
+                              id: Math.random().toString(36).substr(2, 9),
+                              itemId, storageId: activeStorage.storageId, type: 'IN', quantity: 1, // On note IN pour simplifier la logique de stock final, mais c'est un transfert
+                              date: new Date().toISOString(), userName: currentUser?.name, 
+                              isCaveTransfer: true, // Marque comme mouvement interne
+                              note: `Remplacement auto: ${decimalPart.toFixed(2)} jetés, 1 remplacé depuis ${storages.find(s=>s.id===sourceId)?.name}`
+                          };
+                          setTransactions(prev => [transRep, ...prev]);
+                          syncData('SAVE_TRANSACTION', transRep);
+                      } else {
+                          // Pas de réserve : on a juste fini la bouteille
+                          const transFin: Transaction = {
+                              id: Math.random().toString(36).substr(2, 9),
+                              itemId, storageId: activeStorage.storageId, type: 'OUT', quantity: decimalPart,
+                              date: new Date().toISOString(), userName: currentUser?.name, note: 'Fin bouteille (Pas de réserve)'
+                          };
+                          setTransactions(prev => [transFin, ...prev]);
+                          syncData('SAVE_TRANSACTION', transFin);
+                      }
+                      return; // Stop
                   }
-                  if (!sourceId && getStorageQty('s0') >= 1) sourceId = 's0';
-
-                  if (sourceId) {
-                      const sourceQty = getStorageQty(sourceId);
-                      handleStockUpdate(itemId, sourceId, sourceQty - 1);
-                      handleStockUpdate(itemId, highestPrio.storageId, Math.floor(currentHighQty) + 1); // 0 + 1 = 1
-
-                      // Log transfert interne
-                      const transTransfer: Transaction = {
-                          id: Math.random().toString(36).substr(2, 9),
-                          itemId, storageId: highestPrio.storageId, type: 'IN', quantity: 1,
-                          date: new Date().toISOString(), userName: 'Système', isCaveTransfer: true, 
-                          note: `Remplacement auto depuis ${storages.find(s=>s.id===sourceId)?.name}`
-                      };
-                      setTransactions(prev => [transTransfer, ...prev]);
-                      syncData('SAVE_TRANSACTION', transTransfer);
-                  }
-                  return; // Stop ici pour ce cas spécial
               }
           }
 
-          // Sortie Standard (Cascade)
-          // 1. Priorité aux décimales partout
+          // 3. SORTIE STANDARD (Cascade)
+          // Priorité aux décimales d'abord
           for (const prio of itemPriorities) {
               if (remaining <= 0) break;
               const q = getStorageQty(prio.storageId);
@@ -305,15 +334,16 @@ const App: React.FC = () => {
               if (dec > 0.001) {
                   const take = Math.min(dec, remaining);
                   handleStockUpdate(itemId, prio.storageId, q - take);
-                  // Log transaction...
+                  const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: prio.storageId, type: 'OUT', quantity: take, date: new Date().toISOString(), userName: currentUser?.name };
+                  setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
                   remaining -= take;
               }
           }
-          // 2. Pleines
+          // Puis bouteilles pleines
           if (remaining > 0) {
               for (const prio of itemPriorities) {
                   if (remaining <= 0) break;
-                  if (prio.storageId === 's0') continue;
+                  if (prio.storageId === 's0') continue; // Déjà vérifié en 1, mais au cas où
                   const q = getStorageQty(prio.storageId);
                   if (q >= 1) {
                       const take = Math.min(Math.floor(q), remaining);
@@ -322,16 +352,6 @@ const App: React.FC = () => {
                       setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
                       remaining -= take;
                   }
-              }
-          }
-          // 3. Surstock
-          if (remaining > 0) {
-              const qS0 = getStorageQty('s0');
-              if (qS0 > 0) {
-                  const take = Math.min(qS0, remaining);
-                  handleStockUpdate(itemId, 's0', qS0 - take);
-                  const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: 's0', type: 'OUT', quantity: take, date: new Date().toISOString(), userName: currentUser?.name };
-                  setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
               }
           }
       } 
@@ -365,21 +385,15 @@ const App: React.FC = () => {
       }
   };
 
-  // Restock Helper Actions
   const handleRestockAction = (itemId: string, storageId: string, qtyToAdd: number, qtyToOrder: number = 0, isRupture: boolean = false) => {
-      // 1. Remontée physique
       if (qtyToAdd > 0) {
           const s0Qty = stockLevels.find(l => l.itemId === itemId && l.storageId === 's0')?.currentQuantity || 0;
           handleStockUpdate(itemId, 's0', Math.max(0, s0Qty - qtyToAdd));
-          
           const destQty = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId)?.currentQuantity || 0;
           handleStockUpdate(itemId, storageId, destQty + qtyToAdd);
-          
           const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId, type: 'IN', quantity: qtyToAdd, date: new Date().toISOString(), isCaveTransfer: true, userName: currentUser?.name };
           setTransactions(p => [trans, ...p]); syncData('SAVE_TRANSACTION', trans);
       }
-      
-      // 2. Commande (Rupture ou Pré-commande)
       if (qtyToOrder > 0 || isRupture) {
           const existing = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
           if (existing) {
@@ -392,8 +406,6 @@ const App: React.FC = () => {
       }
   };
 
-  // ... (Other handlers unchanged for brevity: handleUnfulfilledOrder, handleCreateTemporaryItem, etc.)
-  // Placeholder handlers for unchanged logic to keep file size reasonable
   const handleUnfulfilledOrder = (itemId: string, quantity: number = 1) => {
       const unf: UnfulfilledOrder = { id: Math.random().toString(36).substr(2, 9), itemId, date: new Date().toISOString(), userName: currentUser?.name, quantity };
       setUnfulfilledOrders(prev => [unf, ...prev]); syncData('SAVE_UNFULFILLED_ORDER', unf);
@@ -408,44 +420,70 @@ const App: React.FC = () => {
   const handleDeleteDlcHistory = (id: string, qtyLost: number = 0) => { setDlcHistory(prev => prev.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', {id}); };
   const handleOrderUpdate = (orderId: string, quantity: number, status: any = 'PENDING', ruptureDate?: string) => {
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, quantity, status, ruptureDate: ruptureDate !== undefined ? ruptureDate : o.ruptureDate } : o));
-      // Sync simplified
+      const order = orders.find(o => o.id === orderId);
+      if (order) syncData('SAVE_ORDER', { ...order, quantity, status, ruptureDate: ruptureDate !== undefined ? ruptureDate : order.ruptureDate });
   };
   const handleDeleteOrder = (orderId: string) => { setOrders(prev => prev.filter(o => o.id !== orderId)); };
   const handleAddManualOrder = (itemId: string, qty: number) => { 
       const newOrder: PendingOrder = { id: Math.random().toString(36).substr(2, 9), itemId, quantity: qty, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name };
       setOrders(prev => [...prev, newOrder]); syncData('SAVE_ORDER', newOrder);
   };
-  const handleUndoLastTransaction = () => { /* ... */ };
+  
+  const handleUndoLastTransaction = () => {
+      if (transactions.length === 0) return;
+      if (!window.confirm("Êtes-vous sûr de vouloir annuler le dernier mouvement ?")) return;
+
+      const last = transactions[0]; 
+      const currentLevel = stockLevels.find(l => l.itemId === last.itemId && l.storageId === last.storageId);
+      const currentQty = currentLevel?.currentQuantity || 0;
+      let newQty = currentQty;
+
+      if (last.type === 'IN') newQty = Math.max(0, currentQty - last.quantity);
+      else newQty = currentQty + last.quantity;
+
+      handleStockUpdate(last.itemId, last.storageId, newQty);
+      setTransactions(prev => prev.slice(1));
+      syncData('DELETE_TRANSACTION', { id: last.id });
+  };
 
   const handleSendMessage = (text: string) => {
     if (!currentUser) return;
-    const newMessage: Message = {
-      id: 'msg_' + Date.now(),
-      content: text,
-      userName: currentUser.name,
-      date: new Date().toISOString(),
-      isArchived: false,
-      readBy: [currentUser.id]
-    };
-    setMessages(prev => [newMessage, ...prev]);
-    syncData('SAVE_MESSAGE', newMessage);
+    const newMessage: Message = { id: 'msg_' + Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [currentUser.id] };
+    setMessages(prev => [newMessage, ...prev]); syncData('SAVE_MESSAGE', newMessage);
   };
 
   const handleArchiveMessage = (id: string) => {
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, isArchived: true } : m));
-    syncData('UPDATE_MESSAGE', { id, isArchived: true });
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, isArchived: true } : m)); syncData('UPDATE_MESSAGE', { id, isArchived: true });
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center font-black animate-pulse">CHARGEMENT...</div>;
-  if (!currentUser) return (
+  
+  if (!currentUser) {
+     return (
        <div className="h-screen bg-slate-900 flex items-center justify-center p-4">
-         {/* Login Screen (simplified for output) */}
-         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden max-w-sm w-full p-8 text-center">
-             <h1 className="text-xl font-black mb-4">BarStock Pro</h1>
-             <div className="grid grid-cols-3 gap-4">{[1,2,3,4,5,6,7,8,9,0].map(n=><button key={n} onClick={()=>handlePinInput(n.toString())} className="p-4 bg-slate-100 rounded-full font-bold">{n}</button>)}</div>
+         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden max-w-sm w-full">
+           <div className="bg-indigo-600 p-8 text-center">
+             <div className="w-16 h-16 bg-white rounded-2xl mx-auto mb-4 flex items-center justify-center text-indigo-600 font-black text-2xl shadow-lg">B</div>
+             <h1 className="text-white font-black text-xl tracking-widest uppercase">BarStock Pro</h1>
+             <p className="text-indigo-200 text-xs font-bold mt-2">Identification Requise</p>
+           </div>
+           
+           <div className="p-8">
+             <div className="flex justify-center gap-4 mb-8">
+               {[0, 1, 2, 3].map(i => (<div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${loginInput.length > i ? 'bg-indigo-600 scale-110' : 'bg-slate-200'}`}></div>))}
+             </div>
+             <div className="grid grid-cols-3 gap-4 mb-6">
+               {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (<button key={n} onClick={() => handlePinInput(n.toString())} className="aspect-square rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-black text-2xl transition-all active:scale-95 shadow-sm border border-slate-100">{n}</button>))}
+               <div className="aspect-square"></div>
+               <button onClick={() => handlePinInput("0")} className="aspect-square rounded-full bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-black text-2xl transition-all active:scale-95 shadow-sm border border-slate-100">0</button>
+               <button onClick={() => setLoginInput(prev => prev.slice(0, -1))} className="aspect-square rounded-full bg-rose-50 text-rose-500 font-black flex items-center justify-center active:scale-95 transition-all"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" /></svg></button>
+             </div>
+             {loginStatus === 'error' && (<p className="text-center text-rose-500 text-xs font-black uppercase animate-bounce">Code PIN Incorrect</p>)}
+           </div>
          </div>
        </div>
-  );
+     );
+  }
 
   const unreadMessagesCount = messages.filter(m => !m.isArchived && (!m.readBy || !m.readBy.includes(currentUser.id))).length;
   const activeTasksCount = tasks.filter(t => !t.isDone).length;
@@ -493,7 +531,12 @@ const App: React.FC = () => {
                   <div className={`space-y-1 mt-1 ${isSidebarCollapsed ? '' : 'pl-2'}`}>
                       <NavItem collapsed={isSidebarCollapsed} active={view === 'consignes'} onClick={() => setView('consignes')} label="Consignes" icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" small />
                       <NavItem collapsed={isSidebarCollapsed} active={view === 'articles'} onClick={() => { setView('articles'); setArticlesFilter('ALL'); }} label="Base Articles" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" small />
-                      {currentUser?.role === 'ADMIN' && <NavItem collapsed={isSidebarCollapsed} active={view === 'config'} onClick={() => setView('config')} label="Configuration" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" small />}
+                      {currentUser?.role === 'ADMIN' && (
+                          <>
+                            <NavItem collapsed={isSidebarCollapsed} active={view === 'config'} onClick={() => setView('config')} label="Configuration" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" small />
+                            <NavItem collapsed={isSidebarCollapsed} active={view === 'logs'} onClick={() => setView('logs')} label="Logs Connexion" icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" small />
+                          </>
+                      )}
                   </div>
               )}
           </div>
@@ -560,6 +603,10 @@ const App: React.FC = () => {
         
         {view === 'daily_life' && (
             <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} />
+        )}
+
+        {view === 'logs' && currentUser?.role === 'ADMIN' && (
+            <ConnectionLogs logs={userLogs} />
         )}
       </main>
       {notification && <div className="fixed bottom-6 right-6 bg-white p-4 rounded-xl shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right z-[100]"><span className="font-bold text-sm">{notification.message}</span><button onClick={() => setNotification(null)} className="text-indigo-600 font-black">OK</button></div>}

@@ -248,6 +248,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           await pool.query(`INSERT INTO transactions (id, item_id, storage_id, type, quantity, date, note, is_cave_transfer, user_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [payload.id, payload.itemId, payload.storageId, payload.type, payload.quantity, payload.date, payload.note, payload.isCaveTransfer, payload.userName]);
           break;
         }
+        case 'DELETE_TRANSACTION': {
+            await pool.query('DELETE FROM transactions WHERE id = $1', [payload.id]);
+            break;
+        }
         case 'SAVE_ORDER': {
           const { id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, orderedAt, receivedAt } = payload;
           await pool.query(`
