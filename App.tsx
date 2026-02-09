@@ -278,11 +278,24 @@ const App: React.FC = () => {
               if (openStorageEntry) {
                   // On a trouvé une bouteille entamée (ex: 0.4)
                   // On cherche une bouteille pleine pour remplacer (>= 1), hors de l'emplacement entamé
-                  const backupEntry = stockLevels.find(l => 
+                  
+                  // NOUVELLE LOGIQUE : Priorité Surstock (s0) puis réserve (P10...)
+                  let backupEntry = stockLevels.find(l => 
                       l.itemId === itemId && 
-                      l.storageId !== openStorageEntry.storageId && 
+                      l.storageId === 's0' && 
                       l.currentQuantity >= 1
                   );
+
+                  if (!backupEntry) {
+                      // Si pas en surstock, on cherche ailleurs (en évitant s0 déjà checké et l'emplacement courant)
+                      // On pourrait trier par priorité ici si nécessaire, mais le find simple suffit souvent pour "un autre stock"
+                      backupEntry = stockLevels.find(l => 
+                          l.itemId === itemId && 
+                          l.storageId !== openStorageEntry.storageId && 
+                          l.storageId !== 's0' &&
+                          l.currentQuantity >= 1
+                      );
+                  }
 
                   if (backupEntry) {
                       // CAS A : ON A DU STOCK POUR REMPLACER
@@ -549,7 +562,7 @@ const App: React.FC = () => {
                       <NavItem collapsed={isSidebarCollapsed} active={view === 'articles'} onClick={() => { setView('articles'); setArticlesFilter('ALL'); }} label="Base Articles" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" small />
                       {currentUser?.role === 'ADMIN' && (
                           <>
-                            <NavItem collapsed={isSidebarCollapsed} active={view === 'config'} onClick={() => setView('config')} label="Configuration" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" small />
+                            <NavItem collapsed={isSidebarCollapsed} active={view === 'config'} onClick={() => setView('config')} label="Configuration" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" small />
                             <NavItem collapsed={isSidebarCollapsed} active={view === 'logs'} onClick={() => setView('logs')} label="Logs Connexion" icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" small />
                           </>
                       )}
@@ -631,6 +644,7 @@ const App: React.FC = () => {
                 storages={storages} 
                 stockLevels={stockLevels} 
                 categories={categories} 
+                consignes={consignes} 
                 onSync={syncData} 
                 onUpdateStock={handleStockUpdate} 
             />

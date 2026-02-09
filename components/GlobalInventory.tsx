@@ -1,21 +1,26 @@
 
 import React, { useState, useMemo } from 'react';
-import { StockItem, StorageSpace, StockLevel, Category } from '../types';
+import { StockItem, StorageSpace, StockLevel, Category, StockConsigne } from '../types';
 
 interface GlobalInventoryProps {
   items: StockItem[];
   storages: StorageSpace[];
   stockLevels: StockLevel[];
   categories: Category[];
+  consignes: StockConsigne[];
   onSync: (action: string, payload: any) => void;
   onUpdateStock: (itemId: string, storageId: string, qty: number) => void;
 }
 
-const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stockLevels, categories, onSync, onUpdateStock }) => {
+const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stockLevels, categories, consignes, onSync, onUpdateStock }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<Category | 'ALL'>('ALL');
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState<Category | ''>('');
+  
+  // Export Modal State
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportCategories, setExportCategories] = useState<Set<string>>(new Set(categories));
 
   // ID technique du stockage "Global/Autre" défini dans le schéma
   const GLOBAL_STORAGE_ID = 's_global';
@@ -27,7 +32,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
           i.name.toLowerCase().includes(searchTerm.toLowerCase())
       );
       
-      // Tri par ordre personnalisé (réutilise le champ order global, ou alphabétique par défaut)
+      // Tri par ordre personnalisé
       return filtered.sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
   }, [items, filterCategory, searchTerm]);
 
@@ -48,6 +53,22 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       if (normalized === '.') normalized = '0';
       const num = parseFloat(normalized) || 0;
       onUpdateStock(itemId, GLOBAL_STORAGE_ID, num);
+  };
+
+  const handleAdjustStock = (itemId: string, adjustment: number) => {
+      const current = getGlobalStock(itemId);
+      const newQty = Math.max(0, parseFloat((current + adjustment).toFixed(2))); // Evite flottants bizarres
+      onUpdateStock(itemId, GLOBAL_STORAGE_ID, newQty);
+  };
+
+  const handleResetColumn = () => {
+      if (window.confirm("ATTENTION : Vous êtes sur le point de remettre à ZÉRO toute la colonne 'Stock Autre' (Restaurant/Autre). Confirmer ?")) {
+          // On ne reset que ceux qui ont une valeur > 0 pour éviter des appels inutiles
+          const itemsToReset = stockLevels.filter(l => l.storageId === GLOBAL_STORAGE_ID && l.currentQuantity > 0);
+          itemsToReset.forEach(l => {
+              onUpdateStock(l.itemId, GLOBAL_STORAGE_ID, 0);
+          });
+      }
   };
 
   const handleCreateInventoryItem = () => {
@@ -78,24 +99,36 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       const currentItem = newItems[index];
       const targetItem = newItems[targetIndex];
 
-      // Swap order values logic (simplified here: assume displayedItems represents the list order)
-      // Actually we need to update the `order` property in DB.
-      // We swap their order values.
       let order1 = currentItem.order ?? index;
       let order2 = targetItem.order ?? targetIndex;
       
-      // Force diversity if orders are same
       if (order1 === order2) { order1 = index; order2 = targetIndex; }
 
-      // Update local optimistically (not full list, just displayed, might be tricky if filtered)
-      // Best is to update DB and let App refresh.
       onSync('SAVE_ITEM', { ...currentItem, order: order2 });
       onSync('SAVE_ITEM', { ...targetItem, order: order1 });
   };
 
-  const handleExportCSV = () => {
+  const openExportModal = () => {
+      setExportCategories(new Set(categories));
+      setIsExportModalOpen(true);
+  };
+
+  const toggleExportCategory = (cat: string) => {
+      const newSet = new Set(exportCategories);
+      if (newSet.has(cat)) newSet.delete(cat);
+      else newSet.add(cat);
+      setExportCategories(newSet);
+  };
+
+  const handleConfirmExport = () => {
       let csv = "\uFEFFCatégorie,Produit,Stock Bar,Stock Autre/Resto,Total\n";
-      displayedItems.forEach(i => {
+      
+      // Items sorted by global order, filtered by selected categories
+      const itemsToExport = items
+          .filter(i => exportCategories.has(i.category))
+          .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+
+      itemsToExport.forEach(i => {
           const bar = getBarStock(i.id);
           const other = getGlobalStock(i.id);
           const total = bar + other;
@@ -108,10 +141,46 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       link.href = url;
       link.download = `inventaire_global_${new Date().toISOString().slice(0,10)}.csv`;
       link.click();
+      
+      setIsExportModalOpen(false);
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-20">
+    <div className="space-y-6 max-w-6xl mx-auto pb-20 relative">
+        
+        {/* EXPORT MODAL */}
+        {isExportModalOpen && (
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
+                <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-slate-200 flex flex-col space-y-6">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Exporter l'Inventaire</h3>
+                        <button onClick={() => setIsExportModalOpen(false)} className="text-slate-400 hover:text-slate-600"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                    </div>
+                    
+                    <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-thin pr-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Sélectionner les catégories</p>
+                        {categories.map(cat => (
+                            <label key={cat} className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-100 transition-colors">
+                                <input 
+                                    type="checkbox" 
+                                    className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                                    checked={exportCategories.has(cat)}
+                                    onChange={() => toggleExportCategory(cat)}
+                                />
+                                <span className="font-bold text-sm text-slate-700">{cat}</span>
+                            </label>
+                        ))}
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                        <button onClick={() => setExportCategories(new Set(categories))} className="px-4 py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200">Tout</button>
+                        <button onClick={() => setExportCategories(new Set())} className="px-4 py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200">Rien</button>
+                        <button onClick={handleConfirmExport} disabled={exportCategories.size === 0} className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 shadow-lg active:scale-95 transition-all disabled:opacity-50">Exporter CSV</button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* HEADER */}
         <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl flex flex-col md:flex-row justify-between items-center gap-6">
             <div>
@@ -122,7 +191,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                 <p className="text-slate-400 text-sm font-bold mt-2 ml-1">Consolidation Bar + Restaurant + Autres Lieux</p>
             </div>
             <div className="flex gap-4">
-                <button onClick={handleExportCSV} className="bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95">
+                <button onClick={openExportModal} className="bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg active:scale-95">
                     Exporter CSV
                 </button>
             </div>
@@ -186,7 +255,16 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                         <th className="p-4">Produit</th>
                         <th className="p-4">Catégorie</th>
                         <th className="p-4 text-center bg-slate-100/50">Stock Bar</th>
-                        <th className="p-4 text-center bg-amber-50">Stock Autre</th>
+                        <th className="p-4 text-center bg-amber-50">
+                            Stock Autre
+                            <button 
+                                onClick={handleResetColumn} 
+                                className="block mx-auto mt-1 text-[8px] text-rose-400 hover:text-rose-600 hover:underline uppercase tracking-wide"
+                                title="Remettre toute la colonne à zéro"
+                            >
+                                Reset 0
+                            </button>
+                        </th>
                         <th className="p-4 text-center font-bold text-slate-800">Total</th>
                     </tr>
                 </thead>
@@ -194,6 +272,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                     {displayedItems.map((item, idx) => {
                         const barStock = getBarStock(item.id);
                         const otherStock = getGlobalStock(item.id);
+
                         return (
                             <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
                                 <td className="p-4 text-center">
@@ -209,14 +288,30 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                 <td className="p-4 text-xs font-bold text-slate-400 uppercase">{item.category}</td>
                                 <td className="p-4 text-center font-black text-slate-500 bg-slate-50/50">{parseFloat(barStock.toFixed(2))}</td>
                                 <td className="p-4 text-center bg-amber-50/30">
-                                    <input 
-                                        type="number" 
-                                        inputMode="decimal"
-                                        className="w-20 bg-white border border-amber-200 rounded-lg p-2 text-center font-black text-amber-800 outline-none focus:ring-2 focus:ring-amber-200"
-                                        placeholder="0"
-                                        defaultValue={otherStock || ''}
-                                        onBlur={(e) => handleGlobalStockChange(item.id, e.target.value)}
-                                    />
+                                    <div className="flex justify-center items-center gap-1">
+                                        <button 
+                                            onClick={() => handleAdjustStock(item.id, -1)}
+                                            className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 font-black text-sm transition-colors active:scale-95"
+                                        >
+                                            -
+                                        </button>
+                                        <div className="relative">
+                                            <input 
+                                                type="number" 
+                                                inputMode="decimal"
+                                                className={`w-16 border rounded-lg p-2 text-center font-black outline-none focus:ring-2 transition-all text-sm bg-white border-amber-200 text-amber-800 focus:ring-amber-200`}
+                                                placeholder="0"
+                                                value={otherStock || ''}
+                                                onChange={(e) => handleGlobalStockChange(item.id, e.target.value)}
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={() => handleAdjustStock(item.id, 1)}
+                                            className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 font-black text-sm transition-colors active:scale-95"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
                                 </td>
                                 <td className="p-4 text-center font-black text-lg text-slate-900">{parseFloat((barStock + otherStock).toFixed(2))}</td>
                             </tr>

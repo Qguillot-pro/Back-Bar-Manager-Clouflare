@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { StockItem, StorageSpace, StockLevel, StockConsigne, StockPriority } from '../types';
 
@@ -60,6 +61,10 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
 
   const getConsigneValue = (itemId: string, storageId: string) => {
       return consignes.find(c => c.itemId === itemId && c.storageId === storageId)?.minQuantity || 0;
+  };
+
+  const getConsigneMax = (itemId: string, storageId: string) => {
+      return consignes.find(c => c.itemId === itemId && c.storageId === storageId)?.maxCapacity || 0;
   };
 
   const handleProductSearch = () => {
@@ -185,9 +190,11 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                     const stockLevel = stockLevels.find(l => l.itemId === item.id && l.storageId === s.id);
                                     const currentQty = stockLevel?.currentQuantity || 0;
                                     const consigne = getConsigneValue(item.id, s.id);
+                                    const maxCap = getConsigneMax(item.id, s.id);
                                     
                                     const isZeroPriority = priority === 0 && s.id !== 's0';
                                     const showWarning = isZeroPriority && currentQty > 0;
+                                    const isOverStock = maxCap > 0 && currentQty > maxCap;
                                     
                                     let inputColorClass = "bg-white border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/10";
                                     if (consigne > 0 && !isZeroPriority) {
@@ -196,6 +203,10 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                         else inputColorClass = "bg-emerald-50 border-emerald-200 text-emerald-600 focus:border-emerald-500 focus:ring-emerald-500/10";
                                     } else if (isZeroPriority) {
                                         inputColorClass = "bg-slate-50 border-slate-200 text-slate-500";
+                                    }
+                                    
+                                    if (isOverStock) {
+                                        inputColorClass = "bg-rose-50 border-rose-400 text-rose-800 font-black focus:border-rose-600 focus:ring-rose-200";
                                     }
 
                                     return (
@@ -216,6 +227,11 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                                 {showWarning && (
                                                     <div className="absolute -top-3 -right-2" title="Attention: Stock présent sur un emplacement à priorité 0">
                                                         <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white">!</span>
+                                                    </div>
+                                                )}
+                                                {isOverStock && (
+                                                    <div className="absolute -top-3 -left-2 z-10" title={`Surstock ! Max: ${maxCap}`}>
+                                                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white shadow-sm ring-2 ring-white animate-pulse">!</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -271,9 +287,11 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                               const priority = priorities.find(p => p.itemId === selectedProduct.id && p.storageId === storage.id)?.priority ?? 0;
                               const qty = stockLevels.find(l => l.itemId === selectedProduct.id && l.storageId === storage.id)?.currentQuantity || 0;
                               const consigne = getConsigneValue(selectedProduct.id, storage.id);
+                              const maxCap = getConsigneMax(selectedProduct.id, storage.id);
                               
                               const isZero = priority === 0 && storage.id !== 's0';
-                              // Afficher si priorité > 0, ou si c'est s0, ou s'il y a du stock (même si prio 0 pour corriger)
+                              const isOverStock = maxCap > 0 && qty > maxCap;
+
                               if (isZero && qty === 0) return null;
 
                               let inputColorClass = "bg-white border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/10";
@@ -282,12 +300,17 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                   else if (qty < consigne) inputColorClass = "bg-blue-50 border-blue-200 text-blue-600 focus:border-blue-500";
                                   else inputColorClass = "bg-emerald-50 border-emerald-200 text-emerald-600 focus:border-emerald-500";
                               }
+                              
+                              if (isOverStock) {
+                                  inputColorClass = "bg-rose-50 border-rose-400 text-rose-800";
+                              }
 
                               return (
                                   <div key={storage.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                       <div className="flex flex-col">
                                           <span className="font-bold text-sm text-slate-600 uppercase">{storage.name}</span>
                                           {isZero && <span className="text-[9px] font-black text-amber-500 uppercase">Attention: Priorité 0</span>}
+                                          {isOverStock && <span className="text-[9px] font-black text-rose-500 uppercase flex items-center gap-1">⚠ Max Dépassé ({maxCap})</span>}
                                       </div>
                                       <div className="flex items-center gap-3">
                                         <input 
@@ -332,8 +355,11 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                               const priority = priorities.find(p => p.itemId === item.id && p.storageId === selectedStorageId)?.priority ?? 0;
                               const qty = stockLevels.find(l => l.itemId === item.id && l.storageId === selectedStorageId)?.currentQuantity || 0;
                               const consigne = getConsigneValue(item.id, selectedStorageId);
+                              const maxCap = getConsigneMax(item.id, selectedStorageId);
 
                               const isZero = priority === 0 && selectedStorageId !== 's0';
+                              const isOverStock = maxCap > 0 && qty > maxCap;
+                              
                               if (isZero && qty === 0) return null;
 
                               let inputColorClass = "bg-slate-50 border-slate-200 focus:bg-white focus:border-indigo-500 focus:ring-indigo-500/10";
@@ -342,12 +368,17 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                   else if (qty < consigne) inputColorClass = "bg-blue-50 border-blue-200 text-blue-600 focus:bg-white focus:border-blue-500";
                                   else inputColorClass = "bg-emerald-50 border-emerald-200 text-emerald-600 focus:bg-white focus:border-emerald-500";
                               }
+                              
+                              if (isOverStock) {
+                                  inputColorClass = "bg-rose-50 border-rose-400 text-rose-800";
+                              }
 
                               return (
                                   <div key={item.id} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl border-b border-slate-50 last:border-0 transition-colors">
                                       <div className="flex flex-col">
                                           <span className="font-bold text-sm text-slate-800">{item.name}</span>
                                           {isZero && <span className="text-[8px] font-black text-amber-500 uppercase">Non prévu ici (Prio 0)</span>}
+                                          {isOverStock && <span className="text-[8px] font-black text-rose-500 uppercase">Surstock (Max: {maxCap})</span>}
                                       </div>
                                       <div className="flex items-center gap-3">
                                         <input 
