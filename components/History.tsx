@@ -117,9 +117,28 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
   }, [transactions, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
 
   const filteredUnfulfilled = useMemo(() => {
-      return unfulfilledOrders
+      const filtered = unfulfilledOrders
         .filter(u => checkDateInFilter(u.date))
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      // Groupement si PAS jour
+      if (periodFilter !== 'DAY') {
+          const groupedMap = new Map<string, UnfulfilledOrder>();
+          filtered.forEach(u => {
+              if (groupedMap.has(u.itemId)) {
+                  const existing = groupedMap.get(u.itemId)!;
+                  existing.quantity = (existing.quantity || 1) + (u.quantity || 1);
+                  // On garde la date la plus récente pour le tri
+                  if (new Date(u.date) > new Date(existing.date)) existing.date = u.date;
+              } else {
+                  // Clone pour ne pas muter l'original
+                  groupedMap.set(u.itemId, { ...u, quantity: u.quantity || 1 });
+              }
+          });
+          return Array.from(groupedMap.values());
+      }
+      
+      return filtered;
   }, [unfulfilledOrders, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
   
   const filteredReceived = useMemo(() => {
@@ -228,12 +247,12 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
         });
     } else if (activeTab === 'CLIENT_RUPTURE') {
         filename = `ruptures_clients_${periodFilter}_${new Date().toISOString().slice(0,10)}.csv`;
-        csvContent += "Date,Heure,Utilisateur,Produit,Format\n";
+        csvContent += "Date,Heure,Utilisateur,Produit,Format,Quantité\n";
         filteredUnfulfilled.forEach(u => {
             const item = items.find(i => i.id === u.itemId);
             const d = new Date(u.date);
             const fmt = getFormatName(item?.formatId);
-            csvContent += `"${d.toLocaleDateString()}","${d.toLocaleTimeString()}","${u.userName || '-'}","${item?.name || 'Inconnu'}","${fmt}"\n`;
+            csvContent += `"${d.toLocaleDateString()}","${periodFilter === 'DAY' ? d.toLocaleTimeString() : '-'}","${u.userName || '-'}","${item?.name || 'Inconnu'}","${fmt}","${u.quantity || 1}"\n`;
         });
     } else if (activeTab === 'STOCK_RUPTURE') {
         filename = `articles_tension_${periodFilter}_${new Date().toISOString().slice(0,10)}.csv`;
@@ -456,9 +475,10 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                     <thead className="bg-white text-[9px] uppercase text-slate-400 font-black tracking-widest border-b">
                     <tr>
                         <th className="p-4">Date</th>
-                        <th className="p-4">Heure</th>
+                        {periodFilter === 'DAY' && <th className="p-4">Heure</th>}
                         <th className="p-4">Utilisateur</th>
                         <th className="p-4">Produit</th>
+                        <th className="p-4 text-right">Qté</th>
                     </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -468,14 +488,15 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                         return (
                         <tr key={u.id} className="hover:bg-slate-50">
                             <td className="p-4 text-[10px] font-bold text-slate-600">{d.toLocaleDateString()}</td>
-                            <td className="p-4 text-[10px] font-bold text-slate-400">{d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                            {periodFilter === 'DAY' && <td className="p-4 text-[10px] font-bold text-slate-400">{d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>}
                             <td className="p-4"><span className="text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase tracking-wider">{u.userName || '-'}</span></td>
                             <td className="p-4"><span className="font-black text-sm text-rose-600">{item?.name || 'Inconnu'}</span></td>
+                            <td className="p-4 text-right font-black text-rose-600">{u.quantity || 1}</td>
                         </tr>
                         );
                     })}
                     {filteredUnfulfilled.length === 0 && (
-                        <tr><td colSpan={4} className="p-12 text-center text-slate-400 italic text-sm">Aucune rupture client signalée sur cette période.</td></tr>
+                        <tr><td colSpan={periodFilter === 'DAY' ? 5 : 4} className="p-12 text-center text-slate-400 italic text-sm">Aucune rupture client signalée sur cette période.</td></tr>
                     )}
                     </tbody>
                 </table>

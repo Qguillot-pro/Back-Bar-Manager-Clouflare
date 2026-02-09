@@ -89,6 +89,7 @@ export interface StockConsigne {
   itemId: string;
   storageId: string;
   minQuantity: number;
+  maxCapacity?: number; // NOUVEAU : Capacité physique max (entier)
 }
 
 export interface StockPriority {
@@ -133,6 +134,7 @@ export interface UnfulfilledOrder {
   itemId: string;
   date: string;
   userName?: string;
+  quantity?: number; // NOUVEAU
 }
 
 export interface Message {

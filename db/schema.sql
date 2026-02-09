@@ -94,8 +94,11 @@ CREATE TABLE IF NOT EXISTS stock_consignes (
     item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
     storage_id TEXT REFERENCES storage_spaces(id) ON DELETE CASCADE,
     min_quantity NUMERIC DEFAULT 0,
+    max_capacity NUMERIC, -- NOUVEAU
     PRIMARY KEY (item_id, storage_id)
 );
+
+ALTER TABLE stock_consignes ADD COLUMN IF NOT EXISTS max_capacity NUMERIC;
 
 CREATE TABLE IF NOT EXISTS stock_priorities (
     item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
@@ -156,8 +159,11 @@ CREATE TABLE IF NOT EXISTS unfulfilled_orders (
     id TEXT PRIMARY KEY,
     item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
     date TIMESTAMP DEFAULT NOW(),
-    user_name TEXT
+    user_name TEXT,
+    quantity NUMERIC DEFAULT 1 -- NOUVEAU
 );
+
+ALTER TABLE unfulfilled_orders ADD COLUMN IF NOT EXISTS quantity NUMERIC DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,

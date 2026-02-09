@@ -197,7 +197,8 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
         onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, selectedDetail.detail.gap);
         // Si pré-commande remplie par l'admin
         if (currentUser?.role === 'ADMIN' && preOrderQty && parseInt(preOrderQty) > 0) {
-             // On ajoute une commande avec quantité
+             // On ajoute une commande avec quantité, mais sans flag "Rupture" immédiate pour le bar
+             // C'est une demande pour l'économe
              onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, 0, parseInt(preOrderQty), false);
         }
         setSelectedDetail(null);
@@ -257,14 +258,15 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                   </div>
 
                   {currentUser?.role === 'ADMIN' && (
-                      <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 flex items-center gap-3">
-                          <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={!!preOrderQty} onChange={() => {}} />
+                      <div className="bg-amber-50 p-3 rounded-xl border border-amber-100 flex items-center gap-3">
+                          <input type="checkbox" className="w-5 h-5 rounded text-amber-600" checked={!!preOrderQty} onChange={() => {}} />
                           <div className="flex-1 text-left">
-                              <p className="text-[10px] font-black uppercase text-indigo-800">Pré-commande (Stock ok mais besoin +)</p>
+                              <p className="text-[10px] font-black uppercase text-amber-800">Anticipation Cave (Pré-commande)</p>
+                              <p className="text-[9px] text-amber-600 leading-tight mb-1">Signaler à l'économe que la cave est presque vide.</p>
                               <input 
                                 type="number" 
-                                placeholder="Qté à commander..." 
-                                className="w-full mt-1 p-1 bg-white border border-indigo-200 rounded text-xs font-bold outline-none"
+                                placeholder="Qté à demander..." 
+                                className="w-full mt-1 p-1 bg-white border border-amber-200 rounded text-xs font-bold outline-none"
                                 value={preOrderQty}
                                 onChange={e => setPreOrderQty(e.target.value)}
                               />
@@ -274,7 +276,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
                   <div className="grid grid-cols-1 gap-3">
                       <button onClick={handleComplete} className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-emerald-200 active:scale-95 transition-all">
-                          {preOrderQty ? `Remonter & Pré-commander (+${preOrderQty})` : `Remontée Complète (+${selectedDetail.detail.gap})`}
+                          {preOrderQty ? `Remonter & Signaler (+${preOrderQty})` : `Remontée Complète (+${selectedDetail.detail.gap})`}
                       </button>
                       
                       <div className="relative border-t border-slate-100 pt-3 mt-2">

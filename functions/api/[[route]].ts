@@ -120,7 +120,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           users: users.rows,
           storages: storages.rows.map(s => ({ id: s.id, name: s.name, order: s.sort_order })),
           stockLevels: stockLevels.rows.map(row => ({ itemId: row.item_id, storageId: row.storage_id, currentQuantity: parseFloat(row.quantity || '0') })),
-          consignes: consignes.rows.map(row => ({ itemId: row.item_id, storageId: row.storage_id, minQuantity: parseFloat(row.min_quantity || '0') })),
+          consignes: consignes.rows.map(row => ({ 
+              itemId: row.item_id, 
+              storageId: row.storage_id, 
+              minQuantity: parseFloat(row.min_quantity || '0'),
+              maxCapacity: row.max_capacity ? parseFloat(row.max_capacity) : undefined 
+          })),
           transactions: transactions.rows.map(t => ({
               ...t, 
               itemId: t.item_id, 
@@ -146,7 +151,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           categories: categories.rows.map(c => c.name),
           priorities: priorities.rows.map(p => ({ itemId: p.item_id, storageId: p.storage_id, priority: p.priority })),
           dlcProfiles: dlcProfiles.rows.map(p => ({ id: p.id, name: p.name, durationHours: p.duration_hours, type: p.type || 'OPENING' })),
-          unfulfilledOrders: unfulfilledOrders.rows.map(u => ({ id: u.id, itemId: u.item_id, date: u.date, userName: u.user_name })),
+          unfulfilledOrders: unfulfilledOrders.rows.map(u => ({ 
+              id: u.id, 
+              itemId: u.item_id, 
+              date: u.date, 
+              userName: u.user_name,
+              quantity: parseFloat(u.quantity || '1') 
+          })),
           appConfig: configMap,
           messages: messages.rows.map(m => {
              let readBy: string[] = [];
@@ -284,11 +295,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
 
         case 'SAVE_UNFULFILLED_ORDER': {
-            const { id, itemId, date, userName } = payload;
+            const { id, itemId, date, userName, quantity } = payload;
             await pool.query(`
-                INSERT INTO unfulfilled_orders (id, item_id, date, user_name)
-                VALUES ($1, $2, $3, $4)
-            `, [id, itemId, date, userName]);
+                INSERT INTO unfulfilled_orders (id, item_id, date, user_name, quantity)
+                VALUES ($1, $2, $3, $4, $5)
+            `, [id, itemId, date, userName, quantity || 1]);
             break;
         }
 
@@ -395,12 +406,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
 
         case 'SAVE_CONSIGNE': {
-            const { itemId, storageId, minQuantity } = payload;
+            const { itemId, storageId, minQuantity, maxCapacity } = payload;
             await pool.query(`
-                INSERT INTO stock_consignes (item_id, storage_id, min_quantity)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (item_id, storage_id) DO UPDATE SET min_quantity = EXCLUDED.min_quantity
-            `, [itemId, storageId, minQuantity]);
+                INSERT INTO stock_consignes (item_id, storage_id, min_quantity, max_capacity)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (item_id, storage_id) DO UPDATE SET min_quantity = EXCLUDED.min_quantity, max_capacity = EXCLUDED.max_capacity
+            `, [itemId, storageId, minQuantity, maxCapacity]);
             break;
         }
         

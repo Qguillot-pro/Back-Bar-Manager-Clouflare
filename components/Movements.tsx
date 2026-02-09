@@ -9,7 +9,7 @@ interface MovementsProps {
   onTransaction: (itemId: string, type: 'IN' | 'OUT', qty: number) => void;
   onOpenKeypad: (config: any) => void;
   unfulfilledOrders: UnfulfilledOrder[];
-  onReportUnfulfilled: (itemId: string) => void;
+  onReportUnfulfilled: (itemId: string, quantity: number) => void;
   onCreateTemporaryItem?: (name: string, quantity: number) => void;
   formats: Format[];
   dlcProfiles?: DLCProfile[];
@@ -23,6 +23,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [qty, setQty] = useState<string>('1');
   
   const [unfulfilledSearch, setUnfulfilledSearch] = useState('');
+  const [unfulfilledQty, setUnfulfilledQty] = useState(1);
 
   // DLC Modal State
   const [dlcModalOpen, setDlcModalOpen] = useState(false);
@@ -140,9 +141,10 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       const item = items.find(i => i.name.trim().toLowerCase() === searchNormalized);
       
       if (item) {
-          if (window.confirm(`Déclarer une rupture client pour "${item.name}" ?\n\nCela mettra tous les stocks de ce produit à 0 et le marquera comme URGENT.`)) {
-              onReportUnfulfilled(item.id);
+          if (window.confirm(`Déclarer une rupture client pour "${item.name}" (Qté: ${unfulfilledQty}) ?\n\nCela mettra les stocks à jour.`)) {
+              onReportUnfulfilled(item.id, unfulfilledQty);
               setUnfulfilledSearch('');
+              setUnfulfilledQty(1);
           }
       } else {
           alert(`Produit "${unfulfilledSearch}" introuvable.\nAssurez-vous de sélectionner un produit existant dans la liste.`);
@@ -152,12 +154,12 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const handleExportUnfulfilled = () => {
     if (unfulfilledOrders.length === 0) return;
     
-    let csv = "\uFEFFDate,Heure,Utilisateur,Produit,Format\n";
+    let csv = "\uFEFFDate,Heure,Utilisateur,Produit,Format,Quantité\n";
     unfulfilledOrders.forEach(u => {
       const it = items.find(i => i.id === u.itemId);
       const fmt = formats.find(f => f.id === it?.formatId);
       const d = new Date(u.date);
-      csv += `"${d.toLocaleDateString()}","${d.toLocaleTimeString()}","${u.userName || '-'}","${it?.name || 'Inconnu'}","${fmt?.name || 'N/A'}"\n`;
+      csv += `"${d.toLocaleDateString()}","${d.toLocaleTimeString()}","${u.userName || '-'}","${it?.name || 'Inconnu'}","${fmt?.name || 'N/A'}","${u.quantity || 1}"\n`;
     });
     
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -405,6 +407,9 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                 <div className="flex gap-2">
                     <input list="items-list-unfulfilled" className="flex-1 bg-white p-3 border border-rose-200 rounded-xl outline-none font-bold text-rose-900 placeholder-rose-300" placeholder="Produit manquant..." value={unfulfilledSearch} onChange={e => setUnfulfilledSearch(e.target.value)} />
                     <datalist id="items-list-unfulfilled">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
+                    
+                    <input type="number" min="1" className="w-20 bg-white p-3 border border-rose-200 rounded-xl outline-none font-bold text-rose-900 text-center" value={unfulfilledQty} onChange={e => setUnfulfilledQty(parseInt(e.target.value) || 1)} />
+                    
                     <button onClick={handleAddUnfulfilled} className="bg-rose-500 text-white px-6 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-rose-600 transition-all shadow-lg shadow-rose-200 active:scale-95">Ajouter</button>
                 </div>
             </div>
@@ -417,7 +422,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                 <div className="max-h-80 overflow-y-auto flex-1">
                 <table className="w-full text-left">
                     <thead className="bg-white text-[9px] uppercase text-slate-400 font-black tracking-widest border-b sticky top-0">
-                    <tr><th className="p-4">Date</th><th className="p-4">Heure</th><th className="p-4">Utilisateur</th><th className="p-4">Produit</th></tr>
+                    <tr><th className="p-4">Date</th><th className="p-4">Heure</th><th className="p-4">Utilisateur</th><th className="p-4">Produit</th><th className="p-4 text-right">Qté</th></tr>
                     </thead>
                     <tbody className="divide-y">
                     {unfulfilledOrders.map((u) => {
@@ -429,10 +434,11 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                             <td className="p-4 text-[10px] font-bold text-slate-400">{d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
                             <td className="p-4"><span className="text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase tracking-wider">{u.userName || '-'}</span></td>
                             <td className="p-4"><span className="font-black text-sm text-rose-600">{item?.name || 'Inconnu'}</span></td>
+                            <td className="p-4 text-right font-black text-rose-600">{u.quantity || 1}</td>
                         </tr>
                         );
                     })}
-                    {unfulfilledOrders.length === 0 && (<tr><td colSpan={4} className="p-12 text-center text-slate-400 italic text-sm">Aucune commande non-honorée enregistrée.</td></tr>)}
+                    {unfulfilledOrders.length === 0 && (<tr><td colSpan={5} className="p-12 text-center text-slate-400 italic text-sm">Aucune commande non-honorée enregistrée.</td></tr>)}
                     </tbody>
                 </table>
                 </div>

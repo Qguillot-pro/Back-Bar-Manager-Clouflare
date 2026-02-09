@@ -34,7 +34,7 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
 
 
   // Gestion du blur pour sauvegarder et formater
-  const handleInputBlur = (itemId: string, storageId: string, val: string) => {
+  const handleInputBlur = (itemId: string, storageId: string, val: string, field: 'min' | 'max') => {
     setEditingValue(null);
     let normalized = val.replace(',', '.');
     if (normalized === '.') normalized = '0';
@@ -42,25 +42,39 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
     let num = parseFloat(normalized);
 
     if (isNaN(num) || num < 0) num = 0; // Prevent negative
-    // Limite à 2 décimales
-    num = Math.round(num * 100) / 100;
+    
+    // Si c'est Max, entier uniquement
+    if (field === 'max') {
+        num = Math.floor(num);
+    } else {
+        // Min: Limite à 2 décimales
+        num = Math.round(num * 100) / 100;
+    }
 
     setConsignes(prev => {
         const exists = prev.find(c => c.itemId === itemId && c.storageId === storageId);
         if (exists) {
-            return prev.map(c => (c.itemId === itemId && c.storageId === storageId) ? { ...c, minQuantity: num } : c);
+            const updated = field === 'min' ? { ...exists, minQuantity: num } : { ...exists, maxCapacity: num > 0 ? num : undefined };
+            if (onSync) onSync('SAVE_CONSIGNE', updated);
+            return prev.map(c => (c.itemId === itemId && c.storageId === storageId) ? updated : c);
         }
-        return [...prev, { itemId, storageId, minQuantity: num }];
+        
+        const newConsigne: StockConsigne = { 
+            itemId, 
+            storageId, 
+            minQuantity: field === 'min' ? num : 0,
+            maxCapacity: field === 'max' && num > 0 ? num : undefined
+        };
+        if (onSync) onSync('SAVE_CONSIGNE', newConsigne);
+        return [...prev, newConsigne];
     });
-
-    if (onSync) onSync('SAVE_CONSIGNE', { itemId, storageId, minQuantity: num });
   };
 
-  const handleInputChange = (itemId: string, storageId: string, val: string) => {
+  const handleInputChange = (itemId: string, storageId: string, val: string, field: 'min' | 'max') => {
     // Autoriser uniquement chiffres, point, virgule
     if (!/^[0-9]*[.,]?[0-9]*$/.test(val)) return;
     
-    const key = `${itemId}-${storageId}`;
+    const key = `${itemId}-${storageId}-${field}`;
     setEditingValue({ key, val: val });
   };
 
@@ -120,7 +134,7 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
           <div className="flex items-center gap-6 w-full md:w-auto">
             <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2 whitespace-nowrap">
               <span className="w-1.5 h-6 bg-indigo-600 rounded-full"></span>
-              Consignes Stock
+              Consignes Stock (Min / Max)
             </h2>
           </div>
           
@@ -164,7 +178,8 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
             <div className="flex items-start gap-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
                 <svg className="w-4 h-4 text-indigo-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 <p className="text-[10px] text-slate-500 font-medium leading-tight">
-                    <strong className="text-indigo-700">Configuration requise :</strong> Pour saisir une consigne, assurez-vous que la priorité de l'article dans l'espace de stockage est supérieure à 0 (Menu Configuration &gt; Priorités Stock). La saisie est désactivée pour les emplacements à priorité 0.
+                    <strong className="text-indigo-700">Configuration requise :</strong> La saisie est désactivée pour les emplacements à priorité 0.
+                    Le champ <strong>MAX</strong> définit la capacité physique (bouteilles pleines) pour éviter les débordements lors des entrées.
                 </p>
             </div>
         </div>
@@ -175,7 +190,7 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
             <tr>
               <th className="p-6 sticky left-0 bg-white z-30 border-r shadow-[1px_0_0_0_#e2e8f0]">Article</th>
               {visibleStorages.map(s => (
-                <th key={s.id} className={`p-6 text-center border-r min-w-[160px] bg-white transition-all ${s.id === 's0' ? 'text-amber-600' : ''}`}>
+                <th key={s.id} className={`p-6 text-center border-r min-w-[200px] bg-white transition-all ${s.id === 's0' ? 'text-amber-600' : ''}`}>
                   <div className="flex flex-col items-center gap-2">
                       <span className="whitespace-nowrap">{s.name}</span>
                       {isEditOrderMode && (
@@ -202,29 +217,48 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
                 {visibleStorages.map(s => {
                   const consigne = consignes.find(c => c.itemId === item.id && c.storageId === s.id);
                   const priority = priorities.find(p => p.itemId === item.id && p.storageId === s.id);
-                  const currentVal = consigne?.minQuantity || 0;
-                  const inputKey = `${item.id}-${s.id}`;
+                  const currentMin = consigne?.minQuantity || 0;
+                  const currentMax = consigne?.maxCapacity || 0;
                   
-                  const displayValue = editingValue?.key === inputKey 
-                    ? editingValue.val 
-                    : currentVal.toString().replace('.', ',');
+                  const minKey = `${item.id}-${s.id}-min`;
+                  const maxKey = `${item.id}-${s.id}-max`;
+                  
+                  const displayMin = editingValue?.key === minKey ? editingValue.val : currentMin.toString().replace('.', ',');
+                  const displayMax = editingValue?.key === maxKey ? editingValue.val : (currentMax > 0 ? currentMax.toString() : '');
                     
                   const priorityVal = priority?.priority ?? 0;
                   const isZeroPriority = priorityVal === 0 && s.id !== 's0';
                   
                   return (
                     <td key={s.id} className={`p-4 text-center border-r transition-opacity relative ${isEditOrderMode ? 'opacity-40 select-none' : 'opacity-100'} ${s.id === 's0' ? 'bg-amber-50/10' : ''}`}>
-                      <div className="flex justify-center">
-                        <input 
-                            type="text" 
-                            inputMode="decimal" 
-                            disabled={isEditOrderMode || isZeroPriority} 
-                            className={`w-24 p-3 border border-slate-200 rounded-2xl text-center font-black text-lg text-slate-900 outline-none transition-all ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500'}`} 
-                            value={displayValue} 
-                            onChange={e => handleInputChange(item.id, s.id, e.target.value)}
-                            onBlur={e => handleInputBlur(item.id, s.id, e.target.value)}
-                            onFocus={e => e.target.select()}
-                        />
+                      <div className="flex justify-center items-center gap-1">
+                        <div className="flex flex-col items-center">
+                            <label className="text-[8px] font-bold text-slate-300 uppercase mb-1">Min</label>
+                            <input 
+                                type="text" 
+                                inputMode="decimal" 
+                                disabled={isEditOrderMode || isZeroPriority} 
+                                className={`w-16 p-3 border border-slate-200 rounded-l-2xl text-center font-black text-lg text-slate-900 outline-none transition-all ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500'}`} 
+                                value={displayMin} 
+                                onChange={e => handleInputChange(item.id, s.id, e.target.value, 'min')}
+                                onBlur={e => handleInputBlur(item.id, s.id, e.target.value, 'min')}
+                                onFocus={e => e.target.select()}
+                            />
+                        </div>
+                        <div className="flex flex-col items-center">
+                            <label className="text-[8px] font-bold text-slate-300 uppercase mb-1">Max</label>
+                            <input 
+                                type="text" 
+                                inputMode="numeric" 
+                                disabled={isEditOrderMode || isZeroPriority} 
+                                placeholder="-"
+                                className={`w-14 p-3 border-y border-r border-slate-200 rounded-r-2xl text-center font-bold text-sm text-slate-500 outline-none transition-all placeholder-slate-200 ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-white focus:bg-slate-50 focus:ring-4 focus:ring-slate-500/10 focus:border-slate-400'}`} 
+                                value={displayMax} 
+                                onChange={e => handleInputChange(item.id, s.id, e.target.value, 'max')}
+                                onBlur={e => handleInputBlur(item.id, s.id, e.target.value, 'max')}
+                                onFocus={e => e.target.select()}
+                            />
+                        </div>
                       </div>
                       {isZeroPriority && !isEditOrderMode && (
                         <div className="absolute top-2 right-2 w-4 h-4 bg-slate-300 rounded-full flex items-center justify-center shadow-sm" title="Priorité 0 : Saisie désactivée">
