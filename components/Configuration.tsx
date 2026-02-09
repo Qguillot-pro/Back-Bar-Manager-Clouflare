@@ -38,6 +38,8 @@ const Configuration: React.FC<ConfigProps> = ({
   glassware = [], setGlassware, techniques = [], setTechniques
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware' | 'techniques'>('general');
+  const [authorizedSubTabs, setAuthorizedSubTabs] = useState<Set<string>>(new Set());
+  const [authPinInput, setAuthPinInput] = useState('');
   
   // New Item States
   const [itemName, setItemName] = useState('');
@@ -65,10 +67,37 @@ const Configuration: React.FC<ConfigProps> = ({
   const [newDlcUnit, setNewDlcUnit] = useState<'HOURS' | 'DAYS'>('HOURS');
   const [newDlcType, setNewDlcType] = useState<'OPENING' | 'PRODUCTION'>('OPENING');
 
+  const [visiblePins, setVisiblePins] = useState<Record<string, boolean>>({});
+
   React.useEffect(() => {
       if (!itemCat && categories && categories.length > 0) setItemCat(categories[0]);
       if (!itemFormat && formats && formats.length > 0) setItemFormat(formats[0]?.id || '');
   }, [categories, formats]);
+
+  const togglePinVisibility = (userId: string) => {
+      setVisiblePins(prev => ({...prev, [userId]: true}));
+      setTimeout(() => {
+          setVisiblePins(prev => ({...prev, [userId]: false}));
+      }, 3000);
+  };
+
+  const handleTabChange = (tab: typeof activeSubTab) => {
+      if (tab === 'users' && !authorizedSubTabs.has('users')) {
+          setAuthPinInput('');
+          // Trigger modal via specific state or reuse a generic one. 
+          // Here we'll rely on local rendering condition.
+      }
+      setActiveSubTab(tab);
+  };
+
+  const handleAuthSubmit = () => {
+      if (authPinInput === currentUser.pin) {
+          setAuthorizedSubTabs(prev => new Set(prev).add('users'));
+      } else {
+          alert("Code PIN incorrect");
+          setAuthPinInput('');
+      }
+  };
 
   const addProduct = () => {
     if (!itemName || !itemCat || !itemFormat) return;
@@ -246,18 +275,120 @@ const Configuration: React.FC<ConfigProps> = ({
       )}
 
       <div className="flex border-b border-slate-200 overflow-x-auto">
-        <button onClick={() => setActiveSubTab('general')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'general' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Paramètres Généraux</button>
-        <button onClick={() => setActiveSubTab('priorities')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'priorities' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Priorités Stock</button>
+        <button onClick={() => handleTabChange('general')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'general' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Paramètres Généraux</button>
+        <button onClick={() => handleTabChange('priorities')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'priorities' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Priorités Stock</button>
         {currentUser?.role === 'ADMIN' && (
           <>
-            <button onClick={() => setActiveSubTab('glassware')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'glassware' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Verrerie</button>
-            <button onClick={() => setActiveSubTab('techniques')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'techniques' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Techniques</button>
-            <button onClick={() => setActiveSubTab('users')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Utilisateurs</button>
-            <button onClick={() => setActiveSubTab('dlc')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'dlc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Configuration DLC</button>
+            <button onClick={() => handleTabChange('glassware')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'glassware' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Verrerie</button>
+            <button onClick={() => handleTabChange('techniques')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'techniques' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Techniques</button>
+            <button onClick={() => handleTabChange('users')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Utilisateurs</button>
+            <button onClick={() => handleTabChange('dlc')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'dlc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Configuration DLC</button>
           </>
         )}
       </div>
 
+      {activeSubTab === 'users' && !authorizedSubTabs.has('users') ? (
+          <div className="bg-white p-12 rounded-[2.5rem] border shadow-sm flex flex-col items-center justify-center space-y-6 text-center">
+              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
+                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              </div>
+              <div>
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Accès Sécurisé</h3>
+                  <p className="text-sm text-slate-500 mt-2">Veuillez confirmer votre code PIN Administrateur pour gérer les utilisateurs.</p>
+              </div>
+              <div className="flex flex-col gap-4 w-full max-w-xs">
+                  <input 
+                    type="password" 
+                    maxLength={4} 
+                    className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center font-black text-2xl tracking-[1em] outline-none focus:ring-2 focus:ring-indigo-200" 
+                    value={authPinInput} 
+                    onChange={e => setAuthPinInput(e.target.value)} 
+                    placeholder="••••"
+                  />
+                  <button onClick={handleAuthSubmit} disabled={authPinInput.length !== 4} className="bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50 transition-all">
+                      Déverrouiller
+                  </button>
+              </div>
+          </div>
+      ) : null}
+
+      {activeSubTab === 'users' && authorizedSubTabs.has('users') && currentUser?.role === 'ADMIN' && (
+         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+           {adminUser && (
+               <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm border-indigo-100 bg-indigo-50/20">
+                    <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-slate-900 rounded-full"></span>Compte Administrateur</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nom d'affichage</label>
+                            <input type="text" value={adminUser.name} onChange={(e) => updateUser(adminUser.id, 'name', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-indigo-100 transition-all" />
+                        </div>
+                        <div className="space-y-2 relative">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Code PIN (Accès)</label>
+                            <input 
+                                type={visiblePins[adminUser.id] ? "text" : "password"} 
+                                value={adminUser.pin} 
+                                maxLength={4} 
+                                onChange={(e) => updateUser(adminUser.id, 'pin', e.target.value)} 
+                                className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-black outline-none text-center tracking-widest focus:ring-2 focus:ring-indigo-100 transition-all" 
+                            />
+                            <button onClick={() => togglePinVisibility(adminUser.id)} className="absolute right-4 top-9 text-slate-400 hover:text-indigo-600">
+                                {visiblePins[adminUser.id] ? <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                            </button>
+                        </div>
+                    </div>
+               </div>
+           )}
+
+           <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+             <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-slate-400 rounded-full"></span>Gestion des Utilisateurs</h3>
+             
+             <div className="mb-8 p-6 bg-slate-50 rounded-3xl border border-slate-200 flex flex-col gap-4">
+               <div className="flex flex-col md:flex-row gap-4 items-end">
+                  <div className="flex-1 w-full space-y-2">
+                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nom</label>
+                      <input type="text" className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-bold outline-none" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} placeholder="Thomas" />
+                  </div>
+                  <div className="w-full md:w-32 space-y-2">
+                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Rôle</label>
+                      <select className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-bold outline-none uppercase text-xs" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as UserRole)}><option value="BARMAN">Barman</option><option value="ADMIN">Admin</option></select>
+                  </div>
+                  <div className="w-full md:w-32 space-y-2">
+                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">PIN</label>
+                      <input type="text" maxLength={4} className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-black outline-none text-center tracking-widest" value={newUserPin} onChange={(e) => { if (/^\d*$/.test(e.target.value)) setNewUserPin(e.target.value); }} placeholder="0000" />
+                  </div>
+               </div>
+               <button onClick={addUser} className="w-full bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-200">Ajouter l'utilisateur</button>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {staffUsers.map(user => user && (
+                 <div key={user.id} className="p-6 rounded-3xl border flex flex-col gap-4 bg-white border-slate-200 shadow-sm relative group">
+                   <button onClick={() => deleteUser(user.id)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Supprimer l'utilisateur"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                   <div className="space-y-3">
+                      <select value={user.role} onChange={(e) => updateUser(user.id, 'role', e.target.value)} className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded inline-block border-none outline-none cursor-pointer ${user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}><option value="BARMAN">Barman</option><option value="ADMIN">Admin</option></select>
+                      <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-1">Nom</label><input type="text" value={user.name || ''} onChange={(e) => updateUser(user.id, 'name', e.target.value)} className="w-full bg-slate-50 p-3 rounded-xl font-bold text-slate-800 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all" /></div>
+                      <div>
+                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-1">PIN</label>
+                          <div className="relative">
+                              <input type={visiblePins[user.id] ? "text" : "password"} value={user.pin || ''} maxLength={4} onChange={(e) => updateUser(user.id, 'pin', e.target.value)} className="w-full bg-slate-50 p-3 rounded-xl font-black text-slate-800 text-center tracking-widest outline-none focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all" />
+                              <button onClick={() => togglePinVisibility(user.id)} className="absolute right-3 top-3 text-slate-400 hover:text-indigo-600">
+                                  {visiblePins[user.id] ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                              </button>
+                          </div>
+                      </div>
+                   </div>
+                 </div>
+               ))}
+               {staffUsers.length === 0 && (
+                   <div className="col-span-full py-8 text-center text-slate-400 italic font-medium">Aucun membre dans l'équipe.</div>
+               )}
+             </div>
+           </div>
+         </div>
+      )}
+
+      {/* ... (Other subTabs logic remains identical - General, Priorities, DLC, Glassware, Techniques) ... */}
+      
       {activeSubTab === 'general' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-8">
@@ -312,7 +443,7 @@ const Configuration: React.FC<ConfigProps> = ({
                 <button onClick={addStorage} className="bg-slate-800 text-white px-6 rounded-2xl font-black uppercase tracking-widest">OK</button>
               </div>
               <div className="space-y-2">
-                {storages.map(s => s && (<div key={s.id} className="flex items-center justify-between bg-slate-50 px-5 py-3 rounded-2xl border group"><span className="font-black text-[10px] uppercase tracking-widest">{s.name}</span>{s.id !== 's0' && <button onClick={() => deleteStorage(s.id)} className="text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}</div>))}
+                {storages.map(s => s && s.id !== 's_global' && (<div key={s.id} className="flex items-center justify-between bg-slate-50 px-5 py-3 rounded-2xl border group"><span className="font-black text-[10px] uppercase tracking-widest">{s.name}</span>{s.id !== 's0' && <button onClick={() => deleteStorage(s.id)} className="text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}</div>))}
               </div>
             </div>
             <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
@@ -344,66 +475,9 @@ const Configuration: React.FC<ConfigProps> = ({
           <TechniquesConfig techniques={techniques} setTechniques={setTechniques} onSync={onSync} />
       )}
       
-      {activeSubTab === 'users' && currentUser?.role === 'ADMIN' && (
-         <div className="space-y-8">
-           {adminUser && (
-               <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm border-indigo-100 bg-indigo-50/20">
-                    <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-slate-900 rounded-full"></span>Compte Administrateur</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nom d'affichage</label>
-                            <input type="text" value={adminUser.name} onChange={(e) => updateUser(adminUser.id, 'name', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-indigo-100 transition-all" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Code PIN (Accès)</label>
-                            <input type="text" value={adminUser.pin} maxLength={4} onChange={(e) => updateUser(adminUser.id, 'pin', e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-black outline-none text-center tracking-widest focus:ring-2 focus:ring-indigo-100 transition-all" />
-                        </div>
-                    </div>
-               </div>
-           )}
-
-           <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
-             <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-slate-400 rounded-full"></span>Gestion des Utilisateurs</h3>
-             
-             <div className="mb-8 p-6 bg-slate-50 rounded-3xl border border-slate-200 flex flex-col gap-4">
-               <div className="flex flex-col md:flex-row gap-4 items-end">
-                  <div className="flex-1 w-full space-y-2">
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nom</label>
-                      <input type="text" className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-bold outline-none" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} placeholder="Thomas" />
-                  </div>
-                  <div className="w-full md:w-32 space-y-2">
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Rôle</label>
-                      <select className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-bold outline-none uppercase text-xs" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as UserRole)}><option value="BARMAN">Barman</option><option value="ADMIN">Admin</option></select>
-                  </div>
-                  <div className="w-full md:w-32 space-y-2">
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">PIN</label>
-                      <input type="text" maxLength={4} className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-black outline-none text-center tracking-widest" value={newUserPin} onChange={(e) => { if (/^\d*$/.test(e.target.value)) setNewUserPin(e.target.value); }} placeholder="0000" />
-                  </div>
-               </div>
-               <button onClick={addUser} className="w-full bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-200">Ajouter l'utilisateur</button>
-             </div>
-
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-               {staffUsers.map(user => user && (
-                 <div key={user.id} className="p-6 rounded-3xl border flex flex-col gap-4 bg-white border-slate-200 shadow-sm relative group">
-                   <button onClick={() => deleteUser(user.id)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Supprimer l'utilisateur"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                   <div className="space-y-3">
-                      <select value={user.role} onChange={(e) => updateUser(user.id, 'role', e.target.value)} className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded inline-block border-none outline-none cursor-pointer ${user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}><option value="BARMAN">Barman</option><option value="ADMIN">Admin</option></select>
-                      <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-1">Nom</label><input type="text" value={user.name || ''} onChange={(e) => updateUser(user.id, 'name', e.target.value)} className="w-full bg-slate-50 p-3 rounded-xl font-bold text-slate-800 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all" /></div>
-                      <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-1">PIN</label><input type="text" value={user.pin || ''} maxLength={4} onChange={(e) => updateUser(user.id, 'pin', e.target.value)} className="w-full bg-slate-50 p-3 rounded-xl font-black text-slate-800 text-center tracking-widest outline-none focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all" /></div>
-                   </div>
-                 </div>
-               ))}
-               {staffUsers.length === 0 && (
-                   <div className="col-span-full py-8 text-center text-slate-400 italic font-medium">Aucun membre dans l'équipe.</div>
-               )}
-             </div>
-           </div>
-         </div>
-      )}
-
       {activeSubTab === 'dlc' && currentUser?.role === 'ADMIN' && (
         <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+           {/* ... DLC Content ... */}
            <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>Profils de DLC</h3>
            <div className="mb-8 p-6 bg-amber-50 rounded-3xl border border-amber-100 flex flex-col gap-4">
              <div className="flex flex-col md:flex-row gap-4 items-end">

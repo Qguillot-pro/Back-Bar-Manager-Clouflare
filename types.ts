@@ -74,6 +74,7 @@ export interface StockItem {
   order: number;
   isDraft?: boolean;
   isTemporary?: boolean; 
+  isInventoryOnly?: boolean; 
 }
 
 export interface DLCHistory {

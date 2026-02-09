@@ -15,6 +15,7 @@ import Order from './components/Order';
 import RecipesView from './components/RecipesView';
 import DailyLife from './components/DailyLife';
 import ConnectionLogs from './components/ConnectionLogs';
+import GlobalInventory from './components/GlobalInventory';
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -57,7 +58,7 @@ const App: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [eventComments, setEventComments] = useState<EventComment[]>([]);
   
-  const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes' | 'daily_life' | 'logs'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes' | 'daily_life' | 'logs' | 'global_inventory'>('dashboard');
   const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); 
   const [notification, setNotification] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -308,9 +309,6 @@ const App: React.FC = () => {
                           note: `Remplacement depuis ${storages.find(s=>s.id===backupEntry.storageId)?.name}`
                       };
                       // On doit aussi décrémenter la source, mais pour le log Transaction 'IN', on cible le destination.
-                      // Pour la cohérence comptable, c'est un mouvement nul (Transfert). 
-                      // Mais pour l'app, on loggue juste l'entrée sur le bar. 
-                      // Ou mieux : on log une sortie sur la réserve aussi ? Non, simplifions : on loggue juste l'action utilisateur "Sortie 1" transformée.
                       setTransactions(prev => [transTransfer, ...prev]);
                       syncData('SAVE_TRANSACTION', transTransfer);
                       
@@ -332,11 +330,9 @@ const App: React.FC = () => {
           }
 
           // 3. SORTIE STANDARD (Cascade)
-          // Si on arrive ici, c'est que soit qty != 1, soit pas de bouteille entamée (que des entiers ou des vides)
           for (const prio of itemPriorities) {
               if (remaining <= 0) break;
               const q = getStorageQty(prio.storageId);
-              // Priorité absolue aux décimales d'abord (cas où on sort 0.X)
               const dec = q % 1;
               if (dec > 0.001) {
                   const take = Math.min(dec, remaining);
@@ -346,7 +342,6 @@ const App: React.FC = () => {
                   remaining -= take;
               }
           }
-          // Puis bouteilles pleines
           if (remaining > 0) {
               for (const prio of itemPriorities) {
                   if (remaining <= 0) break;
@@ -368,13 +363,22 @@ const App: React.FC = () => {
           for (const prio of itemPriorities) {
               if (remaining <= 0) break;
               if (prio.storageId === 's0') continue;
+              
               const current = getStorageQty(prio.storageId);
+              
+              // NOUVELLE RÈGLE : Si bouteille entamée, on saute (pas de remplissage)
+              if (current > 0 && current % 1 !== 0) {
+                  continue; 
+              }
+
               const consigne = consignes.find(c => c.itemId === itemId && c.storageId === prio.storageId);
               const target = consigne?.maxCapacity ?? consigne?.minQuantity ?? 0;
               
               if (target > 0 && current < target) {
-                  const space = target - current;
+                  // On ne remplit que des entiers
+                  const space = Math.floor(target - current); 
                   const fill = Math.min(space, remaining);
+                  
                   if (fill > 0) {
                       handleStockUpdate(itemId, prio.storageId, current + fill);
                       const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: prio.storageId, type: 'IN', quantity: fill, date: new Date().toISOString(), userName: currentUser?.name };
@@ -438,7 +442,7 @@ const App: React.FC = () => {
   
   const handleUndoLastTransaction = () => {
       if (transactions.length === 0) return;
-      const last = transactions[0]; // La plus récente (triée DESC)
+      const last = transactions[0]; 
       
       if (!window.confirm(`Annuler le mouvement : ${last.type} ${last.quantity} (${items.find(i=>i.id===last.itemId)?.name}) ?`)) return;
 
@@ -446,7 +450,6 @@ const App: React.FC = () => {
       const currentQty = currentLevel?.currentQuantity || 0;
       let newQty = currentQty;
 
-      // Inversion logique
       if (last.type === 'IN') {
           newQty = Math.max(0, currentQty - last.quantity);
       } else {
@@ -454,11 +457,7 @@ const App: React.FC = () => {
       }
 
       handleStockUpdate(last.itemId, last.storageId, newQty);
-      
-      // Mise à jour visuelle immédiate
       setTransactions(prev => prev.filter(t => t.id !== last.id));
-      
-      // Suppression DB
       syncData('DELETE_TRANSACTION', { id: last.id });
   };
 
@@ -526,6 +525,7 @@ const App: React.FC = () => {
           <NavItem collapsed={isSidebarCollapsed} active={view === 'restock'} onClick={() => setView('restock')} label="Préparation Cave" icon="M19 14l-7 7m0 0l-7-7m7 7V3" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'movements'} onClick={() => setView('movements')} label="Mouvements" icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'inventory'} onClick={() => setView('inventory')} label="Stock Global" icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'global_inventory'} onClick={() => setView('global_inventory')} label="Stock Total Établissement" icon="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'orders'} onClick={() => setView('orders')} label="À Commander" icon="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" badge={orders.filter(o => o && o.status === 'PENDING').length} />
           
           <div className="my-2 border-t border-white/5"></div>
@@ -623,6 +623,17 @@ const App: React.FC = () => {
 
         {view === 'logs' && currentUser?.role === 'ADMIN' && (
             <ConnectionLogs logs={userLogs} />
+        )}
+
+        {view === 'global_inventory' && (
+            <GlobalInventory 
+                items={items} 
+                storages={storages} 
+                stockLevels={stockLevels} 
+                categories={categories} 
+                onSync={syncData} 
+                onUpdateStock={handleStockUpdate} 
+            />
         )}
       </main>
       {notification && <div className="fixed bottom-6 right-6 bg-white p-4 rounded-xl shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right z-[100]"><span className="font-bold text-sm">{notification.message}</span><button onClick={() => setNotification(null)} className="text-indigo-600 font-black">OK</button></div>}

@@ -70,7 +70,8 @@ CREATE TABLE IF NOT EXISTS items (
     is_consigne BOOLEAN DEFAULT FALSE,
     sort_order INTEGER DEFAULT 0,
     is_draft BOOLEAN DEFAULT FALSE,
-    is_temporary BOOLEAN DEFAULT FALSE
+    is_temporary BOOLEAN DEFAULT FALSE,
+    is_inventory_only BOOLEAN DEFAULT FALSE
 );
 
 ALTER TABLE items ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
@@ -81,6 +82,7 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS article_code TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS is_temporary BOOLEAN DEFAULT FALSE;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
 ALTER TABLE items ADD COLUMN IF NOT EXISTS is_consigne BOOLEAN DEFAULT FALSE;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS is_inventory_only BOOLEAN DEFAULT FALSE;
 
 -- 3. Tables Liées (Relations)
 CREATE TABLE IF NOT EXISTS stock_levels (
@@ -258,7 +260,8 @@ INSERT INTO storage_spaces (id, name, sort_order) VALUES
 ('s1', 'Frigo Soft', 1), ('s2', 'Frigo Vin', 2), ('s3', 'Speed Rack', 3),
 ('s4', 'Etg Sirops', 4), ('s5', 'Etg Liqueurs', 5), ('s6', 'Pyramide', 6),
 ('s7', 'Etg Thé', 7), ('s8', 'Etg Vin Rouge', 8), ('s9', 'Frigo Back', 9),
-('s10', 'Autres', 10), ('s0', 'Surstock', 99)
+('s10', 'Autres', 10), ('s0', 'Surstock', 99),
+('s_global', 'Autre / Restaurant', 100)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO users (id, name, role, pin) VALUES 
