@@ -106,7 +106,20 @@ const App: React.FC = () => {
     try {
       const response = await fetch('/api/init');
       const contentType = response.headers.get("content-type");
-      if (!response.ok || (contentType && !contentType.includes("application/json"))) throw new Error("Mode Preview (Backend non disponible)");
+      
+      // Gestion améliorée des erreurs pour afficher les détails du backend (ex: "Config manquante")
+      if (!response.ok) {
+          if (contentType && contentType.includes("application/json")) {
+              const errData = await response.json();
+              throw new Error(errData.error || `Erreur serveur (${response.status})`);
+          }
+          throw new Error(`Erreur HTTP: ${response.status}`);
+      }
+
+      if (contentType && !contentType.includes("application/json")) {
+          // Cas typique du mode local sans wrangler (retourne index.html)
+          throw new Error("Mode Preview (Backend non disponible)");
+      }
 
       const data = await response.json();
       
@@ -171,7 +184,10 @@ const App: React.FC = () => {
     } catch (error: any) {
       console.warn("Passage en mode Hors Ligne:", error);
       setIsOffline(true);
-      if (!error.message.includes("Mode Preview")) setConnectionError(error.message || "Erreur inconnue");
+      // On sauvegarde l'erreur pour l'afficher sauf si c'est le mode preview normal (npm start)
+      if (!error.message.includes("Mode Preview")) {
+          setConnectionError(error.message || "Erreur inconnue");
+      }
       loadLocalData();
     } finally { setLoading(false); }
   };
@@ -557,7 +573,12 @@ const App: React.FC = () => {
   if (!currentUser) {
      return (
        <div className="h-screen bg-slate-900 flex items-center justify-center p-4">
-         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden max-w-sm w-full">
+         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden max-w-sm w-full relative">
+           {connectionError && (
+               <div className="absolute top-0 left-0 w-full bg-rose-500 text-white text-[10px] font-bold p-2 text-center z-10 animate-in slide-in-from-top">
+                   {connectionError}
+               </div>
+           )}
            <div className="bg-indigo-600 p-8 text-center">
              <div className="w-16 h-16 bg-white rounded-2xl mx-auto mb-4 flex items-center justify-center text-indigo-600 font-black text-2xl shadow-lg">B</div>
              <h1 className="text-white font-black text-xl tracking-widest uppercase">BarStock Pro</h1>
@@ -630,7 +651,7 @@ const App: React.FC = () => {
                       <NavItem collapsed={isSidebarCollapsed} active={view === 'articles'} onClick={() => { setView('articles'); setArticlesFilter('ALL'); }} label="Base Articles" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" small />
                       {currentUser?.role === 'ADMIN' && (
                           <>
-                            <NavItem collapsed={isSidebarCollapsed} active={view === 'config'} onClick={() => setView('config')} label="Configuration" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" small />
+                            <NavItem collapsed={isSidebarCollapsed} active={view === 'config'} onClick={() => setView('config')} label="Configuration" icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" small />
                             <NavItem collapsed={isSidebarCollapsed} active={view === 'logs'} onClick={() => setView('logs')} label="Logs Connexion" icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" small />
                           </>
                       )}

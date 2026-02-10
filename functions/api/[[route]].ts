@@ -1,3 +1,4 @@
+
 import { Pool } from '@neondatabase/serverless';
 
 interface Env {
@@ -33,16 +34,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   if (!env.DATABASE_URL) {
-    return new Response(JSON.stringify({ error: "Configuration serveur manquante (DATABASE_URL)" }), {
+    return new Response(JSON.stringify({ error: "ERREUR CONFIG : Variable DATABASE_URL manquante dans Cloudflare." }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
 
-  // CORRECTION NEON : On limite les connexions pour le plan gratuit
+  // Configuration optimisée pour le Serverless
   const pool: any = new (Pool as any)({ 
     connectionString: env.DATABASE_URL,
-    max: 5 // Limite stricte pour éviter l'erreur "Too many clients"
+    max: 2, // Réduit à 2 pour forcer la file d'attente et éviter le rejet immédiat
+    connectionTimeoutMillis: 5000, // Timeout rapide pour échouer vite si la DB est injoignable
+    idleTimeoutMillis: 1000, // Libère les connexions très vite
   });
 
   try {
@@ -51,29 +54,39 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
-      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, logs, tasks, events, comments, dailyCocktails, cocktailCats]: any[] = await Promise.all([
-        pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
+      
+      // Etape 1 : Données Critiques (Configuration & Base)
+      const [appConfig, users, storages, formats, categories, dlcProfiles]: any[] = await Promise.all([
+        pool.query('SELECT * FROM app_config'),
         pool.query('SELECT * FROM users'),
         pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
-        pool.query('SELECT * FROM stock_levels'),
-        pool.query('SELECT * FROM stock_consignes'),
-        pool.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 1000'),
-        pool.query('SELECT * FROM orders ORDER BY date DESC'),
-        pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 500'),
         pool.query('SELECT * FROM formats'),
         pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
-        pool.query('SELECT * FROM stock_priorities'),
-        pool.query('SELECT * FROM dlc_profiles'),
-        pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500'),
-        pool.query('SELECT * FROM app_config'),
-        pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 200'),
+        pool.query('SELECT * FROM dlc_profiles')
+      ]);
+
+      // Etape 2 : Stock & Catalogue (Peut être lourd)
+      const [items, stockLevels, consignes, priorities]: any[] = await Promise.all([
+        pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
+        pool.query('SELECT * FROM stock_levels'),
+        pool.query('SELECT * FROM stock_consignes'),
+        pool.query('SELECT * FROM stock_priorities')
+      ]);
+
+      // Etape 3 : Historique & Modules Annexes (Moins prioritaire)
+      const [transactions, orders, dlcHistory, unfulfilledOrders, messages, glassware, recipes, techniques, losses, logs, tasks, events, comments, dailyCocktails, cocktailCats]: any[] = await Promise.all([
+        pool.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 500'), // Réduit à 500 pour perf
+        pool.query('SELECT * FROM orders ORDER BY date DESC'),
+        pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 300'),
+        pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 200'),
+        pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 100'),
         pool.query('SELECT * FROM glassware ORDER BY name ASC'),
         pool.query('SELECT * FROM recipes ORDER BY name ASC'),
         pool.query('SELECT * FROM techniques ORDER BY name ASC'),
-        pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 500'),
-        pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 500'),
-        pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200'),
-        pool.query('SELECT * FROM events ORDER BY start_time ASC LIMIT 100'),
+        pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 200'),
+        pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 200'),
+        pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100'),
+        pool.query('SELECT * FROM events ORDER BY start_time ASC LIMIT 50'),
         pool.query('SELECT * FROM event_comments ORDER BY created_at ASC'),
         pool.query('SELECT * FROM daily_cocktails WHERE date >= NOW() - INTERVAL \'7 days\''),
         pool.query('SELECT * FROM cocktail_categories')
@@ -85,20 +98,24 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
       });
 
-      // Nettoyage items temporaires
-      try {
-        let interval = null;
-        const durationSetting = configMap.tempItemDuration;
-        if (durationSetting === '3_DAYS') interval = "3 days";
-        else if (durationSetting === '7_DAYS') interval = "7 days";
-        else if (durationSetting === '14_DAYS') interval = "14 days";
-        else if (durationSetting === '1_MONTH') interval = "1 month";
-        else if (durationSetting === '3_MONTHS') interval = "3 months";
-        
-        if (interval) {
-            await pool.query(`DELETE FROM items WHERE is_temporary = true AND created_at < NOW() - INTERVAL '${interval}'`);
-        }
-      } catch (e) { console.error("Cleanup error", e); }
+      // Nettoyage items temporaires (Non bloquant)
+      context.waitUntil((async () => {
+          try {
+            let interval = null;
+            const durationSetting = configMap.tempItemDuration;
+            if (durationSetting === '3_DAYS') interval = "3 days";
+            else if (durationSetting === '7_DAYS') interval = "7 days";
+            else if (durationSetting === '14_DAYS') interval = "14 days";
+            else if (durationSetting === '1_MONTH') interval = "1 month";
+            else if (durationSetting === '3_MONTHS') interval = "3 months";
+            
+            if (interval) {
+                const tempPool = new (Pool as any)({ connectionString: env.DATABASE_URL, max: 1 });
+                await tempPool.query(`DELETE FROM items WHERE is_temporary = true AND created_at < NOW() - INTERVAL '${interval}'`);
+                await tempPool.end();
+            }
+          } catch (e) { console.error("Cleanup error (background)", e); }
+      })());
 
       const responseBody = {
           items: items.rows.map((row: any) => ({
@@ -194,6 +211,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       if (!action) return new Response(JSON.stringify({ error: 'Action manquante' }), { status: 400, headers: corsHeaders });
 
+      // Reuse pool for actions
       switch (action) {
         case 'SAVE_LOG': {
             await pool.query(`INSERT INTO user_logs (id, user_name, action, details, timestamp) VALUES ($1, $2, $3, $4, NOW())`, [payload.id, payload.userName, payload.action, payload.details]);
@@ -238,8 +256,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             `, [id, date, type, recipeId, customName, customDescription]);
             break;
         }
-        
-        // --- EXISTING ACTIONS ---
         case 'SAVE_CONFIG': {
             await pool.query(`INSERT INTO app_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [payload.key, String(payload.value)]);
             break;
