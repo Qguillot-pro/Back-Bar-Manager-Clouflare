@@ -37,7 +37,7 @@ const Configuration: React.FC<ConfigProps> = ({
   categories, setCategories, users, setUsers, currentUser, dlcProfiles, setDlcProfiles, onSync, appConfig, setAppConfig,
   glassware = [], setGlassware, techniques = [], setTechniques
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware' | 'techniques'>('general');
+  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware' | 'techniques' | 'credits'>('general');
   const [authorizedSubTabs, setAuthorizedSubTabs] = useState<Set<string>>(new Set());
   const [authPinInput, setAuthPinInput] = useState('');
   
@@ -283,6 +283,7 @@ const Configuration: React.FC<ConfigProps> = ({
             <button onClick={() => handleTabChange('techniques')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'techniques' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Techniques</button>
             <button onClick={() => handleTabChange('users')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Utilisateurs</button>
             <button onClick={() => handleTabChange('dlc')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'dlc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Configuration DLC</button>
+            <button onClick={() => handleTabChange('credits')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'credits' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Crédits & Mentions</button>
           </>
         )}
       </div>
@@ -535,6 +536,57 @@ const Configuration: React.FC<ConfigProps> = ({
              ))}
            </div>
         </div>
+      )}
+
+      {activeSubTab === 'credits' && (
+          <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-8 animate-in fade-in slide-in-from-bottom-2">
+              <div>
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-4">
+                      <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
+                      Développement & Conception
+                  </h3>
+                  <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
+                      <p className="text-lg font-black text-indigo-900">Studio AI / M. GUILLOT Quentin</p>
+                      <p className="text-xs text-indigo-600 mt-1 font-medium">Développement sur mesure pour la gestion optimisée des stocks de bar.</p>
+                  </div>
+              </div>
+
+              <div>
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-4">
+                      <span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>
+                      Hébergement & Infrastructure
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                          <p className="font-bold text-emerald-900 text-sm">Frontend & Serveur</p>
+                          <p className="text-xs text-emerald-600 mt-1">Hébergé par <strong>Cloudflare</strong> (Réseau Global)</p>
+                      </div>
+                      <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                          <p className="font-bold text-emerald-900 text-sm">Base de Données</p>
+                          <p className="text-xs text-emerald-600 mt-1">Hébergée par <strong>Neon</strong> (PostgreSQL Serverless)</p>
+                      </div>
+                  </div>
+              </div>
+
+              <div>
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-4">
+                      <span className="w-1.5 h-4 bg-slate-500 rounded-full"></span>
+                      Licences & Mentions Légales
+                  </h3>
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-3 text-xs text-slate-500 leading-relaxed">
+                      <p>
+                          Ce logiciel est une propriété intellectuelle protégée. L'utilisation est strictement réservée au cadre défini par la licence d'exploitation accordée à l'établissement.
+                      </p>
+                      <p>
+                          Toute reproduction, modification ou distribution non autorisée du code source ou de l'interface est interdite.
+                      </p>
+                      <div className="pt-2 border-t border-slate-200 mt-2">
+                          <p className="font-bold text-slate-700">Composants Open Source :</p>
+                          <p>React, TailwindCSS, Recharts, Lucide React, Google Generative AI SDK.</p>
+                      </div>
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );

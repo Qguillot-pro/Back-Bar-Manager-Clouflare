@@ -17,6 +17,9 @@ import DailyLife from './components/DailyLife';
 import ConnectionLogs from './components/ConnectionLogs';
 import GlobalInventory from './components/GlobalInventory';
 
+// Date de la version actuelle (Build)
+const APP_VERSION_DATE = "24/02/2025 14:00";
+
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -282,44 +285,42 @@ const App: React.FC = () => {
       const item = items.find(i => i.id === dlc.itemId);
       const profile = dlcProfiles.find(p => p.id === item?.dlcProfileId);
       
-      // 1. Enregistrer la perte
-      // On convertit le % en quantité estimée (ex: 50% d'une bouteille de 70cl -> 0.5 unité ou 35cl selon format)
-      // Simplification : on stocke le % ou l'unité perdue (ex: 0.5 bouteille)
       const qtyLost = parseFloat((qtyLostPercent / 100).toFixed(2));
       
-      const newLoss: Loss = {
-          id: 'loss_' + Date.now(),
-          itemId: dlc.itemId,
-          openedAt: dlc.openedAt,
-          discardedAt: new Date().toISOString(),
-          quantity: qtyLost,
-          userName: currentUser?.name
-      };
-      setLosses(prev => [newLoss, ...prev]);
-      syncData('SAVE_LOSS', newLoss);
+      // 1. Enregistrer la perte (SEULEMENT SI > 0%)
+      if (qtyLost > 0) {
+          const newLoss: Loss = {
+              id: 'loss_' + Date.now(),
+              itemId: dlc.itemId,
+              openedAt: dlc.openedAt,
+              discardedAt: new Date().toISOString(),
+              quantity: qtyLost,
+              userName: currentUser?.name
+          };
+          setLosses(prev => [newLoss, ...prev]);
+          syncData('SAVE_LOSS', newLoss);
+      }
 
-      // 2. Déduire du stock UNIQUEMENT si c'est du "Production Frais"
+      // 2. Déduire du stock (PRODUCTION SEULEMENT)
       // Car "Ouverture" a déjà été déduit du stock lors de l'ouverture (OUT)
       if (profile?.type === 'PRODUCTION') {
-          // On déduit la quantité totale du lot (qui est jeté)
-          // Attention : qtyLost ici est ce qu'il RESTAIT. Mais le stock contient la quantité initiale du lot.
-          // Si on jette le lot, on doit décrémenter le stock de 1 unité (ou de la qté du lot si gérée)
-          // Hypothèse : 1 ligne DLC = 1 Unité de production.
+          // On déduit la quantité totale du lot (qui est jeté ou fini)
           const currentLevel = stockLevels.find(l => l.itemId === dlc.itemId && l.storageId === dlc.storageId);
           if (currentLevel) {
               const newQty = Math.max(0, currentLevel.currentQuantity - 1);
               handleStockUpdate(dlc.itemId, dlc.storageId, newQty);
               
-              // Log transaction sortie pour perte
+              // Log transaction
               const trans: Transaction = {
                   id: 't_loss_' + Date.now(),
                   itemId: dlc.itemId,
                   storageId: dlc.storageId,
                   type: 'OUT',
-                  quantity: 1, // On sort 1 unité complète du stock car elle part à la poubelle
+                  quantity: 1, // On sort 1 unité complète du stock car elle part à la poubelle ou est finie
                   date: new Date().toISOString(),
                   userName: currentUser?.name,
-                  note: `Perte DLC (Reste: ${qtyLostPercent}%)`
+                  // Si 0% perdu, c'est une fin normale de lot, sinon c'est une perte
+                  note: qtyLost > 0 ? `Perte DLC (Reste: ${qtyLostPercent}%)` : `Fin Lot DLC (Vide)`
               };
               setTransactions(prev => [trans, ...prev]);
               syncData('SAVE_TRANSACTION', trans);
@@ -598,6 +599,11 @@ const App: React.FC = () => {
                 </button>
             </div>
           </div>
+          {!isSidebarCollapsed && (
+              <div className="mt-3 pt-3 border-t border-white/5 text-center">
+                  <p className="text-[9px] font-medium text-slate-500">Version: {APP_VERSION_DATE}</p>
+              </div>
+          )}
         </div>
       </aside>
 
