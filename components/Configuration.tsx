@@ -5,6 +5,7 @@ import PriorityConfig from './PriorityConfig';
 import GlasswareConfig from './GlasswareConfig';
 import TechniquesConfig from './TechniquesConfig';
 import CocktailCategoriesConfig from './CocktailCategoriesConfig';
+import ImportData from './ImportData';
 
 interface ConfigProps {
   setItems: React.Dispatch<React.SetStateAction<StockItem[]>>;
@@ -40,7 +41,7 @@ const Configuration: React.FC<ConfigProps> = ({
   categories, setCategories, users, setUsers, currentUser, dlcProfiles, setDlcProfiles, onSync, appConfig, setAppConfig,
   glassware = [], setGlassware, techniques = [], setTechniques, cocktailCategories = [], setCocktailCategories
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'credits'>('general');
+  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'credits' | 'import'>('general');
   const [authorizedSubTabs, setAuthorizedSubTabs] = useState<Set<string>>(new Set());
   const [authPinInput, setAuthPinInput] = useState('');
   
@@ -87,8 +88,6 @@ const Configuration: React.FC<ConfigProps> = ({
   const handleTabChange = (tab: typeof activeSubTab) => {
       if (tab === 'users' && !authorizedSubTabs.has('users')) {
           setAuthPinInput('');
-          // Trigger modal via specific state or reuse a generic one. 
-          // Here we'll rely on local rendering condition.
       }
       setActiveSubTab(tab);
   };
@@ -99,6 +98,32 @@ const Configuration: React.FC<ConfigProps> = ({
       } else {
           alert("Code PIN incorrect");
           setAuthPinInput('');
+      }
+  };
+
+  const handleDataImport = (importedItems: any[]) => {
+      if (window.confirm(`Confirmer l'importation de ${importedItems.length} articles ?\n\nCela va les ajouter à la base existante.`)) {
+          const newStockItems = importedItems.map((imp, idx) => ({
+             id: `imp_${Date.now()}_${idx}`,
+             name: imp.name,
+             category: imp.categorie || 'Autre',
+             formatId: formats[0]?.id || 'f1',
+             pricePerUnit: 0,
+             lastUpdated: new Date().toISOString(),
+             createdAt: new Date().toISOString(),
+             isDLC: false,
+             isConsigne: false,
+             order: items.length + idx,
+             isDraft: false
+          }));
+
+          setItems(prev => [...prev, ...newStockItems]);
+          
+          // Envoi séquentiel pour éviter de surcharger le worker (si beaucoup d'items)
+          // Dans une V2 on pourrait faire un batch insert
+          newStockItems.forEach(item => onSync('SAVE_ITEM', item));
+          
+          alert(`${newStockItems.length} articles ajoutés avec succès !`);
       }
   };
 
@@ -121,7 +146,6 @@ const Configuration: React.FC<ConfigProps> = ({
     setItems(prev => [...prev, newItem]);
     onSync('SAVE_ITEM', newItem);
     
-    // Reset form
     setItemName('');
     setItemArticleCode('');
     setItemIsDlc(false);
@@ -131,7 +155,6 @@ const Configuration: React.FC<ConfigProps> = ({
 
   const handleConfigChange = (field: keyof AppConfig, value: any) => {
       setAppConfig(prev => ({ ...prev, [field]: value }));
-      // On sauvegarde avec une clé en snake_case pour la DB
       const key = field === 'tempItemDuration' ? 'temp_item_duration' : 'default_margin';
       onSync('SAVE_CONFIG', { key, value });
   };
@@ -287,7 +310,8 @@ const Configuration: React.FC<ConfigProps> = ({
             <button onClick={() => handleTabChange('cocktail_cats')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'cocktail_cats' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Catégories Cocktails</button>
             <button onClick={() => handleTabChange('users')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Utilisateurs</button>
             <button onClick={() => handleTabChange('dlc')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'dlc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Configuration DLC</button>
-            <button onClick={() => handleTabChange('credits')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'credits' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Crédits & Mentions</button>
+            <button onClick={() => handleTabChange('import')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'import' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Import / Données</button>
+            <button onClick={() => handleTabChange('credits')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'credits' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Crédits</button>
           </>
         )}
       </div>
@@ -317,10 +341,8 @@ const Configuration: React.FC<ConfigProps> = ({
           </div>
       ) : null}
 
-      {/* ... (Existing User Config) ... */}
       {activeSubTab === 'users' && authorizedSubTabs.has('users') && currentUser?.role === 'ADMIN' && (
          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
-           {/* ... (User management code remains unchanged) ... */}
            {adminUser && (
                <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm border-indigo-100 bg-indigo-50/20">
                     <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-slate-900 rounded-full"></span>Compte Administrateur</h3>
@@ -394,8 +416,6 @@ const Configuration: React.FC<ConfigProps> = ({
          </div>
       )}
 
-      {/* ... (Existing SubTabs) ... */}
-      
       {activeSubTab === 'general' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-8">
@@ -468,6 +488,12 @@ const Configuration: React.FC<ConfigProps> = ({
             </div>
           </div>
         </div>
+      )}
+      
+      {activeSubTab === 'import' && currentUser?.role === 'ADMIN' && (
+          <div className="animate-in fade-in slide-in-from-bottom-2">
+              <ImportData formats={formats} onImport={handleDataImport} />
+          </div>
       )}
       
       {activeSubTab === 'priorities' && (
@@ -550,7 +576,6 @@ const Configuration: React.FC<ConfigProps> = ({
 
       {activeSubTab === 'credits' && (
           <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-8 animate-in fade-in slide-in-from-bottom-2">
-              {/* ... (Existing credits content) ... */}
               <div>
                   <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-4">
                       <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
