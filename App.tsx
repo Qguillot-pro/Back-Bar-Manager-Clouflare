@@ -19,6 +19,7 @@ import GlobalInventory from './components/GlobalInventory';
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
+  const [dataSyncing, setDataSyncing] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loginInput, setLoginInput] = useState('');
   const [loginStatus, setLoginStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -100,99 +101,100 @@ const App: React.FC = () => {
     } catch (e) { console.error("Sync Error:", e); }
   };
 
-  const fetchData = async () => {
+  // Phase 1: Auth Init (Ultra rapide)
+  const fetchAuthData = async () => {
     setLoading(true);
     setConnectionError(null);
     try {
-      const response = await fetch('/api/init');
-      const contentType = response.headers.get("content-type");
-      
-      // Gestion améliorée des erreurs pour afficher les détails du backend (ex: "Config manquante")
-      if (!response.ok) {
-          if (contentType && contentType.includes("application/json")) {
-              const errData = await response.json();
-              throw new Error(errData.error || `Erreur serveur (${response.status})`);
-          }
-          throw new Error(`Erreur HTTP: ${response.status}`);
-      }
-
-      if (contentType && !contentType.includes("application/json")) {
-          // Cas typique du mode local sans wrangler (retourne index.html)
-          throw new Error("Mode Preview (Backend non disponible)");
-      }
-
-      const data = await response.json();
-      
-      if (data && data.items) {
-        setIsOffline(false);
-        setConnectionError(null);
-        setItems(data.items || []);
+        const response = await fetch('/api/init');
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || `Erreur Connexion (${response.status})`);
+        }
         
+        const data = await response.json();
+        
+        // Setup minimal users for login
         let fetchedUsers: User[] = data.users || [];
-        
-        // Patch pour les utilisateurs existants sans PIN (Migration/DB corrompue)
         fetchedUsers = fetchedUsers.map(u => {
             if (u.id === 'admin' && !u.pin) return { ...u, pin: '2159' };
             if (u.id === 'b1' && !u.pin) return { ...u, pin: '0000' };
             return u;
         });
-
         if (!fetchedUsers.find(u => u.id === 'admin')) fetchedUsers.push({ id: 'admin', name: 'Administrateur', role: 'ADMIN', pin: '2159' });
-        fetchedUsers = fetchedUsers.filter(u => u.id !== 'admin_secours');
-        fetchedUsers.push({ id: 'admin_secours', name: 'Admin Secours', role: 'ADMIN', pin: '0407' });
-
+        if (!fetchedUsers.find(u => u.id === 'admin_secours')) fetchedUsers.push({ id: 'admin_secours', name: 'Admin Secours', role: 'ADMIN', pin: '0407' });
+        
         setUsers(fetchedUsers);
-        setStorages(data.storages || []);
-        setStockLevels((data.stockLevels || []).map((l: any) => ({...l, currentQuantity: Number(l.currentQuantity)})));
-        setConsignes((data.consignes || []).map((c: any) => ({...c, minQuantity: Number(c.minQuantity), maxCapacity: c.maxCapacity ? Number(c.maxCapacity) : undefined})));
-        setTransactions((data.transactions || []).map((t: any) => ({...t, quantity: Number(t.quantity)})));
-        setOrders((data.orders || []).map((o: any) => ({...o, quantity: Number(o.quantity), initialQuantity: o.initialQuantity ? Number(o.initialQuantity) : undefined})));
-        setDlcHistory(data.dlcHistory || []);
-        setFormats(data.formats || []);
-        setCategories(data.categories || []);
-        setDlcProfiles(data.dlcProfiles || []);
-        setPriorities((data.priorities || []).map((p: any) => ({...p, priority: Number(p.priority)})));
-        setUnfulfilledOrders((data.unfulfilledOrders || []).map((u: any) => ({...u, quantity: u.quantity ? Number(u.quantity) : 1})));
-        setMessages(data.messages || []);
-        setGlassware(data.glassware || []);
-        setRecipes(data.recipes || []);
-        setTechniques(data.techniques || []);
-        setLosses(data.losses || []);
         if (data.appConfig) setAppConfig(data.appConfig);
+        setIsOffline(false);
         
-        // New Data
-        setUserLogs(data.userLogs || []);
-        setTasks(data.tasks || []);
-        setEvents(data.events || []);
-        setEventComments(data.eventComments || []);
-        
-        // Initialiser les catégories de cocktails si vide
-        if (data.cocktailCategories && data.cocktailCategories.length > 0) {
-            setCocktailCategories(data.cocktailCategories);
-        } else {
-            setCocktailCategories([
-                { id: 'cc1', name: 'Signature' },
-                { id: 'cc2', name: 'Classique' },
-                { id: 'cc3', name: 'Mocktail' },
-                { id: 'cc4', name: 'Tiki' },
-                { id: 'cc5', name: 'After Dinner' }
-            ]);
-        }
-        setDailyCocktails(data.dailyCocktails || []);
+        // Lance le chargement lourd en arrière-plan
+        fetchFullData();
 
-      } else { throw new Error("Structure de données invalide reçue de l'API"); }
     } catch (error: any) {
-      console.warn("Passage en mode Hors Ligne:", error);
-      setIsOffline(true);
-      // On sauvegarde l'erreur pour l'afficher sauf si c'est le mode preview normal (npm start)
-      if (!error.message.includes("Mode Preview")) {
-          setConnectionError(error.message || "Erreur inconnue");
-      }
-      loadLocalData();
-    } finally { setLoading(false); }
+        console.warn("Passage en mode Hors Ligne:", error);
+        setIsOffline(true);
+        setConnectionError(error.message);
+        loadLocalData();
+    } finally {
+        setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  // Phase 2: Full Data Sync (En arrière-plan)
+  const fetchFullData = async () => {
+      setDataSyncing(true);
+      try {
+          const response = await fetch('/api/data_sync');
+          if (!response.ok) throw new Error("Erreur Chargement Données");
+          
+          const data = await response.json();
+          if (data && data.items) {
+              setItems(data.items || []);
+              setStorages(data.storages || []);
+              setStockLevels((data.stockLevels || []).map((l: any) => ({...l, currentQuantity: Number(l.currentQuantity)})));
+              setConsignes((data.consignes || []).map((c: any) => ({...c, minQuantity: Number(c.minQuantity), maxCapacity: c.maxCapacity ? Number(c.maxCapacity) : undefined})));
+              setTransactions((data.transactions || []).map((t: any) => ({...t, quantity: Number(t.quantity)})));
+              setOrders((data.orders || []).map((o: any) => ({...o, quantity: Number(o.quantity), initialQuantity: o.initialQuantity ? Number(o.initialQuantity) : undefined})));
+              setDlcHistory(data.dlcHistory || []);
+              setFormats(data.formats || []);
+              setCategories(data.categories || []);
+              setDlcProfiles(data.dlcProfiles || []);
+              setPriorities((data.priorities || []).map((p: any) => ({...p, priority: Number(p.priority)})));
+              setUnfulfilledOrders((data.unfulfilledOrders || []).map((u: any) => ({...u, quantity: u.quantity ? Number(u.quantity) : 1})));
+              setMessages(data.messages || []);
+              setGlassware(data.glassware || []);
+              setRecipes(data.recipes || []);
+              setTechniques(data.techniques || []);
+              setLosses(data.losses || []);
+              setUserLogs(data.userLogs || []);
+              setTasks(data.tasks || []);
+              setEvents(data.events || []);
+              setEventComments(data.eventComments || []);
+              
+              if (data.cocktailCategories && data.cocktailCategories.length > 0) {
+                  setCocktailCategories(data.cocktailCategories);
+              } else {
+                  setCocktailCategories([
+                      { id: 'cc1', name: 'Signature' },
+                      { id: 'cc2', name: 'Classique' },
+                      { id: 'cc3', name: 'Mocktail' },
+                      { id: 'cc4', name: 'Tiki' },
+                      { id: 'cc5', name: 'After Dinner' }
+                  ]);
+              }
+              setDailyCocktails(data.dailyCocktails || []);
+          }
+      } catch (e) {
+          console.error("Échec chargement background", e);
+          // On ne passe pas hors ligne, on garde les données locales si dispo
+          // setNotification({ title: 'Attention', message: 'Sync données incomplète', type: 'error' });
+      } finally {
+          setDataSyncing(false);
+      }
+  };
+
+  useEffect(() => { fetchAuthData(); }, []);
 
   // Check notifications (Events today)
   useEffect(() => {
@@ -214,7 +216,7 @@ const App: React.FC = () => {
           setTimeout(() => setNotification(null), 3000);
           return;
       }
-      await fetchData();
+      await fetchFullData();
       setLastRefreshTime(now);
       setNotification({ title: 'Succès', message: 'Données actualisées', type: 'success' });
       setTimeout(() => setNotification(null), 3000);
@@ -273,12 +275,12 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!loading) {
-      // Sauvegarde systématique dans le localStorage (mode connecté = backup, mode déconnecté = stockage principal)
+    if (!loading && !dataSyncing) {
+      // Sauvegarde systématique dans le localStorage
       const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments, cocktailCategories, dailyCocktails };
       localStorage.setItem('barstock_local_db', JSON.stringify(db));
     }
-  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments, cocktailCategories, dailyCocktails]);
+  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, dataSyncing, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments, cocktailCategories, dailyCocktails]);
 
   const sortedItems = useMemo(() => [...items].filter(i => !!i).sort((a, b) => (a.order || 0) - (b.order || 0)), [items]);
   const sortedStorages = useMemo(() => [...storages].filter(s => !!s).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)), [storages]);
@@ -667,9 +669,12 @@ const App: React.FC = () => {
                 {!isSidebarCollapsed && (
                     <>
                         <span className="text-xs font-bold truncate max-w-[120px]">{currentUser?.name || 'Profil'}</span>
-                        <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-500' : 'text-emerald-500'}`}>
-                            {isOffline ? 'Mode Local' : 'Connecté'}
-                        </span>
+                        <div className="flex items-center gap-1">
+                            <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500' : (dataSyncing ? 'bg-indigo-500 animate-pulse' : 'bg-emerald-500')}`}></span>
+                            <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                {isOffline ? 'Mode Local' : (dataSyncing ? 'Sync...' : 'Connecté')}
+                            </span>
+                        </div>
                         {currentUser?.role === 'ADMIN' && (
                             <label className="flex items-center gap-2 mt-2 cursor-pointer">
                                 <div className={`w-6 h-3 rounded-full relative transition-colors ${isTestMode ? 'bg-rose-500' : 'bg-slate-600'}`}>
@@ -685,7 +690,7 @@ const App: React.FC = () => {
             
             <div className={`flex ${isSidebarCollapsed ? 'flex-col gap-2' : 'flex-row gap-2'}`}>
                 <button onClick={handleManualRefresh} className="text-slate-400 hover:text-white p-1" title="Actualiser (Max 1/min)">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    <svg className={`w-4 h-4 ${dataSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </button>
                 <button onClick={() => setCurrentUser(null)} className="text-[10px] text-rose-400 font-black uppercase hover:text-rose-300 p-1" title="Se déconnecter">
                     {isSidebarCollapsed ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg> : 'Quitter'}
