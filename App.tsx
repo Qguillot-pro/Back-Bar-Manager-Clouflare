@@ -257,11 +257,12 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!loading && !isOffline) {
+    if (!loading) {
+      // Sauvegarde systématique dans le localStorage (mode connecté = backup, mode déconnecté = stockage principal)
       const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments, cocktailCategories, dailyCocktails };
       localStorage.setItem('barstock_local_db', JSON.stringify(db));
     }
-  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments, cocktailCategories, dailyCocktails]);
+  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments, cocktailCategories, dailyCocktails]);
 
   const sortedItems = useMemo(() => [...items].filter(i => !!i).sort((a, b) => (a.order || 0) - (b.order || 0)), [items]);
   const sortedStorages = useMemo(() => [...storages].filter(s => !!s).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)), [storages]);
@@ -282,7 +283,7 @@ const App: React.FC = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'SAVE_LOG', payload: { id: 'log_' + Date.now(), userName: found.name, action: 'LOGIN', details: 'Connexion réussie', timestamp: new Date().toISOString() } })
-        }).catch(e => console.error("Log error", e));
+        }).catch(console.error);
 
         setTimeout(() => { setCurrentUser(found); setLoginStatus('idle'); setLoginInput(''); }, 800);
       } else {
@@ -645,7 +646,7 @@ const App: React.FC = () => {
                     <>
                         <span className="text-xs font-bold truncate max-w-[120px]">{currentUser?.name || 'Profil'}</span>
                         <span className={`text-[9px] font-black uppercase tracking-widest ${isOffline ? 'text-amber-500' : 'text-emerald-500'}`}>
-                            {isOffline ? 'Mode Démo' : 'Connecté'}
+                            {isOffline ? 'Mode Local' : 'Connecté'}
                         </span>
                         {currentUser?.role === 'ADMIN' && (
                             <label className="flex items-center gap-2 mt-2 cursor-pointer">
