@@ -575,8 +575,9 @@ const App: React.FC = () => {
        <div className="h-screen bg-slate-900 flex items-center justify-center p-4">
          <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden max-w-sm w-full relative">
            {connectionError && (
-               <div className="absolute top-0 left-0 w-full bg-rose-500 text-white text-[10px] font-bold p-2 text-center z-10 animate-in slide-in-from-top">
-                   {connectionError}
+               <div className="absolute top-0 left-0 w-full bg-rose-500 text-white text-[10px] font-bold p-3 text-center z-10 animate-in slide-in-from-top flex items-center justify-center gap-2">
+                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                   <span>{connectionError}</span>
                </div>
            )}
            <div className="bg-indigo-600 p-8 text-center">
