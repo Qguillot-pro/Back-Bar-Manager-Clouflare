@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task } from '../types';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -19,9 +19,11 @@ interface DashboardProps {
   onNavigate: (view: string) => void;
   onSendMessage: (text: string) => void;
   onArchiveMessage: (id: string) => void;
+  dailyCocktails?: DailyCocktail[];
+  recipes?: Recipe[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [] }) => {
   const [newMessageText, setNewMessageText] = useState('');
 
   // 1. KPI Alertes Réappro
@@ -82,6 +84,20 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   const upcomingEvents = useMemo(() => events.filter(e => new Date(e.endTime) >= new Date()).sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()).slice(0, 3), [events]);
   const pendingTasksCount = useMemo(() => tasks.filter(t => !t.isDone).length, [tasks]);
 
+  // 5. Cocktails Data
+  const todayCocktails = useMemo(() => {
+      const todayStr = new Date().toISOString().split('T')[0];
+      return dailyCocktails.filter(c => c.date === todayStr);
+  }, [dailyCocktails]);
+
+  const getCocktailName = (type: string) => {
+      const c = todayCocktails.find(c => c.type === type);
+      if (!c) return 'Non défini';
+      if (c.customName) return c.customName;
+      if (c.recipeId) return recipes.find(r => r.id === c.recipeId)?.name || 'Recette Inconnue';
+      return 'Non défini';
+  };
+
   const handlePostMessage = () => {
       if (newMessageText.length > 0 && newMessageText.length <= 300) {
           onSendMessage(newMessageText);
@@ -91,6 +107,46 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
 
   return (
     <div className="space-y-6">
+      
+      {/* COCKTAILS DU MOMENT */}
+      <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600 rounded-full blur-[100px] opacity-30 pointer-events-none"></div>
+          <div className="flex flex-col md:flex-row justify-between items-start gap-6 relative z-10">
+              <div className="space-y-2">
+                  <h2 className="text-2xl font-black uppercase tracking-tighter italic">Carte du Moment</h2>
+                  <p className="text-indigo-200 text-xs font-bold uppercase tracking-widest">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full md:w-auto">
+                  <div className="bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 hover:bg-white/20 transition-all">
+                      <div className="flex justify-between items-start">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-amber-400">Du Jour</span>
+                          <span className="text-[10px] ">🍸</span>
+                      </div>
+                      <p className="font-bold text-sm leading-tight line-clamp-2">{getCocktailName('OF_THE_DAY')}</p>
+                  </div>
+                  <div className="bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 hover:bg-white/20 transition-all">
+                      <div className="flex justify-between items-start">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400">Mocktail</span>
+                          <span className="text-[10px] ">🍹</span>
+                      </div>
+                      <p className="font-bold text-sm leading-tight line-clamp-2">{getCocktailName('MOCKTAIL')}</p>
+                  </div>
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-32 opacity-70">
+                      <div className="flex justify-between items-start">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-indigo-300">Accueil</span>
+                      </div>
+                      <p className="font-medium text-xs leading-tight line-clamp-2 text-slate-300">{getCocktailName('WELCOME')}</p>
+                  </div>
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-32 opacity-70">
+                      <div className="flex justify-between items-start">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-cyan-300">Thalasso</span>
+                      </div>
+                      <p className="font-medium text-xs leading-tight line-clamp-2 text-slate-300">{getCocktailName('THALASSO')}</p>
+                  </div>
+              </div>
+          </div>
+      </div>
+
       {/* KPIS */}
       <div className={`grid grid-cols-1 md:grid-cols-3 gap-6`}>
         <div onClick={() => onNavigate('restock')} className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-indigo-300 transition-all group">

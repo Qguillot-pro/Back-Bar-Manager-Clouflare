@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Task, Event, EventComment, User, StockItem } from '../types';
+import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe } from '../types';
 
 interface DailyLifeProps {
   tasks: Task[];
@@ -12,10 +12,13 @@ interface DailyLifeProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   setEventComments: React.Dispatch<React.SetStateAction<EventComment[]>>;
+  dailyCocktails?: DailyCocktail[];
+  setDailyCocktails?: React.Dispatch<React.SetStateAction<DailyCocktail[]>>;
+  recipes?: Recipe[];
 }
 
-const DailyLife: React.FC<DailyLifeProps> = ({ tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments }) => {
-  const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR'>('TASKS');
+const DailyLife: React.FC<DailyLifeProps> = ({ tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, dailyCocktails = [], setDailyCocktails, recipes = [] }) => {
+  const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS'>('TASKS');
   
   // Tasks State
   const [newTaskContent, setNewTaskContent] = useState('');
@@ -32,6 +35,9 @@ const DailyLife: React.FC<DailyLifeProps> = ({ tasks, events, eventComments, cur
   const [newEventProducts, setNewEventProducts] = useState<string[]>([]); // Array of itemIds
   const [productSearch, setProductSearch] = useState('');
   const [newComment, setNewComment] = useState('');
+
+  // Daily Cocktails State
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // --- TASKS LOGIC ---
   const activeTasks = useMemo(() => tasks.filter(t => !t.isDone).sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [tasks]);
@@ -156,6 +162,31 @@ const DailyLife: React.FC<DailyLifeProps> = ({ tasks, events, eventComments, cur
       }
   };
 
+  // --- COCKTAILS LOGIC ---
+  const handleUpdateCocktail = (type: DailyCocktailType, recipeId?: string, customName?: string, customDesc?: string) => {
+      if (!setDailyCocktails) return;
+      const newEntry: DailyCocktail = {
+          id: `${selectedDate}-${type}`,
+          date: selectedDate,
+          type,
+          recipeId,
+          customName,
+          customDescription: customDesc
+      };
+      
+      // Update local state
+      setDailyCocktails(prev => {
+          const filtered = prev.filter(c => !(c.date === selectedDate && c.type === type));
+          return [...filtered, newEntry];
+      });
+      // Mock sync call (should be implemented in App.tsx or backend)
+      // onSync('SAVE_DAILY_COCKTAIL', newEntry);
+  };
+
+  const getCocktailForType = (type: DailyCocktailType) => {
+      return dailyCocktails.find(c => c.date === selectedDate && c.type === type);
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20">
       
@@ -173,7 +204,110 @@ const DailyLife: React.FC<DailyLifeProps> = ({ tasks, events, eventComments, cur
           >
               Agenda Événements
           </button>
+          <button 
+            onClick={() => setActiveTab('COCKTAILS')}
+            className={`flex-1 md:flex-none px-8 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'COCKTAILS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+              Carte du Moment
+          </button>
       </div>
+
+      {activeTab === 'COCKTAILS' && (
+          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm min-h-[600px] space-y-8">
+              <div className="flex justify-between items-center">
+                  <h3 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                      <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
+                      Programmation Cocktails
+                  </h3>
+                  <input type="date" className="bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-slate-700 outline-none" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* COCKTAIL DU JOUR */}
+                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                      <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center text-white font-black">1</div>
+                          <div>
+                              <h4 className="font-black text-slate-800 uppercase tracking-tight">Cocktail du Jour</h4>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Avec Alcool</p>
+                          </div>
+                      </div>
+                      <select 
+                        className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none"
+                        value={getCocktailForType('OF_THE_DAY')?.recipeId || ''}
+                        onChange={(e) => handleUpdateCocktail('OF_THE_DAY', e.target.value)}
+                      >
+                          <option value="">-- Sélectionner une recette --</option>
+                          {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                  </div>
+
+                  {/* MOCKTAIL DU JOUR */}
+                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                      <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center text-white font-black">2</div>
+                          <div>
+                              <h4 className="font-black text-slate-800 uppercase tracking-tight">Mocktail du Jour</h4>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sans Alcool</p>
+                          </div>
+                      </div>
+                      <select 
+                        className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none"
+                        value={getCocktailForType('MOCKTAIL')?.recipeId || ''}
+                        onChange={(e) => handleUpdateCocktail('MOCKTAIL', e.target.value)}
+                      >
+                          <option value="">-- Sélectionner une recette --</option>
+                          {recipes.filter(r => r.category === 'Mocktail').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                          {recipes.filter(r => r.category !== 'Mocktail').map(r => <option key={r.id} value={r.id}>{r.name} (Autre)</option>)}
+                      </select>
+                  </div>
+
+                  {/* COCKTAIL D'ACCUEIL */}
+                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                      <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 bg-indigo-500 rounded-full flex items-center justify-center text-white font-black">3</div>
+                          <div>
+                              <h4 className="font-black text-slate-800 uppercase tracking-tight">Cocktail d'Accueil</h4>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Création Libre</p>
+                          </div>
+                      </div>
+                      <div className="space-y-2">
+                          <input 
+                            className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none" 
+                            placeholder="Nom de la création..."
+                            value={getCocktailForType('WELCOME')?.customName || ''}
+                            onChange={(e) => handleUpdateCocktail('WELCOME', undefined, e.target.value, getCocktailForType('WELCOME')?.customDescription)}
+                          />
+                          <input 
+                            className="w-full p-3 rounded-xl border border-slate-200 bg-white font-medium text-xs outline-none" 
+                            placeholder="Brève description / Ingrédients..."
+                            value={getCocktailForType('WELCOME')?.customDescription || ''}
+                            onChange={(e) => handleUpdateCocktail('WELCOME', undefined, getCocktailForType('WELCOME')?.customName, e.target.value)}
+                          />
+                      </div>
+                  </div>
+
+                  {/* COCKTAIL THALASSO */}
+                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                      <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 bg-cyan-500 rounded-full flex items-center justify-center text-white font-black">4</div>
+                          <div>
+                              <h4 className="font-black text-slate-800 uppercase tracking-tight">Cocktail Thalasso</h4>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Rotation Quotidienne</p>
+                          </div>
+                      </div>
+                      <select 
+                        className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none"
+                        value={getCocktailForType('THALASSO')?.recipeId || ''}
+                        onChange={(e) => handleUpdateCocktail('THALASSO', e.target.value)}
+                      >
+                          <option value="">-- Sélectionner une recette --</option>
+                          {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {activeTab === 'TASKS' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

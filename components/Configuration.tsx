@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
-import { Category, StockItem, StorageSpace, Format, StockPriority, StockConsigne, User, DLCProfile, UserRole, AppConfig, Glassware, Technique } from '../types';
+import { Category, StockItem, StorageSpace, Format, StockPriority, StockConsigne, User, DLCProfile, UserRole, AppConfig, Glassware, Technique, CocktailCategory } from '../types';
 import PriorityConfig from './PriorityConfig';
 import GlasswareConfig from './GlasswareConfig';
 import TechniquesConfig from './TechniquesConfig';
+import CocktailCategoriesConfig from './CocktailCategoriesConfig';
 
 interface ConfigProps {
   setItems: React.Dispatch<React.SetStateAction<StockItem[]>>;
@@ -30,14 +31,16 @@ interface ConfigProps {
   setGlassware?: React.Dispatch<React.SetStateAction<Glassware[]>>;
   techniques?: Technique[];
   setTechniques?: React.Dispatch<React.SetStateAction<Technique[]>>;
+  cocktailCategories?: CocktailCategory[];
+  setCocktailCategories?: React.Dispatch<React.SetStateAction<CocktailCategory[]>>;
 }
 
 const Configuration: React.FC<ConfigProps> = ({ 
   setItems, setStorages, setFormats, storages, formats, priorities, setPriorities, consignes, setConsignes, items,
   categories, setCategories, users, setUsers, currentUser, dlcProfiles, setDlcProfiles, onSync, appConfig, setAppConfig,
-  glassware = [], setGlassware, techniques = [], setTechniques
+  glassware = [], setGlassware, techniques = [], setTechniques, cocktailCategories = [], setCocktailCategories
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware' | 'techniques' | 'credits'>('general');
+  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'credits'>('general');
   const [authorizedSubTabs, setAuthorizedSubTabs] = useState<Set<string>>(new Set());
   const [authPinInput, setAuthPinInput] = useState('');
   
@@ -281,6 +284,7 @@ const Configuration: React.FC<ConfigProps> = ({
           <>
             <button onClick={() => handleTabChange('glassware')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'glassware' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Verrerie</button>
             <button onClick={() => handleTabChange('techniques')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'techniques' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Techniques</button>
+            <button onClick={() => handleTabChange('cocktail_cats')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'cocktail_cats' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Catégories Cocktails</button>
             <button onClick={() => handleTabChange('users')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Utilisateurs</button>
             <button onClick={() => handleTabChange('dlc')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'dlc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Configuration DLC</button>
             <button onClick={() => handleTabChange('credits')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'credits' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Crédits & Mentions</button>
@@ -313,8 +317,10 @@ const Configuration: React.FC<ConfigProps> = ({
           </div>
       ) : null}
 
+      {/* ... (Existing User Config) ... */}
       {activeSubTab === 'users' && authorizedSubTabs.has('users') && currentUser?.role === 'ADMIN' && (
          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+           {/* ... (User management code remains unchanged) ... */}
            {adminUser && (
                <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm border-indigo-100 bg-indigo-50/20">
                     <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-slate-900 rounded-full"></span>Compte Administrateur</h3>
@@ -388,7 +394,7 @@ const Configuration: React.FC<ConfigProps> = ({
          </div>
       )}
 
-      {/* ... (Other subTabs logic remains identical - General, Priorities, DLC, Glassware, Techniques) ... */}
+      {/* ... (Existing SubTabs) ... */}
       
       {activeSubTab === 'general' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -475,6 +481,10 @@ const Configuration: React.FC<ConfigProps> = ({
       {activeSubTab === 'techniques' && setTechniques && (
           <TechniquesConfig techniques={techniques} setTechniques={setTechniques} onSync={onSync} />
       )}
+
+      {activeSubTab === 'cocktail_cats' && setCocktailCategories && (
+          <CocktailCategoriesConfig categories={cocktailCategories} setCategories={setCocktailCategories} onSync={onSync} />
+      )}
       
       {activeSubTab === 'dlc' && currentUser?.role === 'ADMIN' && (
         <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
@@ -540,6 +550,7 @@ const Configuration: React.FC<ConfigProps> = ({
 
       {activeSubTab === 'credits' && (
           <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-8 animate-in fade-in slide-in-from-bottom-2">
+              {/* ... (Existing credits content) ... */}
               <div>
                   <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-4">
                       <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>

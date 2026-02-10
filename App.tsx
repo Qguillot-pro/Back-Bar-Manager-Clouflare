@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -16,9 +16,6 @@ import RecipesView from './components/RecipesView';
 import DailyLife from './components/DailyLife';
 import ConnectionLogs from './components/ConnectionLogs';
 import GlobalInventory from './components/GlobalInventory';
-
-// Date de la version actuelle (Build)
-const APP_VERSION_DATE = "24/02/2025 14:00";
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -53,6 +50,7 @@ const App: React.FC = () => {
   const [glassware, setGlassware] = useState<Glassware[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [techniques, setTechniques] = useState<Technique[]>([]);
+  const [cocktailCategories, setCocktailCategories] = useState<CocktailCategory[]>([]);
   const [losses, setLosses] = useState<Loss[]>([]);
   
   // New States
@@ -60,6 +58,7 @@ const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [eventComments, setEventComments] = useState<EventComment[]>([]);
+  const [dailyCocktails, setDailyCocktails] = useState<DailyCocktail[]>([]);
   
   const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes' | 'daily_life' | 'logs' | 'global_inventory'>('dashboard');
   const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); 
@@ -145,6 +144,20 @@ const App: React.FC = () => {
         setTasks(data.tasks || []);
         setEvents(data.events || []);
         setEventComments(data.eventComments || []);
+        
+        // Initialiser les catégories de cocktails si vide
+        if (data.cocktailCategories && data.cocktailCategories.length > 0) {
+            setCocktailCategories(data.cocktailCategories);
+        } else {
+            setCocktailCategories([
+                { id: 'cc1', name: 'Signature' },
+                { id: 'cc2', name: 'Classique' },
+                { id: 'cc3', name: 'Mocktail' },
+                { id: 'cc4', name: 'Tiki' },
+                { id: 'cc5', name: 'After Dinner' }
+            ]);
+        }
+        setDailyCocktails(data.dailyCocktails || []);
 
       } else { throw new Error("Structure de données invalide reçue de l'API"); }
     } catch (error: any) {
@@ -188,10 +201,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!loading && !isOffline) {
-      const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments };
+      const db = { items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments, cocktailCategories, dailyCocktails };
       localStorage.setItem('barstock_local_db', JSON.stringify(db));
     }
-  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments]);
+  }, [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, loading, isOffline, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, tasks, events, eventComments, cocktailCategories, dailyCocktails]);
 
   const sortedItems = useMemo(() => [...items].filter(i => !!i).sort((a, b) => (a.order || 0) - (b.order || 0)), [items]);
   const sortedStorages = useMemo(() => [...storages].filter(s => !!s).sort((a, b) => (a.order ?? 999) - (b.order ?? 999)), [storages]);
@@ -599,11 +612,6 @@ const App: React.FC = () => {
                 </button>
             </div>
           </div>
-          {!isSidebarCollapsed && (
-              <div className="mt-3 pt-3 border-t border-white/5 text-center">
-                  <p className="text-[9px] font-medium text-slate-500">Version: {APP_VERSION_DATE}</p>
-              </div>
-          )}
         </div>
       </aside>
 
@@ -611,7 +619,7 @@ const App: React.FC = () => {
         {view === 'dashboard' && (
             <Dashboard 
                 items={sortedItems} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser?.role || 'BARMAN'} transactions={transactions} messages={messages} currentUserName={currentUser.name}
-                events={events} tasks={tasks}
+                events={events} tasks={tasks} dailyCocktails={dailyCocktails} recipes={recipes}
                 onNavigate={(v) => { if (v === 'articles') { setView('articles'); setArticlesFilter('ALL'); } else setView(v as any); }}
                 onSendMessage={handleSendMessage} onArchiveMessage={handleArchiveMessage}
             />
@@ -637,16 +645,16 @@ const App: React.FC = () => {
         {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={sortedStorages} onDelete={handleDeleteDlcHistory} />}
         
         {view === 'config' && currentUser?.role === 'ADMIN' && (
-            <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={sortedStorages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} />
+            <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={sortedStorages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} cocktailCategories={cocktailCategories} setCocktailCategories={setCocktailCategories} />
         )}
         
         {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={sortedStorages} unfulfilledOrders={unfulfilledOrders} onUpdateOrderQuantity={() => {}} formats={formats} losses={losses} />}
         {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
         {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={handleOrderUpdate} onDeleteOrder={handleDeleteOrder} onAddManualOrder={handleAddManualOrder} formats={formats} />}
-        {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} />}
+        {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} />}
         
         {view === 'daily_life' && (
-            <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} />
+            <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} />
         )}
 
         {view === 'logs' && currentUser?.role === 'ADMIN' && (

@@ -173,6 +173,11 @@ export interface Technique {
   name: string;
 }
 
+export interface CocktailCategory {
+  id: string;
+  name: string;
+}
+
 export interface RecipeIngredient {
   itemId?: string; 
   tempName?: string; 
@@ -227,4 +232,15 @@ export interface Event {
   description?: string; // Max 150 chars
   productsJson?: string; // JSON array of itemIds
   createdAt: string;
+}
+
+export type DailyCocktailType = 'OF_THE_DAY' | 'MOCKTAIL' | 'WELCOME' | 'THALASSO';
+
+export interface DailyCocktail {
+  id: string;
+  date: string; // YYYY-MM-DD
+  type: DailyCocktailType;
+  recipeId?: string; // Link to recipe
+  customName?: string; // For Welcome cocktail fallback
+  customDescription?: string;
 }

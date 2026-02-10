@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Recipe, StockItem, Glassware, User, AppConfig, RecipeIngredient, Technique } from '../types';
+import { Recipe, StockItem, Glassware, User, AppConfig, RecipeIngredient, Technique, CocktailCategory } from '../types';
 import { generateCocktailWithAI } from '../services/geminiService';
 
 interface RecipesViewProps {
@@ -12,16 +12,17 @@ interface RecipesViewProps {
   onSync: (action: string, payload: any) => void;
   setRecipes: React.Dispatch<React.SetStateAction<Recipe[]>>;
   techniques?: Technique[];
+  cocktailCategories?: CocktailCategory[];
 }
 
-const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [] }) => {
+const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [], cocktailCategories = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   
   // Create/Edit Form State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
-  const [newCat, setNewCat] = useState('Signature');
+  const [newCat, setNewCat] = useState('');
   const [newGlassId, setNewGlassId] = useState('');
   const [newTech, setNewTech] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -39,6 +40,13 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           setNewTech(techniques[0].name);
       }
   }, [techniques]);
+
+  // Initialiser la catégorie par défaut
+  useEffect(() => {
+      if (!newCat && cocktailCategories.length > 0) {
+          setNewCat(cocktailCategories[0].name);
+      }
+  }, [cocktailCategories]);
 
   // --- HELPERS ---
   const getFormatValue = (itemId?: string) => {
@@ -294,11 +302,8 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       <div className="space-y-2">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Catégorie</label>
                           <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newCat} onChange={e => setNewCat(e.target.value)}>
-                              <option>Signature</option>
-                              <option>Classique</option>
-                              <option>Mocktail</option>
-                              <option>Tiki</option>
-                              <option>After Dinner</option>
+                              {cocktailCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                              {!cocktailCategories.length && <option>Signature</option>}
                           </select>
                       </div>
                   </div>
