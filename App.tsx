@@ -239,116 +239,125 @@ const App: React.FC = () => {
     syncData('SAVE_STOCK', { itemId, storageId, currentQuantity: newQty });
   };
 
-  const trackDlcEntry = (itemId: string, storageId: string) => { /* ... */ };
+  // --- LOGIQUE DLC AVANCÉE ---
+  const handleDlcEntry = (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION') => {
+      const newEntry: DLCHistory = {
+          id: 'dlc_' + Date.now() + Math.random().toString(36).substr(2,5),
+          itemId,
+          storageId,
+          openedAt: new Date().toISOString(),
+          userName: currentUser?.name
+      };
+
+      if (type === 'OPENING') {
+          // Règle : Une seule bouteille ouverte par article
+          // On supprime les anciennes entrées avant d'ajouter la nouvelle (mise à jour date)
+          const itemsToRemove = dlcHistory.filter(h => h.itemId === itemId);
+          setDlcHistory(prev => [...prev.filter(h => h.itemId !== itemId), newEntry]);
+          
+          itemsToRemove.forEach(h => syncData('DELETE_DLC_HISTORY', { id: h.id }));
+          syncData('SAVE_DLC_HISTORY', newEntry);
+      } else {
+          // Règle : Production (plusieurs lots possibles) -> On ajoute simplement
+          setDlcHistory(prev => [...prev, newEntry]);
+          syncData('SAVE_DLC_HISTORY', newEntry);
+      }
+  };
+
+  const handleDlcConsumption = (itemId: string) => {
+      // Pour la production frais : on consomme (supprime) le plus vieux lot
+      const relevantDlcs = dlcHistory.filter(h => h.itemId === itemId).sort((a,b) => new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime());
+      
+      if (relevantDlcs.length > 0) {
+          const oldest = relevantDlcs[0];
+          setDlcHistory(prev => prev.filter(h => h.id !== oldest.id));
+          syncData('DELETE_DLC_HISTORY', { id: oldest.id });
+      }
+  };
+
+  const handleDlcLoss = (id: string, qtyLostPercent: number) => {
+      const dlc = dlcHistory.find(h => h.id === id);
+      if (!dlc) return;
+
+      const item = items.find(i => i.id === dlc.itemId);
+      const profile = dlcProfiles.find(p => p.id === item?.dlcProfileId);
+      
+      // 1. Enregistrer la perte
+      // On convertit le % en quantité estimée (ex: 50% d'une bouteille de 70cl -> 0.5 unité ou 35cl selon format)
+      // Simplification : on stocke le % ou l'unité perdue (ex: 0.5 bouteille)
+      const qtyLost = parseFloat((qtyLostPercent / 100).toFixed(2));
+      
+      const newLoss: Loss = {
+          id: 'loss_' + Date.now(),
+          itemId: dlc.itemId,
+          openedAt: dlc.openedAt,
+          discardedAt: new Date().toISOString(),
+          quantity: qtyLost,
+          userName: currentUser?.name
+      };
+      setLosses(prev => [newLoss, ...prev]);
+      syncData('SAVE_LOSS', newLoss);
+
+      // 2. Déduire du stock UNIQUEMENT si c'est du "Production Frais"
+      // Car "Ouverture" a déjà été déduit du stock lors de l'ouverture (OUT)
+      if (profile?.type === 'PRODUCTION') {
+          // On déduit la quantité totale du lot (qui est jeté)
+          // Attention : qtyLost ici est ce qu'il RESTAIT. Mais le stock contient la quantité initiale du lot.
+          // Si on jette le lot, on doit décrémenter le stock de 1 unité (ou de la qté du lot si gérée)
+          // Hypothèse : 1 ligne DLC = 1 Unité de production.
+          const currentLevel = stockLevels.find(l => l.itemId === dlc.itemId && l.storageId === dlc.storageId);
+          if (currentLevel) {
+              const newQty = Math.max(0, currentLevel.currentQuantity - 1);
+              handleStockUpdate(dlc.itemId, dlc.storageId, newQty);
+              
+              // Log transaction sortie pour perte
+              const trans: Transaction = {
+                  id: 't_loss_' + Date.now(),
+                  itemId: dlc.itemId,
+                  storageId: dlc.storageId,
+                  type: 'OUT',
+                  quantity: 1, // On sort 1 unité complète du stock car elle part à la poubelle
+                  date: new Date().toISOString(),
+                  userName: currentUser?.name,
+                  note: `Perte DLC (Reste: ${qtyLostPercent}%)`
+              };
+              setTransactions(prev => [trans, ...prev]);
+              syncData('SAVE_TRANSACTION', trans);
+          }
+      }
+
+      // 3. Supprimer de la liste DLC
+      setDlcHistory(prev => prev.filter(h => h.id !== id));
+      syncData('DELETE_DLC_HISTORY', { id });
+  };
 
   // --- REFACTOR LOGIQUE TRANSACTION ---
   const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number) => {
-      const item = items.find(i => i.id === itemId);
-      const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+      // Cette fonction est appelée par Movements.tsx pour les mouvements standards
+      // Les logiques spécifiques DLC sont gérées en amont dans Movements ou via les nouveaux handlers DLC
       
       const itemPriorities = priorities.filter(p => p.itemId === itemId).sort((a,b) => b.priority - a.priority);
       const getStorageQty = (sId: string) => stockLevels.find(l => l.itemId === itemId && l.storageId === sId)?.currentQuantity || 0;
 
-      // --- SORTIE (OUT) ---
       if (type === 'OUT') {
           let remaining = qty;
           
           // 1. PRIORITÉ SURSTOCK (S0)
           const s0Qty = getStorageQty('s0');
           if (s0Qty > 0) {
-              alert(`⚠️ Article disponible en Surstock ! Sortie effectuée depuis le Surstock pour "${item?.name}".`);
               const deduction = Math.min(s0Qty, remaining);
               handleStockUpdate(itemId, 's0', s0Qty - deduction);
-              
-              const trans: Transaction = {
-                  id: Math.random().toString(36).substr(2, 9),
-                  itemId, storageId: 's0', type: 'OUT', quantity: deduction,
-                  date: new Date().toISOString(), userName: currentUser?.name, note: 'Sortie Prioritaire Surstock'
-              };
-              setTransactions(prev => [trans, ...prev]);
-              syncData('SAVE_TRANSACTION', trans);
-              return; // On arrête là pour l'action immédiate si Surstock dispo
+              const trans: Transaction = { id: Math.random().toString(36).substr(2, 9), itemId, storageId: 's0', type: 'OUT', quantity: deduction, date: new Date().toISOString(), userName: currentUser?.name, note: 'Sortie Prioritaire Surstock' };
+              setTransactions(prev => [trans, ...prev]); syncData('SAVE_TRANSACTION', trans);
+              return; 
           }
 
-          // 2. RÈGLE REMPLACEMENT BOUTEILLE (Sortie "1" sur Bouteille Entamée)
-          if (remaining === 1) {
-              // Trouver une bouteille entamée (décimale entre 0.01 et 0.99)
-              const openStorageEntry = stockLevels.find(l => l.itemId === itemId && l.currentQuantity % 1 > 0.01 && l.currentQuantity % 1 < 0.99);
-              
-              if (openStorageEntry) {
-                  // On a trouvé une bouteille entamée (ex: 0.4)
-                  // On cherche une bouteille pleine pour remplacer (>= 1), hors de l'emplacement entamé
-                  
-                  // NOUVELLE LOGIQUE : Priorité Surstock (s0) puis réserve (P10...)
-                  let backupEntry = stockLevels.find(l => 
-                      l.itemId === itemId && 
-                      l.storageId === 's0' && 
-                      l.currentQuantity >= 1
-                  );
-
-                  if (!backupEntry) {
-                      // Si pas en surstock, on cherche ailleurs (en évitant s0 déjà checké et l'emplacement courant)
-                      // On pourrait trier par priorité ici si nécessaire, mais le find simple suffit souvent pour "un autre stock"
-                      backupEntry = stockLevels.find(l => 
-                          l.itemId === itemId && 
-                          l.storageId !== openStorageEntry.storageId && 
-                          l.storageId !== 's0' &&
-                          l.currentQuantity >= 1
-                      );
-                  }
-
-                  if (backupEntry) {
-                      // CAS A : ON A DU STOCK POUR REMPLACER
-                      // 1. On enlève 1 à la réserve
-                      handleStockUpdate(itemId, backupEntry.storageId, backupEntry.currentQuantity - 1);
-                      // 2. On met 1 à l'emplacement actif (0.4 devient 1, on considère que le 0.4 est fini et remplacé par le 1.0)
-                      handleStockUpdate(itemId, openStorageEntry.storageId, 1);
-
-                      // LOGS
-                      // Transaction 1: Fin bouteille (Sortie de 0.X)
-                      const transFin: Transaction = {
-                          id: Math.random().toString(36).substr(2, 9) + '_1',
-                          itemId, storageId: openStorageEntry.storageId, type: 'OUT', quantity: openStorageEntry.currentQuantity, // On vide tout
-                          date: new Date().toISOString(), userName: currentUser?.name, note: 'Fin bouteille (Auto)'
-                      };
-                      setTransactions(prev => [transFin, ...prev]);
-                      syncData('SAVE_TRANSACTION', transFin);
-
-                      // Transaction 2: Transfert interne (P10 -> P5)
-                      const transTransfer: Transaction = {
-                          id: Math.random().toString(36).substr(2, 9) + '_2',
-                          itemId, storageId: openStorageEntry.storageId, type: 'IN', quantity: 1,
-                          date: new Date().toISOString(), userName: 'Système', isCaveTransfer: true,
-                          note: `Remplacement depuis ${storages.find(s=>s.id===backupEntry.storageId)?.name}`
-                      };
-                      // On doit aussi décrémenter la source, mais pour le log Transaction 'IN', on cible le destination.
-                      setTransactions(prev => [transTransfer, ...prev]);
-                      syncData('SAVE_TRANSACTION', transTransfer);
-                      
-                      return; // STOP
-                  } else {
-                      // CAS B : PAS DE STOCK POUR REMPLACER
-                      // On vide juste la bouteille entamée
-                      handleStockUpdate(itemId, openStorageEntry.storageId, 0);
-                      const transFin: Transaction = {
-                          id: Math.random().toString(36).substr(2, 9),
-                          itemId, storageId: openStorageEntry.storageId, type: 'OUT', quantity: openStorageEntry.currentQuantity,
-                          date: new Date().toISOString(), userName: currentUser?.name, note: 'Fin bouteille (Pas de réserve)'
-                      };
-                      setTransactions(prev => [transFin, ...prev]);
-                      syncData('SAVE_TRANSACTION', transFin);
-                      return; // STOP
-                  }
-              }
-          }
-
-          // 3. SORTIE STANDARD (Cascade)
+          // 2. SORTIE STANDARD
           for (const prio of itemPriorities) {
               if (remaining <= 0) break;
               const q = getStorageQty(prio.storageId);
-              const dec = q % 1;
-              if (dec > 0.001) {
-                  const take = Math.min(dec, remaining);
+              if (q > 0) {
+                  const take = Math.min(q, remaining);
                   handleStockUpdate(itemId, prio.storageId, q - take);
                   const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: prio.storageId, type: 'OUT', quantity: take, date: new Date().toISOString(), userName: currentUser?.name };
                   setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
@@ -356,42 +365,26 @@ const App: React.FC = () => {
               }
           }
           if (remaining > 0) {
-              for (const prio of itemPriorities) {
-                  if (remaining <= 0) break;
-                  if (prio.storageId === 's0') continue;
-                  const q = getStorageQty(prio.storageId);
-                  if (q >= 1) {
-                      const take = Math.min(Math.floor(q), remaining);
-                      handleStockUpdate(itemId, prio.storageId, q - take);
-                      const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: prio.storageId, type: 'OUT', quantity: take, date: new Date().toISOString(), userName: currentUser?.name };
-                      setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
-                      remaining -= take;
-                  }
-              }
+              // Si pas de stock prioritaire, on tape dans le dernier dispo ou s0
+              const fallbackStorage = itemPriorities.length > 0 ? itemPriorities[0].storageId : 's0';
+              const q = getStorageQty(fallbackStorage);
+              handleStockUpdate(itemId, fallbackStorage, q - remaining); // Allow negative for s0/fallback
+              const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: fallbackStorage, type: 'OUT', quantity: remaining, date: new Date().toISOString(), userName: currentUser?.name };
+              setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
           }
       } 
-      // --- ENTRÉE (IN) ---
-      else {
+      else { // IN
           let remaining = qty;
           for (const prio of itemPriorities) {
               if (remaining <= 0) break;
               if (prio.storageId === 's0') continue;
-              
               const current = getStorageQty(prio.storageId);
-              
-              // NOUVELLE RÈGLE : Si bouteille entamée, on saute (pas de remplissage)
-              if (current > 0 && current % 1 !== 0) {
-                  continue; 
-              }
-
+              if (current > 0 && current % 1 !== 0) continue; // Pas de remplissage bouteille entamée
               const consigne = consignes.find(c => c.itemId === itemId && c.storageId === prio.storageId);
               const target = consigne?.maxCapacity ?? consigne?.minQuantity ?? 0;
-              
               if (target > 0 && current < target) {
-                  // On ne remplit que des entiers
                   const space = Math.floor(target - current); 
                   const fill = Math.min(space, remaining);
-                  
                   if (fill > 0) {
                       handleStockUpdate(itemId, prio.storageId, current + fill);
                       const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: prio.storageId, type: 'IN', quantity: fill, date: new Date().toISOString(), userName: currentUser?.name };
@@ -441,7 +434,10 @@ const App: React.FC = () => {
       if (q > 0) { setConsignes(prev => [...prev, { itemId: newItem.id, storageId: 's0', minQuantity: q }]); syncData('SAVE_CONSIGNE', { itemId: newItem.id, storageId: 's0', minQuantity: q }); }
   };
   const handleDeleteItem = (id: string) => { setItems(prev => prev.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); };
-  const handleDeleteDlcHistory = (id: string, qtyLost: number = 0) => { setDlcHistory(prev => prev.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', {id}); };
+  const handleDeleteDlcHistory = (id: string, qtyLostPercent?: number) => { 
+      // Cette fonction est appelée par DLCView pour la poubelle/perte
+      handleDlcLoss(id, qtyLostPercent || 0);
+  };
   const handleOrderUpdate = (orderId: string, quantity: number, status: any = 'PENDING', ruptureDate?: string) => {
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, quantity, status, ruptureDate: ruptureDate !== undefined ? ruptureDate : o.ruptureDate } : o));
       const order = orders.find(o => o.id === orderId);
@@ -615,7 +611,20 @@ const App: React.FC = () => {
             />
         )}
         {view === 'inventory' && <StockTable items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleStockUpdate} consignes={consignes} />}
-        {view === 'movements' && <Movements items={sortedItems} transactions={transactions} storages={sortedStorages} onTransaction={handleTransaction} onOpenKeypad={() => {}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleUnfulfilledOrder} onCreateTemporaryItem={handleCreateTemporaryItem} formats={formats} dlcProfiles={dlcProfiles} onUndo={handleUndoLastTransaction} />}
+        
+        {view === 'movements' && (
+            <Movements 
+                items={sortedItems} transactions={transactions} storages={sortedStorages} 
+                onTransaction={handleTransaction} onOpenKeypad={() => {}} 
+                unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleUnfulfilledOrder} 
+                onCreateTemporaryItem={handleCreateTemporaryItem} formats={formats} 
+                dlcProfiles={dlcProfiles} onUndo={handleUndoLastTransaction} 
+                dlcHistory={dlcHistory} // NEW
+                onDlcEntry={handleDlcEntry} // NEW
+                onDlcConsumption={handleDlcConsumption} // NEW
+            />
+        )}
+        
         {view === 'restock' && <CaveRestock items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={handleCreateTemporaryItem} orders={orders} currentUser={currentUser} events={events} />}
         {view === 'articles' && <ArticlesList items={sortedItems} setItems={setItems} formats={formats} categories={categories} userRole={currentUser?.role || 'BARMAN'} onDelete={handleDeleteItem} onSync={syncData} dlcProfiles={dlcProfiles} filter={articlesFilter} />}
         {view === 'consignes' && <Consignes items={sortedItems} storages={sortedStorages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}

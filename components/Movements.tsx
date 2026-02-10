@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile } from '../types';
+import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile, DLCHistory } from '../types';
 
 interface MovementsProps {
   items: StockItem[];
@@ -14,9 +14,12 @@ interface MovementsProps {
   formats: Format[];
   dlcProfiles?: DLCProfile[];
   onUndo?: () => void;
+  dlcHistory?: DLCHistory[];
+  onDlcEntry?: (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION') => void;
+  onDlcConsumption?: (itemId: string) => void;
 }
 
-const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [], onUndo }) => {
+const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [], onUndo, dlcHistory = [], onDlcEntry, onDlcConsumption }) => {
   const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'UNFULFILLED'>('MOVEMENTS');
   
   const [search, setSearch] = useState('');
@@ -29,6 +32,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [dlcModalOpen, setDlcModalOpen] = useState(false);
   const [pendingDlcItem, setPendingDlcItem] = useState<StockItem | null>(null);
   const [pendingDlcAction, setPendingDlcAction] = useState<'IN' | 'OUT'>('OUT');
+  const [dlcStep, setDlcStep] = useState<'LABEL_CHECK' | 'USE_OLDEST' | 'EMPTY' | 'NONE'>('NONE');
 
   // Consigne Modal State
   const [consigneModalOpen, setConsigneModalOpen] = useState(false);
@@ -50,41 +54,54 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     let normalized = qty.replace(',', '.');
     if (normalized === '.') normalized = '0';
     let quantity = parseFloat(normalized);
-    
-    if (isNaN(quantity) || quantity <= 0) {
-        quantity = 1;
+    if (isNaN(quantity) || quantity <= 0) quantity = 1;
+
+    // --- LOGIQUE DLC AVANCÉE ---
+    if (item.isDLC && dlcProfiles && onDlcEntry && onDlcConsumption) {
+        const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
+        if (profile) {
+            setPendingDlcItem(item);
+            setPendingDlcAction(type);
+
+            // SCÉNARIO SORTIE (OUT)
+            if (type === 'OUT') {
+                if (profile.type === 'OPENING') {
+                    // DLC Ouverture : On sort une bouteille -> Faut étiqueter la nouvelle ouverte
+                    setDlcStep('LABEL_CHECK');
+                    setDlcModalOpen(true);
+                    return;
+                } 
+                else if (profile.type === 'PRODUCTION') {
+                    // DLC Production : On sort un lot -> Faut vérifier si on a du stock DLC
+                    const existingBatches = dlcHistory.filter(h => h.itemId === item.id);
+                    if (existingBatches.length > 0) {
+                        setDlcStep('USE_OLDEST'); // "Prenez le plus vieux"
+                    } else {
+                        setDlcStep('EMPTY'); // "Plus de stock frais, pensez à produire"
+                    }
+                    setDlcModalOpen(true);
+                    return;
+                }
+            } 
+            
+            // SCÉNARIO ENTRÉE (IN)
+            if (type === 'IN') {
+                if (profile.type === 'PRODUCTION') {
+                    // DLC Production : On rentre une production -> Faut étiqueter
+                    setDlcStep('LABEL_CHECK');
+                    setDlcModalOpen(true);
+                    return;
+                }
+                // Si DLC Ouverture et IN : Pas d'action spéciale (c'est une bouteille fermée qui rentre)
+            }
+        }
     }
 
-    // --- LOGIQUE DLC ---
-    if (item.isDLC) {
-        const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
-        
-        // Cas OUT
-        if (type === 'OUT') {
-             if (item.isConsigne) {
-                setPendingConsigneItem(item);
-                setConsigneModalOpen(true);
-                return;
-             }
-             setPendingDlcItem(item);
-             setPendingDlcAction('OUT');
-             setDlcModalOpen(true);
-             return;
-        }
-
-        // Cas IN (Entrée Production)
-        if (type === 'IN' && profile?.type === 'PRODUCTION') {
-             setPendingDlcItem(item);
-             setPendingDlcAction('IN');
-             setDlcModalOpen(true);
-             return;
-        }
-    } else {
-        if (type === 'OUT' && item.isConsigne) {
-            setPendingConsigneItem(item);
-            setConsigneModalOpen(true);
-            return;
-        }
+    // Gestion Consigne (Uniquement si pas intercepté par DLC ou après DLC résolu)
+    if (type === 'OUT' && item.isConsigne) {
+        setPendingConsigneItem(item);
+        setConsigneModalOpen(true);
+        return;
     }
 
     // Si pas d'interception, on exécute
@@ -93,42 +110,75 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     setQty('1');
   };
 
-  const executeTransactionAfterChecks = (item: StockItem, type: 'IN' | 'OUT' = 'OUT') => {
+  const finalizeDlcTransaction = () => {
+      if (!pendingDlcItem) return;
+      
       let normalized = qty.replace(',', '.');
       if (normalized === '.') normalized = '0';
       const quantity = parseFloat(normalized) || 1;
+
+      const profile = dlcProfiles?.find(p => p.id === pendingDlcItem.dlcProfileId);
       
-      onTransaction(item.id, type, quantity);
-      setSearch('');
-      setQty('1');
-      
-      setDlcModalOpen(false);
-      setPendingDlcItem(null);
-      setConsigneModalOpen(false);
-      setPendingConsigneItem(null);
+      // Exécution de la transaction stock
+      onTransaction(pendingDlcItem.id, pendingDlcAction, quantity);
+
+      // Gestion Side-Effects DLC
+      if (pendingDlcAction === 'IN') {
+          if (profile?.type === 'PRODUCTION' && onDlcEntry) {
+              // On crée une entrée DLC
+              // Note: storageId est approximatif ici (on prend s0 ou premier dispo), idéalement faudrait demander
+              // Pour simplifier, on associe au premier stockage valide de l'item ou 's0'
+              // (Dans une V2, demander le stockage destination)
+              onDlcEntry(pendingDlcItem.id, 's_global', 'PRODUCTION'); 
+          }
+      } else { // OUT
+          if (profile?.type === 'OPENING' && onDlcEntry) {
+              onDlcEntry(pendingDlcItem.id, 's_global', 'OPENING');
+          }
+          if (profile?.type === 'PRODUCTION' && onDlcConsumption && dlcStep === 'USE_OLDEST') {
+              // On consomme le plus vieux lot
+              onDlcConsumption(pendingDlcItem.id);
+          }
+      }
+
+      // Check Consigne chaining
+      if (pendingDlcAction === 'OUT' && pendingDlcItem.isConsigne) {
+          setDlcModalOpen(false);
+          setPendingConsigneItem(pendingDlcItem);
+          setConsigneModalOpen(true);
+      } else {
+          setDlcModalOpen(false);
+          setPendingDlcItem(null);
+          setSearch('');
+          setQty('1');
+      }
   };
 
   const confirmConsigneAction = () => {
       if (pendingConsigneItem) {
-          if (pendingConsigneItem.isDLC) {
-              setPendingDlcItem(pendingConsigneItem);
-              setPendingDlcAction('OUT');
-              setDlcModalOpen(true);
-              setConsigneModalOpen(false);
-          } else {
-              executeTransactionAfterChecks(pendingConsigneItem, 'OUT');
+          // Si on arrive ici, c'est que la transaction n'a PAS encore été faite (cas simple)
+          // OU elle a été faite via finalizeDlcTransaction mais on a juste besoin de fermer la modale ?
+          // Attention : si on vient du chaînage DLC, la transaction a DEJA été faite dans finalizeDlcTransaction.
+          // Mais dans ce cas, pendingConsigneItem est set APRES.
+          // Si on est ici direct (pas de DLC), on doit faire la transaction.
+          
+          if (!pendingDlcItem) { // Si pas de contexte DLC en cours
+             let normalized = qty.replace(',', '.');
+             if (normalized === '.') normalized = '0';
+             const quantity = parseFloat(normalized) || 1;
+             onTransaction(pendingConsigneItem.id, 'OUT', quantity);
+             setSearch('');
+             setQty('1');
           }
+          
+          setConsigneModalOpen(false);
+          setPendingConsigneItem(null);
+          setPendingDlcItem(null); // Cleanup
       }
   };
 
-  const confirmDlcAction = () => {
-    if (pendingDlcItem) {
-        executeTransactionAfterChecks(pendingDlcItem, pendingDlcAction);
-    }
-  };
-
   const getDlcDurationLabel = (item: StockItem) => {
-      const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
+      const profile = dlcProfiles?.find(p => p.id === item.dlcProfileId);
       if (!profile) return "Inconnue";
       if (profile.durationHours >= 24) {
           return `${Number((profile.durationHours / 24).toFixed(1))} Jour(s)`;
@@ -218,23 +268,60 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       {dlcModalOpen && pendingDlcItem && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
             <div className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl border border-slate-200 text-center space-y-8 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-2 bg-amber-500"></div>
-                <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-10 h-10 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                
+                {/* HEADER COLOR & ICON */}
+                <div className={`absolute top-0 left-0 w-full h-2 ${dlcStep === 'EMPTY' ? 'bg-rose-500' : 'bg-amber-500'}`}></div>
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${dlcStep === 'EMPTY' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
+                    {dlcStep === 'EMPTY' ? (
+                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    ) : (
+                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    )}
                 </div>
-                <div className="space-y-2">
-                    <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Rappel DLC</h3>
-                    <p className="text-slate-500 font-bold">Merci d'apposer l'étiquette DLC sur le produit :</p>
-                    <p className="text-xl font-black text-indigo-600">{pendingDlcItem.name}</p>
-                    <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl inline-block mt-2">
-                        <p className="text-xs font-black text-amber-600 uppercase tracking-widest">
-                            DURÉE : {getDlcDurationLabel(pendingDlcItem)}
-                        </p>
-                    </div>
+
+                {/* CONTENT BASED ON STEP */}
+                <div className="space-y-4">
+                    {dlcStep === 'LABEL_CHECK' && (
+                        <>
+                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Étiquetage Requis</h3>
+                            <p className="text-slate-500 font-bold">Merci d'apposer l'étiquette DLC sur :</p>
+                            <p className="text-xl font-black text-indigo-600">{pendingDlcItem.name}</p>
+                            <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl inline-block mt-2">
+                                <p className="text-xs font-black text-amber-600 uppercase tracking-widest">
+                                    DURÉE : {getDlcDurationLabel(pendingDlcItem)}
+                                </p>
+                            </div>
+                        </>
+                    )}
+
+                    {dlcStep === 'USE_OLDEST' && (
+                        <>
+                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Rotation Stock</h3>
+                            <p className="text-slate-500 font-bold">Attention ! Plusieurs lots sont disponibles.</p>
+                            <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl">
+                                <p className="text-sm font-bold text-amber-800">Utilisez le produit qui périme en premier !</p>
+                            </div>
+                            <p className="text-xs text-slate-400">Le stock le plus ancien sera décompté.</p>
+                        </>
+                    )}
+
+                    {dlcStep === 'EMPTY' && (
+                        <>
+                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Stock Frais Vide</h3>
+                            <p className="text-slate-500 font-bold">Aucun lot actif trouvé pour ce produit.</p>
+                            <div className="bg-rose-50 border border-rose-100 p-4 rounded-xl">
+                                <p className="text-sm font-bold text-rose-800">Pensez à lancer une production rapidement !</p>
+                            </div>
+                        </>
+                    )}
                 </div>
+
+                {/* ACTIONS */}
                 <div className="flex gap-4 pt-4">
                     <button onClick={() => setDlcModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">Annuler</button>
-                    <button onClick={confirmDlcAction} className="flex-1 bg-amber-500 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-amber-600 shadow-xl shadow-amber-200 transition-all active:scale-95">Valider</button>
+                    <button onClick={finalizeDlcTransaction} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 shadow-xl active:scale-95 transition-all">
+                        {dlcStep === 'EMPTY' ? "J'ai compris" : "Valider"}
+                    </button>
                 </div>
             </div>
         </div>
@@ -254,16 +341,11 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                     <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Bouteille Consignée</h3>
                     <p className="text-slate-500 font-bold">Ne pas jeter ! Merci de placer la bouteille dans le bac de recyclage :</p>
                     <p className="text-xl font-black text-blue-600">{pendingConsigneItem.name}</p>
-                    {pendingConsigneItem.isDLC && (
-                        <p className="text-xs font-bold text-amber-500 bg-amber-50 rounded-lg py-1 px-2 inline-block">
-                            ⚠ Suivi DLC requis ensuite
-                        </p>
-                    )}
                 </div>
                 <div className="flex gap-4 pt-4">
                     <button onClick={() => setConsigneModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">Annuler</button>
                     <button onClick={confirmConsigneAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 shadow-xl shadow-blue-200 transition-all active:scale-95">
-                        {pendingConsigneItem.isDLC ? 'Valider & Contrôle DLC' : 'Valider'}
+                        Valider
                     </button>
                 </div>
             </div>
