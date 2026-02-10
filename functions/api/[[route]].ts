@@ -1,4 +1,3 @@
-
 import { Pool } from '@neondatabase/serverless';
 
 interface Env {
@@ -40,7 +39,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
-  const pool = new Pool({ connectionString: env.DATABASE_URL });
+  // CORRECTION NEON : On limite les connexions pour le plan gratuit
+  const pool: any = new (Pool as any)({ 
+    connectionString: env.DATABASE_URL,
+    max: 5 // Limite stricte pour éviter l'erreur "Too many clients"
+  });
 
   try {
     const url = new URL(request.url);
@@ -48,7 +51,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
-      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, logs, tasks, events, comments, dailyCocktails, cocktailCats] = await Promise.all([
+      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, logs, tasks, events, comments, dailyCocktails, cocktailCats]: any[] = await Promise.all([
         pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
         pool.query('SELECT * FROM users'),
         pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
@@ -77,7 +80,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       ]);
 
       const configMap: any = { tempItemDuration: '14_DAYS', defaultMargin: 82 };
-      appConfig.rows.forEach(row => {
+      appConfig.rows.forEach((row: any) => {
           if (row.key === 'temp_item_duration') configMap.tempItemDuration = row.value;
           if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
       });
@@ -98,7 +101,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       } catch (e) { console.error("Cleanup error", e); }
 
       const responseBody = {
-          items: items.rows.map(row => ({
+          items: items.rows.map((row: any) => ({
             id: row.id,
             articleCode: row.article_code,
             name: row.name,
@@ -116,15 +119,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             isInventoryOnly: row.is_inventory_only
           })),
           users: users.rows,
-          storages: storages.rows.map(s => ({ id: s.id, name: s.name, order: s.sort_order })),
-          stockLevels: stockLevels.rows.map(row => ({ itemId: row.item_id, storageId: row.storage_id, currentQuantity: parseFloat(row.quantity || '0') })),
-          consignes: consignes.rows.map(row => ({ 
+          storages: storages.rows.map((s: any) => ({ id: s.id, name: s.name, order: s.sort_order })),
+          stockLevels: stockLevels.rows.map((row: any) => ({ itemId: row.item_id, storageId: row.storage_id, currentQuantity: parseFloat(row.quantity || '0') })),
+          consignes: consignes.rows.map((row: any) => ({ 
               itemId: row.item_id, 
               storageId: row.storage_id, 
               minQuantity: parseFloat(row.min_quantity || '0'),
               maxCapacity: row.max_capacity ? parseFloat(row.max_capacity) : undefined 
           })),
-          transactions: transactions.rows.map(t => ({
+          transactions: transactions.rows.map((t: any) => ({
               ...t, 
               itemId: t.item_id, 
               storageId: t.storage_id, 
@@ -132,7 +135,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               isCaveTransfer: t.is_cave_transfer, 
               userName: t.user_name
           })),
-          orders: orders.rows.map(row => ({ 
+          orders: orders.rows.map((row: any) => ({ 
               id: row.id, 
               itemId: row.item_id, 
               quantity: parseFloat(row.quantity || '0'),
@@ -144,12 +147,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               orderedAt: row.ordered_at,
               receivedAt: row.received_at
           })),
-          dlcHistory: dlcHistory.rows.map(d => ({...d, itemId: d.item_id, storageId: d.storage_id, openedAt: d.opened_at, userName: d.user_name})),
-          formats: formats.rows.map(f => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0') })),
-          categories: categories.rows.map(c => c.name),
-          priorities: priorities.rows.map(p => ({ itemId: p.item_id, storageId: p.storage_id, priority: p.priority })),
-          dlcProfiles: dlcProfiles.rows.map(p => ({ id: p.id, name: p.name, durationHours: p.duration_hours, type: p.type || 'OPENING' })),
-          unfulfilledOrders: unfulfilledOrders.rows.map(u => ({ 
+          dlcHistory: dlcHistory.rows.map((d: any) => ({...d, itemId: d.item_id, storageId: d.storage_id, openedAt: d.opened_at, userName: d.user_name})),
+          formats: formats.rows.map((f: any) => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0') })),
+          categories: categories.rows.map((c: any) => c.name),
+          priorities: priorities.rows.map((p: any) => ({ itemId: p.item_id, storageId: p.storage_id, priority: p.priority })),
+          dlcProfiles: dlcProfiles.rows.map((p: any) => ({ id: p.id, name: p.name, durationHours: p.duration_hours, type: p.type || 'OPENING' })),
+          unfulfilledOrders: unfulfilledOrders.rows.map((u: any) => ({ 
               id: u.id, 
               itemId: u.item_id, 
               date: u.date, 
@@ -157,25 +160,25 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               quantity: parseFloat(u.quantity || '1') 
           })),
           appConfig: configMap,
-          messages: messages.rows.map(m => {
+          messages: messages.rows.map((m: any) => {
              let readBy: string[] = [];
              try { if (m.read_by) readBy = JSON.parse(m.read_by); } catch(e) {}
              return { id: m.id, content: m.content, userName: m.user_name, date: m.date, isArchived: m.is_archived, adminReply: m.admin_reply, replyDate: m.reply_date, readBy };
           }),
-          glassware: glassware.rows.map(g => ({
+          glassware: glassware.rows.map((g: any) => ({
               id: g.id, name: g.name, capacity: parseFloat(g.capacity || '0'), imageUrl: g.image_url, quantity: g.quantity || 0, lastUpdated: g.last_updated
           })),
-          recipes: recipes.rows.map(r => ({
+          recipes: recipes.rows.map((r: any) => ({
               id: r.id, name: r.name, category: r.category, glasswareId: r.glassware_id, technique: r.technique, description: r.description, history: r.history, decoration: r.decoration, sellingPrice: parseFloat(r.selling_price || '0'), costPrice: parseFloat(r.cost_price || '0'), status: r.status, createdBy: r.created_by, createdAt: r.created_at, ingredients: r.ingredients
           })),
-          techniques: techniques.rows.map(t => ({ id: t.id, name: t.name })),
-          cocktailCategories: cocktailCats.rows.map(c => ({ id: c.id, name: c.name })),
-          dailyCocktails: dailyCocktails.rows.map(d => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description })),
-          losses: losses.rows.map(l => ({ id: l.id, itemId: l.item_id, openedAt: l.opened_at, discardedAt: l.discarded_at, quantity: parseFloat(l.quantity || '0'), userName: l.user_name })),
-          userLogs: logs.rows.map(l => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
-          tasks: tasks.rows.map(t => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at })),
-          events: events.rows.map(e => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, createdAt: e.created_at })),
-          eventComments: comments.rows.map(c => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }))
+          techniques: techniques.rows.map((t: any) => ({ id: t.id, name: t.name })),
+          cocktailCategories: cocktailCats.rows.map((c: any) => ({ id: c.id, name: c.name })),
+          dailyCocktails: dailyCocktails.rows.map((d: any) => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description })),
+          losses: losses.rows.map((l: any) => ({ id: l.id, itemId: l.item_id, openedAt: l.opened_at, discardedAt: l.discarded_at, quantity: parseFloat(l.quantity || '0'), userName: l.user_name })),
+          userLogs: logs.rows.map((l: any) => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
+          tasks: tasks.rows.map((t: any) => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at })),
+          events: events.rows.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, createdAt: e.created_at })),
+          eventComments: comments.rows.map((c: any) => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }))
       };
 
       return new Response(JSON.stringify(responseBody), {
@@ -379,5 +382,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   } catch (error: any) {
     console.error('Erreur DB:', error);
     return new Response(JSON.stringify({ error: 'Erreur Base de Données', details: error.message }), { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+  } finally {
+    // CORRECTION NEON : On libère toujours les connexions pour éviter les fuites de mémoire (Memory leaks)
+    context.waitUntil(pool.end());
   }
 };
