@@ -198,6 +198,11 @@ CREATE TABLE IF NOT EXISTS techniques (
     name TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cocktail_categories (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS recipes (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -255,6 +260,15 @@ CREATE TABLE IF NOT EXISTS event_comments (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS daily_cocktails (
+    id TEXT PRIMARY KEY, -- ex: "2024-05-20-OF_THE_DAY"
+    date TEXT NOT NULL, -- YYYY-MM-DD
+    type TEXT NOT NULL, -- OF_THE_DAY, MOCKTAIL, WELCOME, THALASSO
+    recipe_id TEXT,
+    custom_name TEXT,
+    custom_description TEXT
+);
+
 -- 6. Données Initiales
 INSERT INTO storage_spaces (id, name, sort_order) VALUES 
 ('s1', 'Frigo Soft', 1), ('s2', 'Frigo Vin', 2), ('s3', 'Speed Rack', 3),
@@ -286,4 +300,8 @@ ON CONFLICT (id) DO UPDATE SET type = EXCLUDED.type;
 
 INSERT INTO techniques (id, name) VALUES
 ('t1', 'Shaker'), ('t2', 'Verre à mélange'), ('t3', 'Construit'), ('t4', 'Blender'), ('t5', 'Throwing')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO cocktail_categories (id, name) VALUES
+('cc1', 'Signature'), ('cc2', 'Classique'), ('cc3', 'Mocktail'), ('cc4', 'Tiki'), ('cc5', 'After Dinner')
 ON CONFLICT (id) DO NOTHING;

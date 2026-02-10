@@ -48,7 +48,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- GET ROUTE: INITIALISATION (/api/init) ---
     if (request.method === 'GET' && path.includes('/init')) {
-      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, logs, tasks, events, comments] = await Promise.all([
+      const [items, users, storages, stockLevels, consignes, transactions, orders, dlcHistory, formats, categories, priorities, dlcProfiles, unfulfilledOrders, appConfig, messages, glassware, recipes, techniques, losses, logs, tasks, events, comments, dailyCocktails, cocktailCats] = await Promise.all([
         pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
         pool.query('SELECT * FROM users'),
         pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
@@ -71,7 +71,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 500'),
         pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200'),
         pool.query('SELECT * FROM events ORDER BY start_time ASC LIMIT 100'),
-        pool.query('SELECT * FROM event_comments ORDER BY created_at ASC')
+        pool.query('SELECT * FROM event_comments ORDER BY created_at ASC'),
+        pool.query('SELECT * FROM daily_cocktails WHERE date >= NOW() - INTERVAL \'7 days\''),
+        pool.query('SELECT * FROM cocktail_categories')
       ]);
 
       const configMap: any = { tempItemDuration: '14_DAYS', defaultMargin: 82 };
@@ -167,6 +169,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               id: r.id, name: r.name, category: r.category, glasswareId: r.glassware_id, technique: r.technique, description: r.description, history: r.history, decoration: r.decoration, sellingPrice: parseFloat(r.selling_price || '0'), costPrice: parseFloat(r.cost_price || '0'), status: r.status, createdBy: r.created_by, createdAt: r.created_at, ingredients: r.ingredients
           })),
           techniques: techniques.rows.map(t => ({ id: t.id, name: t.name })),
+          cocktailCategories: cocktailCats.rows.map(c => ({ id: c.id, name: c.name })),
+          dailyCocktails: dailyCocktails.rows.map(d => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description })),
           losses: losses.rows.map(l => ({ id: l.id, itemId: l.item_id, openedAt: l.opened_at, discardedAt: l.discarded_at, quantity: parseFloat(l.quantity || '0'), userName: l.user_name })),
           userLogs: logs.rows.map(l => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
           tasks: tasks.rows.map(t => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at })),
@@ -220,6 +224,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'SAVE_EVENT_COMMENT': {
             await pool.query(`INSERT INTO event_comments (id, event_id, user_name, content, created_at) VALUES ($1, $2, $3, $4, NOW())`, [payload.id, payload.eventId, payload.userName, payload.content]);
+            break;
+        }
+        case 'SAVE_DAILY_COCKTAIL': {
+            const { id, date, type, recipeId, customName, customDescription } = payload;
+            await pool.query(`
+                INSERT INTO daily_cocktails (id, date, type, recipe_id, custom_name, custom_description)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (id) DO UPDATE SET recipe_id = EXCLUDED.recipe_id, custom_name = EXCLUDED.custom_name, custom_description = EXCLUDED.custom_description
+            `, [id, date, type, recipeId, customName, customDescription]);
             break;
         }
         
@@ -344,6 +357,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'DELETE_TECHNIQUE': { await pool.query('DELETE FROM techniques WHERE id = $1', [payload.id]); break; }
+        case 'SAVE_COCKTAIL_CATEGORY': {
+            await pool.query(`INSERT INTO cocktail_categories (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [payload.id, payload.name]);
+            break;
+        }
+        case 'DELETE_COCKTAIL_CATEGORY': { await pool.query('DELETE FROM cocktail_categories WHERE id = $1', [payload.id]); break; }
         case 'SAVE_RECIPE': {
             await pool.query(`INSERT INTO recipes (id, name, category, glassware_id, technique, description, history, decoration, selling_price, cost_price, status, created_by, created_at, ingredients) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category, glassware_id = EXCLUDED.glassware_id, technique = EXCLUDED.technique, description = EXCLUDED.description, history = EXCLUDED.history, decoration = EXCLUDED.decoration, selling_price = EXCLUDED.selling_price, cost_price = EXCLUDED.cost_price, status = EXCLUDED.status, ingredients = EXCLUDED.ingredients`, [payload.id, payload.name, payload.category, payload.glasswareId, payload.technique, payload.description, payload.history, payload.decoration, payload.sellingPrice, payload.costPrice, payload.status, payload.createdBy, payload.createdAt, JSON.stringify(payload.ingredients)]);
             break;
