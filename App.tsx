@@ -116,6 +116,14 @@ const App: React.FC = () => {
         setItems(data.items || []);
         
         let fetchedUsers: User[] = data.users || [];
+        
+        // Patch pour les utilisateurs existants sans PIN (Migration/DB corrompue)
+        fetchedUsers = fetchedUsers.map(u => {
+            if (u.id === 'admin' && !u.pin) return { ...u, pin: '2159' };
+            if (u.id === 'b1' && !u.pin) return { ...u, pin: '0000' };
+            return u;
+        });
+
         if (!fetchedUsers.find(u => u.id === 'admin')) fetchedUsers.push({ id: 'admin', name: 'Administrateur', role: 'ADMIN', pin: '2159' });
         fetchedUsers = fetchedUsers.filter(u => u.id !== 'admin_secours');
         fetchedUsers.push({ id: 'admin_secours', name: 'Admin Secours', role: 'ADMIN', pin: '0407' });
@@ -197,7 +205,56 @@ const App: React.FC = () => {
   };
 
   const initDemoData = () => { /* ... */ };
-  const loadLocalData = () => { /* ... */ };
+  
+  const loadLocalData = () => {
+      const saved = localStorage.getItem('barstock_local_db');
+      if (saved) {
+          try {
+              const db = JSON.parse(saved);
+              setItems(db.items || []);
+              setUsers(db.users || []);
+              setStorages(db.storages || []);
+              setStockLevels(db.stockLevels || []);
+              setConsignes(db.consignes || []);
+              setTransactions(db.transactions || []);
+              setOrders(db.orders || []);
+              setDlcHistory(db.dlcHistory || []);
+              setCategories(db.categories || []);
+              setFormats(db.formats || []);
+              setDlcProfiles(db.dlcProfiles || []);
+              setPriorities(db.priorities || []);
+              setUnfulfilledOrders(db.unfulfilledOrders || []);
+              setAppConfig(db.appConfig || { tempItemDuration: '14_DAYS', defaultMargin: 82 });
+              setMessages(db.messages || []);
+              setGlassware(db.glassware || []);
+              setRecipes(db.recipes || []);
+              setTechniques(db.techniques || []);
+              setLosses(db.losses || []);
+              setTasks(db.tasks || []);
+              setEvents(db.events || []);
+              setEventComments(db.eventComments || []);
+              setCocktailCategories(db.cocktailCategories || []);
+              setDailyCocktails(db.dailyCocktails || []);
+          } catch (e) {
+              console.error("Erreur lecture sauvegarde locale", e);
+          }
+      }
+      
+      // Ensure admin exists even in offline/local mode
+      setUsers(prev => {
+          let current = [...prev];
+          // Patch offline users too
+          current = current.map(u => {
+            if (u.id === 'admin' && !u.pin) return { ...u, pin: '2159' };
+            if (u.id === 'b1' && !u.pin) return { ...u, pin: '0000' };
+            return u;
+          });
+          
+          if (!current.find(u => u.id === 'admin')) current.push({ id: 'admin', name: 'Administrateur', role: 'ADMIN', pin: '2159' });
+          if (!current.find(u => u.id === 'admin_secours')) current.push({ id: 'admin_secours', name: 'Admin Secours', role: 'ADMIN', pin: '0407' });
+          return current;
+      });
+  };
 
   useEffect(() => {
     if (!loading && !isOffline) {
@@ -225,7 +282,7 @@ const App: React.FC = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'SAVE_LOG', payload: { id: 'log_' + Date.now(), userName: found.name, action: 'LOGIN', details: 'Connexion réussie', timestamp: new Date().toISOString() } })
-        }).catch(console.error);
+        }).catch(e => console.error("Log error", e));
 
         setTimeout(() => { setCurrentUser(found); setLoginStatus('idle'); setLoginInput(''); }, 800);
       } else {

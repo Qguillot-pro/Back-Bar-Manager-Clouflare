@@ -282,7 +282,7 @@ INSERT INTO users (id, name, role, pin) VALUES
 ('admin', 'Administrateur', 'ADMIN', '2159'),
 ('admin_secours', 'Admin Secours', 'ADMIN', '0407'),
 ('b1', 'Barman', 'BARMAN', '0000')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET pin = EXCLUDED.pin, role = EXCLUDED.role, name = EXCLUDED.name;
 
 INSERT INTO formats (id, name, value) VALUES 
 ('f1', '70cl', 70), ('f2', '75cl', 75), ('f3', '33cl', 33), ('f4', '25cl', 25), ('f5', '1L', 100)
