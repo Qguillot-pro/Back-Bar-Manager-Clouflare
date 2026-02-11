@@ -42,8 +42,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   const pool = new Pool({ 
     connectionString: env.DATABASE_URL,
-    // Augmentation significative pour supporter le "Cold Start" de Neon
-    connectionTimeoutMillis: 25000, // 25s
+    connectionTimeoutMillis: 25000, 
     idleTimeoutMillis: 30000,
     max: 6 
   });
@@ -97,7 +96,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         let query = '';
 
         if (scope === 'static') {
-             // Données de structure (peuvent être lourdes en nombre d'items mais légères en complexité)
+             // NO LIMIT on items
              query = `
                 SELECT json_build_object(
                     'items', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM items ORDER BY sort_order) t),
@@ -113,29 +112,29 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 ) as data;
             `;
         } else if (scope === 'stock') {
-             // Données opérationnelles 'live'
+             // Increased limits for operational data
              query = `
                 SELECT json_build_object(
                     'stockLevels', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM stock_levels) t),
                     'consignes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM stock_consignes) t),
-                    'dailyCocktails', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM daily_cocktails ORDER BY date DESC LIMIT 60) t),
-                    'events', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM events WHERE start_time >= NOW() - INTERVAL '30 days') t),
-                    'tasks', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100) t),
-                    'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 200) t),
+                    'dailyCocktails', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM daily_cocktails ORDER BY date DESC LIMIT 100) t),
+                    'events', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM events WHERE start_time >= NOW() - INTERVAL '60 days') t),
+                    'tasks', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200) t),
+                    'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500) t),
                     'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'PENDING' OR status = 'ORDERED') t)
                 ) as data;
             `;
         } else if (scope === 'history') {
-             // Données d'archives (Lourdes mais séparées)
+             // Increased limits for history
              query = `
                 SELECT json_build_object(
-                    'transactions', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM transactions ORDER BY date DESC LIMIT 1500) t),
-                    'archivedOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'RECEIVED' OR status = 'ARCHIVED' ORDER BY date DESC LIMIT 500) t),
-                    'dlcHistory', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 500) t),
-                    'messages', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM messages ORDER BY date DESC LIMIT 100) t),
-                    'losses', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 500) t),
-                    'eventComments', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM event_comments ORDER BY created_at DESC LIMIT 200) t),
-                    'userLogs', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 100) t)
+                    'transactions', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM transactions ORDER BY date DESC LIMIT 5000) t),
+                    'archivedOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'RECEIVED' OR status = 'ARCHIVED' ORDER BY date DESC LIMIT 1000) t),
+                    'dlcHistory', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 1000) t),
+                    'messages', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM messages ORDER BY date DESC LIMIT 200) t),
+                    'losses', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 1000) t),
+                    'eventComments', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM event_comments ORDER BY created_at DESC LIMIT 500) t),
+                    'userLogs', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 200) t)
                 ) as data;
             `;
         } else {
