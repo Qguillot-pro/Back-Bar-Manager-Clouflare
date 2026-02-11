@@ -201,6 +201,31 @@ const App: React.FC = () => {
 
   useEffect(() => { fetchAuthData(); }, []);
 
+  // --- AUTO SYNC LOGIC (10:00 - 00:30) ---
+  useEffect(() => {
+      const interval = setInterval(() => {
+          if (isOffline || dataSyncing) return;
+
+          const now = new Date();
+          const hours = now.getHours();
+          const minutes = now.getMinutes();
+          
+          // Logic:
+          // 1. From 10:00 to 23:59 -> OK
+          // 2. From 00:00 to 00:30 -> OK
+          
+          const isRange1 = hours >= 10; // 10:00 - 23:59
+          const isRange2 = hours === 0 && minutes <= 30; // 00:00 - 00:30
+
+          if (isRange1 || isRange2) {
+              console.log("Auto-Sync Triggered (30min Interval)");
+              fetchFullData();
+          }
+      }, 30 * 60 * 1000); // 30 minutes in milliseconds
+
+      return () => clearInterval(interval);
+  }, [isOffline, dataSyncing]);
+
   // Check notifications (Events today)
   useEffect(() => {
       const todayEvents = events.filter(e => {
