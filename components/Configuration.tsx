@@ -6,7 +6,6 @@ import GlasswareConfig from './GlasswareConfig';
 import TechniquesConfig from './TechniquesConfig';
 import CocktailCategoriesConfig from './CocktailCategoriesConfig';
 import ImportData from './ImportData';
-import { categorizeItemWithAI } from '../services/geminiService';
 
 interface ConfigProps {
   setItems: React.Dispatch<React.SetStateAction<StockItem[]>>;
@@ -55,7 +54,6 @@ const Configuration: React.FC<ConfigProps> = ({
   const [itemIsDlc, setItemIsDlc] = useState(false);
   const [itemDlcProfile, setItemDlcProfile] = useState('');
   const [itemIsConsigne, setItemIsConsigne] = useState(false);
-  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const [storageName, setStorageName] = useState('');
   
@@ -158,23 +156,6 @@ const Configuration: React.FC<ConfigProps> = ({
           }
       };
       reader.readAsText(file);
-  };
-
-  const handleAiCategorize = async () => {
-      if (!itemName) return;
-      setIsAiLoading(true);
-      const result = await categorizeItemWithAI(itemName, categories, formats);
-      setIsAiLoading(false);
-
-      if (result) {
-          if (result.suggestedCategory && categories.includes(result.suggestedCategory)) {
-              setItemCat(result.suggestedCategory);
-          }
-          if (result.suggestedFormatName) {
-              const foundFormat = formats.find(f => f.name === result.suggestedFormatName);
-              if (foundFormat) setItemFormat(foundFormat.id);
-          }
-      }
   };
 
   const addProduct = () => {
@@ -475,14 +456,6 @@ const Configuration: React.FC<ConfigProps> = ({
               <div className="space-y-4">
                 <div className="flex gap-2">
                     <input className="flex-1 bg-slate-50 p-4 border rounded-2xl font-bold outline-none" placeholder="Nom du produit..." value={itemName} onChange={e => setItemName(e.target.value)} />
-                    <button 
-                        onClick={handleAiCategorize} 
-                        disabled={!itemName || isAiLoading}
-                        className="bg-indigo-100 text-indigo-600 px-4 rounded-2xl font-black text-xs uppercase hover:bg-indigo-200 transition-all flex items-center gap-1 shadow-sm disabled:opacity-50"
-                        title="Laisser l'IA deviner la catégorie et le format"
-                    >
-                        {isAiLoading ? '...' : '✨ Magie IA'}
-                    </button>
                 </div>
                 <input className="w-full bg-slate-50 p-4 border rounded-2xl font-bold outline-none text-sm" placeholder="Code Article (Optionnel - ID API/POS)" value={itemArticleCode} onChange={e => setItemArticleCode(e.target.value)} />
                 <div className="grid grid-cols-2 gap-4">
