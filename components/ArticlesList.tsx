@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
-import { StockItem, Format, Category, UserRole, DLCProfile, Event, Recipe, EventProduct } from '../types';
+import React, { useState, useMemo } from 'react';
+import { StockItem, Format, Category, UserRole, DLCProfile, Event, Recipe, EventProduct, CATEGORY_ORDER } from '../types';
+import { categorizeItemWithAI } from '../services/geminiService';
 
 interface ArticlesListProps {
   items: StockItem[];
@@ -20,13 +21,35 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [editingPrice, setEditingPrice] = useState<{ id: string, value: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [analyzingItemId, setAnalyzingItemId] = useState<string | null>(null);
   
-  const displayedItems = (filter === 'TEMPORARY' 
-      ? items.filter(i => i.isTemporary) 
-      : items).filter(i => 
-          i.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-          (i.articleCode && i.articleCode.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
+  const displayedItems = useMemo(() => {
+      const filtered = (filter === 'TEMPORARY' 
+          ? items.filter(i => i.isTemporary) 
+          : items).filter(i => 
+              i.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+              (i.articleCode && i.articleCode.toLowerCase().includes(searchTerm.toLowerCase()))
+          );
+      
+      // Tri Avancé : Respecte l'ordre CATEGORY_ORDER, puis l'ordre manuel
+      return filtered.sort((a, b) => {
+          // 1. Priorité aux catégories dans l'ordre défini
+          const indexA = CATEGORY_ORDER.indexOf(a.category);
+          const indexB = CATEGORY_ORDER.indexOf(b.category);
+          
+          // Si les deux sont dans la liste, on compare leur index
+          if (indexA !== -1 && indexB !== -1 && indexA !== indexB) {
+              return indexA - indexB;
+          }
+          // Si A est dans la liste mais pas B, A avant
+          if (indexA !== -1 && indexB === -1) return -1;
+          // Si B est dans la liste mais pas A, B avant
+          if (indexA === -1 && indexB !== -1) return 1;
+
+          // 2. Ensuite tri par 'order' (ordre manuel)
+          return (a.order || 0) - (b.order || 0);
+      });
+  }, [items, filter, searchTerm]);
 
   const updateItem = (id: string, field: keyof StockItem, value: any) => {
     setItems(prev => prev.map(i => {
@@ -43,6 +66,30 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
       const updated = { ...item, isTemporary: false };
       setItems(prev => prev.map(i => i.id === item.id ? updated : i));
       onSync('SAVE_ITEM', updated);
+  };
+
+  const handleAutoClassify = async (item: StockItem) => {
+      setAnalyzingItemId(item.id);
+      const result = await categorizeItemWithAI(item.name, categories, formats);
+      setAnalyzingItemId(null);
+
+      if (result) {
+          setItems(prev => prev.map(i => {
+              if (i.id === item.id) {
+                  let updated = { ...i };
+                  if (result.suggestedCategory && categories.includes(result.suggestedCategory)) {
+                      updated.category = result.suggestedCategory;
+                  }
+                  if (result.suggestedFormatName) {
+                      const foundFormat = formats.find(f => f.name === result.suggestedFormatName);
+                      if (foundFormat) updated.formatId = foundFormat.id;
+                  }
+                  onSync('SAVE_ITEM', updated);
+                  return updated;
+              }
+              return i;
+          }));
+      }
   };
 
   // --- LOGIQUE PRIX ---
@@ -290,6 +337,15 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                 <td className="p-6 text-center relative z-10 flex items-center justify-center gap-2">
                   {userRole === 'ADMIN' && item.isTemporary && !isReorderMode && (
                       <div className="flex gap-2">
+                          <button 
+                            type="button"
+                            onClick={() => handleAutoClassify(item)}
+                            disabled={analyzingItemId === item.id}
+                            className="bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg font-black text-[9px] uppercase hover:bg-indigo-200 shadow-sm transition-all"
+                            title="Auto-classifier avec IA"
+                          >
+                              {analyzingItemId === item.id ? '...' : '✨ IA'}
+                          </button>
                           <button 
                             type="button"
                             onClick={() => handleSafeDelete(item)}

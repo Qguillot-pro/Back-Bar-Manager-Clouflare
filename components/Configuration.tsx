@@ -6,6 +6,7 @@ import GlasswareConfig from './GlasswareConfig';
 import TechniquesConfig from './TechniquesConfig';
 import CocktailCategoriesConfig from './CocktailCategoriesConfig';
 import ImportData from './ImportData';
+import { categorizeItemWithAI } from '../services/geminiService';
 
 interface ConfigProps {
   setItems: React.Dispatch<React.SetStateAction<StockItem[]>>;
@@ -54,6 +55,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [itemIsDlc, setItemIsDlc] = useState(false);
   const [itemDlcProfile, setItemDlcProfile] = useState('');
   const [itemIsConsigne, setItemIsConsigne] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const [storageName, setStorageName] = useState('');
   
@@ -148,19 +150,31 @@ const Configuration: React.FC<ConfigProps> = ({
               const data = JSON.parse(content);
               
               if (window.confirm("ATTENTION : Cette action va tenter de restaurer les données à partir du fichier.\nCette fonctionnalité est expérimentale.\n\nContinuer ?")) {
-                  // Basic validation
                   if (!data.items || !data.users) throw new Error("Format invalide");
-                  
-                  // Restore Logic (Simple state set, actual DB sync implies calling sync for everything which is heavy)
-                  // For now, we alert that this is a manual restore and might need reload or backend support.
                   alert("Importation terminée. Veuillez rafraîchir la page pour vérifier les données.");
-                  // Note: A true restore would need a backend 'RESTORE' action or iterating all items.
               }
           } catch (err) {
               alert("Erreur lors de la lecture du fichier : Format invalide.");
           }
       };
       reader.readAsText(file);
+  };
+
+  const handleAiCategorize = async () => {
+      if (!itemName) return;
+      setIsAiLoading(true);
+      const result = await categorizeItemWithAI(itemName, categories, formats);
+      setIsAiLoading(false);
+
+      if (result) {
+          if (result.suggestedCategory && categories.includes(result.suggestedCategory)) {
+              setItemCat(result.suggestedCategory);
+          }
+          if (result.suggestedFormatName) {
+              const foundFormat = formats.find(f => f.name === result.suggestedFormatName);
+              if (foundFormat) setItemFormat(foundFormat.id);
+          }
+      }
   };
 
   const addProduct = () => {
@@ -189,7 +203,6 @@ const Configuration: React.FC<ConfigProps> = ({
     setItemIsConsigne(false);
   };
 
-  // ... (Other handlers unchanged: handleConfigChange, deleteFormat, etc.) ...
   const handleConfigChange = (field: keyof AppConfig, value: any) => {
       setAppConfig(prev => ({ ...prev, [field]: value }));
       const key = field === 'tempItemDuration' ? 'temp_item_duration' : 'default_margin';
@@ -356,7 +369,6 @@ const Configuration: React.FC<ConfigProps> = ({
 
       {activeSubTab === 'users' && !authorizedSubTabs.has('users') ? (
           <div className="bg-white p-12 rounded-[2.5rem] border shadow-sm flex flex-col items-center justify-center space-y-6 text-center">
-              {/* ... auth UI ... */}
               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
                   <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
               </div>
@@ -408,7 +420,7 @@ const Configuration: React.FC<ConfigProps> = ({
                     </div>
                </div>
            )}
-           {/* New User Form & List - existing code... */}
+           {/* ... Rest of users code ... */}
            <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
              <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-slate-400 rounded-full"></span>Gestion des Utilisateurs</h3>
              
@@ -454,14 +466,24 @@ const Configuration: React.FC<ConfigProps> = ({
          </div>
       )}
 
-      {/* GENERAL TAB CONTENT (Existing) */}
+      {/* GENERAL TAB CONTENT */}
       {activeSubTab === 'general' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-8">
             <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
               <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>Nouveau Produit</h3>
               <div className="space-y-4">
-                <input className="w-full bg-slate-50 p-4 border rounded-2xl font-bold outline-none" placeholder="Nom du produit..." value={itemName} onChange={e => setItemName(e.target.value)} />
+                <div className="flex gap-2">
+                    <input className="flex-1 bg-slate-50 p-4 border rounded-2xl font-bold outline-none" placeholder="Nom du produit..." value={itemName} onChange={e => setItemName(e.target.value)} />
+                    <button 
+                        onClick={handleAiCategorize} 
+                        disabled={!itemName || isAiLoading}
+                        className="bg-indigo-100 text-indigo-600 px-4 rounded-2xl font-black text-xs uppercase hover:bg-indigo-200 transition-all flex items-center gap-1 shadow-sm disabled:opacity-50"
+                        title="Laisser l'IA deviner la catégorie et le format"
+                    >
+                        {isAiLoading ? '...' : '✨ Magie IA'}
+                    </button>
+                </div>
                 <input className="w-full bg-slate-50 p-4 border rounded-2xl font-bold outline-none text-sm" placeholder="Code Article (Optionnel - ID API/POS)" value={itemArticleCode} onChange={e => setItemArticleCode(e.target.value)} />
                 <div className="grid grid-cols-2 gap-4">
                     <select className="w-full bg-slate-50 p-4 border rounded-2xl font-bold outline-none" value={itemCat} onChange={e => setItemCat(e.target.value)}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
@@ -479,6 +501,7 @@ const Configuration: React.FC<ConfigProps> = ({
               </div>
               <button onClick={addProduct} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700">Ajouter</button>
             </div>
+            {/* ... Rest of General Config ... */}
             <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
               <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-amber-600 rounded-full"></span>Gestion des Formats</h3>
               <div className="flex gap-2">
@@ -492,7 +515,6 @@ const Configuration: React.FC<ConfigProps> = ({
             </div>
           </div>
           <div className="space-y-8">
-            {/* Categories & Storages - existing code ... */}
             <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
               <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>Gestion des Catégories</h3>
               <div className="flex gap-2">
@@ -503,6 +525,7 @@ const Configuration: React.FC<ConfigProps> = ({
                 {categories.map((c, index) => c && (<div key={c} className="flex items-center justify-between bg-slate-50 px-5 py-3 rounded-2xl border group"><div className="flex items-center gap-3"><div className="flex flex-col gap-1"><button onClick={() => moveCategory(index, 'up')} disabled={index === 0} className={`p-1 rounded bg-slate-100 hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 ${index === 0 ? 'opacity-20' : ''}`}><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg></button><button onClick={() => moveCategory(index, 'down')} disabled={index === categories.length - 1} className={`p-1 rounded bg-slate-100 hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 ${index === categories.length - 1 ? 'opacity-20' : ''}`}><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg></button></div><span className="font-black text-[10px] uppercase tracking-widest">{c}</span></div><button onClick={() => deleteCategory(c)} className="text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div>))}
               </div>
             </div>
+            {/* ... Storages & Advanced Config ... */}
             <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
               <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-slate-800 rounded-full"></span>Espaces de Stockage</h3>
               <div className="flex gap-2">
@@ -529,14 +552,12 @@ const Configuration: React.FC<ConfigProps> = ({
           </div>
         </div>
       )}
-      
+      {/* ... Rest of tabs ... */}
       {activeSubTab === 'import' && currentUser?.role === 'ADMIN' && (
           <div className="animate-in fade-in slide-in-from-bottom-2">
               <ImportData formats={formats} onImport={handleDataImport} />
           </div>
       )}
-
-      {/* NEW BACKUP TAB */}
       {activeSubTab === 'backup' && currentUser?.role === 'ADMIN' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
@@ -580,10 +601,9 @@ const Configuration: React.FC<ConfigProps> = ({
       
       {activeSubTab === 'dlc' && currentUser?.role === 'ADMIN' && (
         <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
-           {/* ... DLC Content ... (same as before) */}
+           {/* ... DLC Content ... */}
            <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>Profils de DLC</h3>
            <div className="mb-8 p-6 bg-amber-50 rounded-3xl border border-amber-100 flex flex-col gap-4">
-             {/* ... DLC Form ... */}
              <div className="flex flex-col md:flex-row gap-4 items-end">
                 <div className="flex-1 w-full space-y-2">
                     <label className="text-[9px] font-black text-amber-600 uppercase tracking-widest ml-1">Nom du profil</label>
@@ -619,7 +639,6 @@ const Configuration: React.FC<ConfigProps> = ({
              </div>
              <button onClick={addDlcProfile} className="bg-amber-500 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-amber-600 shadow-lg shadow-amber-200 w-full mt-2">Ajouter</button>
            </div>
-           
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
              {dlcProfiles.map(p => p && (
                <div key={p.id} className="flex flex-col p-5 rounded-2xl border border-slate-100 bg-white hover:shadow-md transition-all group gap-3 relative">
@@ -641,7 +660,6 @@ const Configuration: React.FC<ConfigProps> = ({
 
       {activeSubTab === 'credits' && (
           <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-8 animate-in fade-in slide-in-from-bottom-2">
-              {/* Credits content unchanged */}
               <div><h3 className="font-black text-sm uppercase flex items-center gap-2 mb-4"><span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>Développement & Conception</h3><div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100"><p className="text-lg font-black text-indigo-900">Studio AI / M. GUILLOT Quentin</p><p className="text-xs text-indigo-600 mt-1 font-medium">Développement sur mesure pour la gestion optimisée des stocks de bar.</p></div></div>
               <div><h3 className="font-black text-sm uppercase flex items-center gap-2 mb-4"><span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>Hébergement & Infrastructure</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100"><p className="font-bold text-emerald-900 text-sm">Frontend & Serveur</p><p className="text-xs text-emerald-600 mt-1">Hébergé par <strong>Cloudflare</strong> (Réseau Global)</p></div><div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100"><p className="font-bold text-emerald-900 text-sm">Base de Données</p><p className="text-xs text-emerald-600 mt-1">Hébergée par <strong>Neon</strong> (PostgreSQL Serverless)</p></div></div></div>
               <div><h3 className="font-black text-sm uppercase flex items-center gap-2 mb-4"><span className="w-1.5 h-4 bg-slate-500 rounded-full"></span>Licences & Mentions Légales</h3><div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-3 text-xs text-slate-500 leading-relaxed"><p>Ce logiciel est une propriété intellectuelle protégée. L'utilisation est strictement réservée au cadre défini par la licence d'exploitation accordée à l'établissement.</p><p>Toute reproduction, modification ou distribution non autorisée du code source ou de l'interface est interdite.</p><div className="pt-2 border-t border-slate-200 mt-2"><p className="font-bold text-slate-700">Composants Open Source :</p><p>React, TailwindCSS, Recharts, Lucide React, Google Generative AI SDK.</p></div></div></div>
