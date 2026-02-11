@@ -23,6 +23,8 @@ export type UserRole = 'ADMIN' | 'BARMAN';
 export interface AppConfig {
   tempItemDuration: '3_DAYS' | '7_DAYS' | '14_DAYS' | '1_MONTH' | '3_MONTHS' | 'INFINITE';
   defaultMargin?: number; // Pourcentage (ex: 82)
+  // Stockage des configurations de cycles en JSON string dans la DB, mais typé ici si besoin
+  [key: string]: any; 
 }
 
 export interface User {
@@ -227,6 +229,11 @@ export interface EventProduct {
     quantity: number;
 }
 
+export interface EventGlasswareNeed {
+    glasswareId: string;
+    quantity: number;
+}
+
 export interface Event {
   id: string;
   title: string;
@@ -234,13 +241,22 @@ export interface Event {
   endTime: string;
   location?: string;
   guestsCount?: number;
-  description?: string; // Max 150 chars
-  productsJson?: string; // JSON array of EventProduct { itemId, quantity }
+  description?: string; 
+  productsJson?: string; // JSON array of EventProduct
+  glasswareJson?: string; // JSON array of EventGlasswareNeed
   createdAt: string;
-  productsStatus?: 'PENDING' | 'VALIDATED'; // Pour le badge manuel admin
+  productsStatus?: 'PENDING' | 'VALIDATED'; 
 }
 
 export type DailyCocktailType = 'OF_THE_DAY' | 'MOCKTAIL' | 'WELCOME' | 'THALASSO';
+export type CycleFrequency = 'DAILY' | '2_DAYS' | 'MON_FRI' | 'WEEKLY' | '2_WEEKS';
+
+export interface CycleConfig {
+    frequency: CycleFrequency;
+    recipeIds: string[]; // Ordered list of IDs
+    startDate: string; // Reference date for modulo calculation
+    isActive: boolean;
+}
 
 export interface DailyCocktail {
   id: string;

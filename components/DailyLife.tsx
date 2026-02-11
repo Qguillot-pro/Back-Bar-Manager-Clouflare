@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig } from '../types';
 
 interface DailyLifeProps {
   tasks: Task[];
@@ -18,11 +18,15 @@ interface DailyLifeProps {
   onCreateTemporaryItem?: (name: string, quantity: number) => void;
   stockLevels?: StockLevel[];
   orders?: PendingOrder[];
+  glassware?: Glassware[];
+  appConfig?: AppConfig;
+  saveConfig?: (key: string, value: any) => void;
 }
 
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
-    dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = []
+    dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
+    appConfig, saveConfig
 }) => {
   const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS'>('TASKS');
   
@@ -36,27 +40,44 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const [newEventStart, setNewEventStart] = useState('');
   const [newEventEnd, setNewEventEnd] = useState('');
   const [newEventLocation, setNewEventLocation] = useState('');
-  const [newEventGuests, setNewEventGuests] = useState(0);
+  const [newEventGuests, setNewEventGuests] = useState<string>('0');
   const [newEventDesc, setNewEventDesc] = useState('');
   
   // New Product Selection State (Array of {itemId, quantity})
   const [newEventProducts, setNewEventProducts] = useState<EventProduct[]>([]); 
   const [productSearch, setProductSearch] = useState('');
-  const [productQtyInput, setProductQtyInput] = useState(1);
+  const [productQtyInput, setProductQtyInput] = useState<string>('1');
   const [isTempProductMode, setIsTempProductMode] = useState(false);
   const [tempProductName, setTempProductName] = useState('');
+
+  // Event Glassware State
+  const [newEventGlassware, setNewEventGlassware] = useState<EventGlasswareNeed[]>([]);
+  const [glasswareQtyInput, setGlasswareQtyInput] = useState<string>('1');
+  const [selectedGlasswareId, setSelectedGlasswareId] = useState('');
 
   const [newComment, setNewComment] = useState('');
 
   // Daily Cocktails State
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
-  // Cycle Generator State
+  // Cycle Generator State (Redesigned)
   const [isCycleModalOpen, setIsCycleModalOpen] = useState(false);
   const [cycleType, setCycleType] = useState<DailyCocktailType>('OF_THE_DAY');
-  const [cycleRecipes, setCycleRecipes] = useState<string[]>([]);
+  const [cycleFrequency, setCycleFrequency] = useState<CycleFrequency>('DAILY');
+  const [cycleRecipes, setCycleRecipes] = useState<string[]>([]); // Ordered IDs
   const [cycleStartDate, setCycleStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [cycleDuration, setCycleDuration] = useState(4); // weeks
+  const [cycleIsActive, setCycleIsActive] = useState(false);
+
+  // Helper for cleaner number inputs
+  const cleanNumberInput = (val: string, setFn: (v: string) => void) => {
+      // Allows empty string, deletes '0' if it's the first char
+      if (val === '') setFn('');
+      else if (/^\d+$/.test(val)) {
+          // Remove leading zero unless value is just "0"
+          if (val.length > 1 && val.startsWith('0')) setFn(val.substring(1));
+          else setFn(val);
+      }
+  };
 
   // --- TASKS LOGIC ---
   const activeTasks = useMemo(() => tasks.filter(t => !t.isDone).sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [tasks]);
@@ -104,12 +125,13 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       const evt: Event = {
           id: selectedEvent ? selectedEvent.id : 'evt_' + Date.now(),
           title: newEventTitle,
-          startTime: newEventStart, // ISO String form input is sufficient
+          startTime: newEventStart,
           endTime: newEventEnd,
           location: newEventLocation,
-          guestsCount: newEventGuests,
+          guestsCount: parseInt(newEventGuests) || 0,
           description: newEventDesc,
           productsJson: JSON.stringify(newEventProducts),
+          glasswareJson: JSON.stringify(newEventGlassware),
           createdAt: selectedEvent ? selectedEvent.createdAt : new Date().toISOString()
       };
 
@@ -149,26 +171,20 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       if (evt) {
           setSelectedEvent(evt);
           setNewEventTitle(evt.title);
-          // Convert ISO to local input string (YYYY-MM-DDThh:mm)
-          // The browser handles DST automatically when creating Date from ISO
           const start = new Date(evt.startTime);
           const end = new Date(evt.endTime);
-          
-          // Helper to format for input
           const toInputString = (d: Date) => {
               const pad = (n: number) => n < 10 ? '0'+n : n;
               return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
           };
-
           setNewEventStart(toInputString(start)); 
           setNewEventEnd(toInputString(end));
           setNewEventLocation(evt.location || '');
-          setNewEventGuests(evt.guestsCount || 0);
+          setNewEventGuests((evt.guestsCount || 0).toString());
           setNewEventDesc(evt.description || '');
           
           try { 
               const parsed = JSON.parse(evt.productsJson || '[]');
-              // Backward compatibility check if it was string[]
               if (parsed.length > 0 && typeof parsed[0] === 'string') {
                   setNewEventProducts(parsed.map((id: string) => ({ itemId: id, quantity: 1 })));
               } else {
@@ -176,18 +192,25 @@ const DailyLife: React.FC<DailyLifeProps> = ({
               }
           } catch(e) { setNewEventProducts([]); }
 
+          try {
+              setNewEventGlassware(JSON.parse(evt.glasswareJson || '[]'));
+          } catch(e) { setNewEventGlassware([]); }
+
       } else {
           setSelectedEvent(null);
           setNewEventTitle('');
           setNewEventStart('');
           setNewEventEnd('');
           setNewEventLocation('');
-          setNewEventGuests(0);
+          setNewEventGuests('0');
           setNewEventDesc('');
           setNewEventProducts([]);
+          setNewEventGlassware([]);
       }
       setProductSearch('');
-      setProductQtyInput(1);
+      setProductQtyInput('1');
+      setGlasswareQtyInput('1');
+      setSelectedGlasswareId('');
       setIsTempProductMode(false);
       setIsEventModalOpen(true);
   };
@@ -198,30 +221,15 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   };
 
   const handleAddProductToEvent = () => {
+      const qty = parseInt(productQtyInput) || 1;
       if (isTempProductMode) {
           if (!tempProductName || !onCreateTemporaryItem) return;
-          // Create temp item immediately
-          const newItemId = 'temp_' + Date.now(); // Optimistic ID, actual ID generated in App logic but here we simulate
-          // Actually we need to wait for App to create it or fire-and-forget.
-          // Better: We fire the creation logic which saves to DB and Updates items list.
-          // But we need the ID here.
-          // Simplification: We assume onCreateTemporaryItem handles creation.
-          // BUT `items` prop will only update after sync.
-          // Let's create it via parent and use a predictable ID or find it by name next render.
-          // For now, let's just use the prop and assume user re-selects it OR better: 
-          // We add it to the list with a temporary marker.
-          
-          // Let's alert user to create it via the regular flow or implement a direct creation hook if possible.
-          // The prompt asked for "possibilité de faire des produits temporaires".
           if (window.confirm(`Créer le produit temporaire "${tempProductName}" ?`)) {
-              onCreateTemporaryItem(tempProductName, 0); // Qty 0 in general stock
-              // We can't immediately select it because we don't have its ID yet.
-              // We'll trust the user to find it in the list after creation or wait for re-render.
-              // Ideally we would return the ID.
+              onCreateTemporaryItem(tempProductName, 0); 
               alert("Produit créé. Vous pouvez maintenant le rechercher et l'ajouter.");
               setIsTempProductMode(false);
               setTempProductName('');
-              setProductSearch(tempProductName); // Pre-fill search
+              setProductSearch(tempProductName); 
           }
       } else {
           const item = items.find(i => i.name.toLowerCase() === productSearch.toLowerCase());
@@ -229,12 +237,12 @@ const DailyLife: React.FC<DailyLifeProps> = ({
               setNewEventProducts(prev => {
                   const existing = prev.find(p => p.itemId === item.id);
                   if (existing) {
-                      return prev.map(p => p.itemId === item.id ? { ...p, quantity: p.quantity + productQtyInput } : p);
+                      return prev.map(p => p.itemId === item.id ? { ...p, quantity: p.quantity + qty } : p);
                   }
-                  return [...prev, { itemId: item.id, quantity: productQtyInput }];
+                  return [...prev, { itemId: item.id, quantity: qty }];
               });
               setProductSearch('');
-              setProductQtyInput(1);
+              setProductQtyInput('1');
           }
       }
   };
@@ -243,19 +251,32 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       setNewEventProducts(prev => prev.filter(p => p.itemId !== itemId));
   };
 
+  const handleAddGlasswareToEvent = () => {
+      if (!selectedGlasswareId) return;
+      const qty = parseInt(glasswareQtyInput) || 1;
+      setNewEventGlassware(prev => {
+          const existing = prev.find(g => g.glasswareId === selectedGlasswareId);
+          if (existing) return prev.map(g => g.glasswareId === selectedGlasswareId ? { ...g, quantity: g.quantity + qty } : g);
+          return [...prev, { glasswareId: selectedGlasswareId, quantity: qty }];
+      });
+      setSelectedGlasswareId('');
+      setGlasswareQtyInput('1');
+  };
+
+  const removeGlasswareFromEvent = (gId: string) => {
+      setNewEventGlassware(prev => prev.filter(g => g.glasswareId !== gId));
+  };
+
   // --- BADGE CHECKERS ---
   const getEventStatus = (evt: Event) => {
       let products: EventProduct[] = [];
       try { products = JSON.parse(evt.productsJson || '[]'); } catch(e) {}
       if (products.length === 0) return null;
 
-      // Check if ordered
       const isOrdered = products.every(p => {
-          // Check if pending order exists for this item
           return orders.some(o => o.itemId === p.itemId && (o.status === 'ORDERED' || o.status === 'RECEIVED'));
       });
 
-      // Check if stock OK (Surstock s0 > required qty)
       const isStockOK = products.every(p => {
           const s0Level = stockLevels.find(l => l.itemId === p.itemId && l.storageId === 's0')?.currentQuantity || 0;
           return s0Level >= p.quantity;
@@ -264,90 +285,194 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       return { isOrdered, isStockOK };
   };
 
-  // --- COCKTAILS LOGIC (unchanged logic, just kept) ---
-  const handleUpdateCocktail = (type: DailyCocktailType, recipeId?: string, customName?: string, customDesc?: string) => {
+  // --- COCKTAIL CYCLE LOGIC ---
+  
+  // 1. Get Current Cycle Config
+  const getCycleConfig = (type: DailyCocktailType): CycleConfig => {
+      if (!appConfig) return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
+      
+      const configStr = appConfig[`cycle_${type}`];
+      if (configStr) {
+          try {
+              return JSON.parse(configStr);
+          } catch(e) { console.error('Parse cycle config error', e); }
+      }
+      return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
+  };
+
+  // 2. Calculate Cocktail for Date
+  const getCalculatedCocktail = (dateStr: string, type: DailyCocktailType): DailyCocktail | undefined => {
+      // First check manual override in dailyCocktails list
+      const manualEntry = dailyCocktails.find(c => c.date === dateStr && c.type === type);
+      if (manualEntry) return manualEntry;
+
+      // Then calculate from cycle
+      const config = getCycleConfig(type);
+      if (!config.isActive || config.recipeIds.length === 0) return undefined;
+
+      const targetDate = new Date(dateStr);
+      const startDate = new Date(config.startDate);
+      
+      // Reset hours for accurate day diff
+      targetDate.setHours(0,0,0,0);
+      startDate.setHours(0,0,0,0);
+
+      const diffTime = targetDate.getTime() - startDate.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays < 0) return undefined; // Before cycle start
+
+      let index = 0;
+      const listLen = config.recipeIds.length;
+
+      if (config.frequency === 'DAILY') {
+          index = diffDays % listLen;
+      } else if (config.frequency === '2_DAYS') {
+          index = Math.floor(diffDays / 2) % listLen;
+      } else if (config.frequency === 'WEEKLY') {
+          index = Math.floor(diffDays / 7) % listLen;
+      } else if (config.frequency === '2_WEEKS') {
+          index = Math.floor(diffDays / 14) % listLen;
+      } else if (config.frequency === 'MON_FRI') {
+          // Change on Monday and Friday
+          // Week 0: Mon-Thu (idx 0), Fri-Sun (idx 1)
+          // Week 1: Mon-Thu (idx 2), Fri-Sun (idx 3)
+          // Calc: weekNum * 2 + (isFriSatSun ? 1 : 0)
+          
+          // Get day of week relative to start (Assuming start is consistent, but let's use absolute day of week)
+          // Simple approach: Count how many "slots" passed since start
+          // Slot triggers: every Mon, every Fri.
+          // This is tricky if startDate is arbitrary. 
+          // Let's assume startDate aligns with a Monday for simplicity or just calculate "epochs".
+          
+          // More robust logic:
+          // Determine current week number from startDate
+          const weeksPassed = Math.floor(diffDays / 7);
+          const dayOfCurrentWeek = (diffDays % 7 + startDate.getDay()) % 7; // 0=Sun, 1=Mon...
+          
+          // Normalized day: 0=Sun, 1=Mon...6=Sat.
+          // Mon(1)-Thu(4) = Slot A. Fri(5)-Sun(0) = Slot B.
+          const isSecondSlot = (dayOfCurrentWeek === 5 || dayOfCurrentWeek === 6 || dayOfCurrentWeek === 0);
+          
+          const totalSlotsPassed = weeksPassed * 2 + (isSecondSlot ? 1 : 0);
+          index = totalSlotsPassed % listLen;
+      }
+
+      return {
+          id: `calc-${dateStr}-${type}`,
+          date: dateStr,
+          type,
+          recipeId: config.recipeIds[index]
+      };
+  };
+
+  // 3. UI Helpers
+  const openCycleModal = (type: DailyCocktailType) => {
+      if (currentUser.role !== 'ADMIN') {
+          alert("Seul l'administrateur peut modifier la programmation.");
+          return;
+      }
+      setCycleType(type);
+      const conf = getCycleConfig(type);
+      setCycleFrequency(conf.frequency);
+      setCycleRecipes(conf.recipeIds);
+      setCycleStartDate(conf.startDate.split('T')[0]);
+      setCycleIsActive(conf.isActive);
+      setIsCycleModalOpen(true);
+  };
+
+  const handleSaveCycle = () => {
+      if (!saveConfig) return;
+      const config: CycleConfig = {
+          frequency: cycleFrequency,
+          recipeIds: cycleRecipes,
+          startDate: new Date(cycleStartDate).toISOString(),
+          isActive: cycleIsActive
+      };
+      // Save to AppConfig
+      saveConfig(`cycle_${cycleType}`, config);
+      setIsCycleModalOpen(false);
+  };
+
+  const toggleCycleRecipe = (rId: string) => {
+      setCycleRecipes(prev => {
+          if (prev.includes(rId)) return prev.filter(id => id !== rId);
+          return [...prev, rId];
+      });
+  };
+
+  const moveCycleRecipe = (index: number, direction: 'up' | 'down') => {
+      if (direction === 'up' && index === 0) return;
+      if (direction === 'down' && index === cycleRecipes.length - 1) return;
+      const newArr = [...cycleRecipes];
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      [newArr[index], newArr[swapIndex]] = [newArr[swapIndex], newArr[index]];
+      setCycleRecipes(newArr);
+  };
+
+  const filteredRecipesForCycle = useMemo(() => {
+      return recipes.filter(r => {
+          if (cycleType === 'MOCKTAIL') return r.category === 'Mocktail';
+          if (cycleType === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy'; // Adjusted logic
+          if (cycleType === 'OF_THE_DAY') return r.category !== 'Mocktail' && r.category !== 'Thalasso' && r.category !== 'Healthy';
+          return true;
+      });
+  }, [recipes, cycleType]);
+
+  const getCocktailForType = (type: DailyCocktailType) => {
+      return getCalculatedCocktail(selectedDate, type);
+  };
+
+  const handleUpdateCocktail = (type: DailyCocktailType, recipeId?: string, customName?: string, customDescription?: string) => {
       if (!setDailyCocktails) return;
-      const newEntry: DailyCocktail = {
-          id: `${selectedDate}-${type}`,
+
+      const existing = dailyCocktails.find(c => c.date === selectedDate && c.type === type);
+      const id = existing ? existing.id : `dc_${selectedDate}_${type}_${Date.now()}`;
+
+      const newCocktail: DailyCocktail = {
+          id,
           date: selectedDate,
           type,
-          recipeId,
-          customName,
-          customDescription: customDesc
+          recipeId: recipeId || undefined,
+          customName: customName || undefined,
+          customDescription: customDescription || undefined
       };
-      
-      setDailyCocktails(prev => {
-          const filtered = prev.filter(c => !(c.date === selectedDate && c.type === type));
-          return [...filtered, newEntry];
-      });
-      onSync('SAVE_DAILY_COCKTAIL', newEntry);
-  };
 
-  const getCocktailForType = (type: DailyCocktailType) => dailyCocktails.find(c => c.date === selectedDate && c.type === type);
+      setDailyCocktails(prev => {
+          const idx = prev.findIndex(c => c.id === id);
+          if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = newCocktail;
+              return copy;
+          }
+          // Avoid duplicates by date/type check
+          const idx2 = prev.findIndex(c => c.date === selectedDate && c.type === type);
+          if (idx2 >= 0) {
+               const copy = [...prev];
+               copy[idx2] = newCocktail;
+               return copy;
+          }
+          return [...prev, newCocktail];
+      });
+
+      onSync('SAVE_DAILY_COCKTAIL', newCocktail);
+  };
 
   const recentWelcomes = useMemo(() => {
-      const history = dailyCocktails
-          .filter(c => c.type === 'WELCOME' && c.customName)
-          .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const welcomes = dailyCocktails.filter(c => c.type === 'WELCOME' && c.customName);
+      welcomes.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       
-      const uniqueNames = new Set();
-      const distinct: DailyCocktail[] = [];
-      history.forEach(h => {
-          if (!uniqueNames.has(h.customName)) {
-              uniqueNames.add(h.customName);
-              distinct.push(h);
-          }
-      });
-      return distinct.slice(0, 4);
-  }, [dailyCocktails]);
-
-  // --- CYCLE GENERATOR LOGIC (unchanged) ---
-  const toggleCycleRecipe = (id: string) => {
-      const set = new Set(cycleRecipes);
-      if (set.has(id)) set.delete(id);
-      else set.add(id);
-      setCycleRecipes(Array.from(set));
-  };
-
-  const handleGenerateCycle = () => {
-      if (!setDailyCocktails || cycleRecipes.length === 0) return;
-      const daysCount = cycleDuration * 7;
-      const newEntries: DailyCocktail[] = [];
-      let recipeIndex = 0;
-      for (let i = 0; i < daysCount; i++) {
-          const d = new Date(cycleStartDate);
-          d.setDate(d.getDate() + i);
-          const dateStr = d.toISOString().split('T')[0];
-          const dayOfWeek = d.getDay(); 
-          let shouldAssign = false;
-          if (cycleType === 'OF_THE_DAY' || cycleType === 'MOCKTAIL') {
-              if (dayOfWeek === 1 || dayOfWeek === 5) {
-                  if (i > 0) recipeIndex = (recipeIndex + 1) % cycleRecipes.length;
-              }
-              shouldAssign = true;
-          } else if (cycleType === 'THALASSO') {
-              recipeIndex = i % cycleRecipes.length; 
-              shouldAssign = true;
-          }
-          if (shouldAssign) {
-              const entry: DailyCocktail = {
-                  id: `${dateStr}-${cycleType}`,
-                  date: dateStr,
-                  type: cycleType,
-                  recipeId: cycleRecipes[recipeIndex]
-              };
-              newEntries.push(entry);
-              onSync('SAVE_DAILY_COCKTAIL', entry);
+      const unique: DailyCocktail[] = [];
+      const seen = new Set<string>();
+      
+      for (const w of welcomes) {
+          if (w.customName && !seen.has(w.customName)) {
+              seen.add(w.customName);
+              unique.push(w);
           }
       }
-      setDailyCocktails(prev => {
-          const newMap = new Map(prev.map(p => [p.id, p]));
-          newEntries.forEach(e => newMap.set(e.id, e));
-          return Array.from(newMap.values());
-      });
-      setIsCycleModalOpen(false);
-      setCycleRecipes([]);
-  };
+      return unique.slice(0, 5);
+  }, [dailyCocktails]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20 relative">
@@ -364,7 +489,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                   </div>
 
                   <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                      {/* ADMIN ONLY FOR EDITING CORE DETAILS IF NOT CREATOR? No, admin or creator. For simplicity admin edit all. */}
                       {(currentUser.role === 'ADMIN' || !selectedEvent) ? (
                           <>
                             <div className="space-y-1">
@@ -388,7 +512,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Invités (Est.)</label>
-                                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none text-center" value={newEventGuests} onChange={e => setNewEventGuests(parseInt(e.target.value) || 0)} />
+                                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none text-center" value={newEventGuests} onChange={e => cleanNumberInput(e.target.value, setNewEventGuests)} />
                                 </div>
                             </div>
                             <div className="space-y-1">
@@ -396,7 +520,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                 <textarea className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-medium text-slate-900 outline-none h-24 resize-none text-sm" value={newEventDesc} onChange={e => setNewEventDesc(e.target.value)} placeholder="Détails, setup, notes..." maxLength={150} />
                             </div>
                             
-                            {/* Products selection ADVANCED */}
+                            {/* PRODUCTS SECTION */}
                             <div className="space-y-2 pt-2 border-t border-slate-100">
                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produits à prévoir</label>
                                 <div className="flex gap-2">
@@ -415,18 +539,11 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                                 placeholder="Ajouter produit..." 
                                                 value={productSearch}
                                                 onChange={e => setProductSearch(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if(e.key === 'Enter'){
-                                                        handleAddProductToEvent();
-                                                    }
-                                                }}
                                             />
                                             <datalist id="event-items-list">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
                                         </>
                                     )}
-                                    
-                                    <input type="number" min="1" className="w-16 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-center outline-none" value={productQtyInput} onChange={e => setProductQtyInput(parseInt(e.target.value) || 1)} />
-                                    
+                                    <input type="number" min="1" className="w-16 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-center outline-none" value={productQtyInput} onChange={e => cleanNumberInput(e.target.value, setProductQtyInput)} />
                                     <button onClick={handleAddProductToEvent} className="bg-indigo-600 text-white px-3 rounded-xl font-black text-xs hover:bg-indigo-700 transition-colors">+</button>
                                 </div>
                                 <div className="flex justify-end">
@@ -434,8 +551,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                         {isTempProductMode ? "Annuler Mode Temporaire" : "Créer produit temporaire"}
                                     </button>
                                 </div>
-
-                                <div className="flex flex-col gap-2 max-h-32 overflow-y-auto">
+                                <div className="flex flex-col gap-2 max-h-24 overflow-y-auto">
                                     {newEventProducts.map(p => {
                                         const item = items.find(i => i.id === p.itemId);
                                         return (
@@ -450,6 +566,37 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                     })}
                                 </div>
                             </div>
+
+                            {/* GLASSWARE SECTION */}
+                            <div className="space-y-2 pt-2 border-t border-slate-100">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Verrerie à prévoir</label>
+                                <div className="flex gap-2">
+                                    <select 
+                                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold outline-none"
+                                        value={selectedGlasswareId}
+                                        onChange={e => setSelectedGlasswareId(e.target.value)}
+                                    >
+                                        <option value="">Sélectionner verre...</option>
+                                        {glassware.map(g => <option key={g.id} value={g.id}>{g.name} ({g.capacity}cl)</option>)}
+                                    </select>
+                                    <input type="number" min="1" className="w-16 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-center outline-none" value={glasswareQtyInput} onChange={e => cleanNumberInput(e.target.value, setGlasswareQtyInput)} />
+                                    <button onClick={handleAddGlasswareToEvent} className="bg-cyan-600 text-white px-3 rounded-xl font-black text-xs hover:bg-cyan-700 transition-colors">+</button>
+                                </div>
+                                <div className="flex flex-col gap-2 max-h-24 overflow-y-auto">
+                                    {newEventGlassware.map(g => {
+                                        const glass = glassware.find(gl => gl.id === g.glasswareId);
+                                        return (
+                                            <div key={g.glasswareId} className="flex justify-between items-center bg-cyan-50 px-3 py-2 rounded-lg border border-cyan-100">
+                                                <span className="text-xs font-bold text-cyan-900">{glass?.name || 'Verre Inconnu'}</span>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-xs font-black text-cyan-600">x{g.quantity}</span>
+                                                    <button onClick={() => removeGlasswareFromEvent(g.glasswareId)} className="text-rose-400 hover:text-rose-600 text-[10px] font-bold">X</button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                           </>
                       ) : (
                           <div className="p-4 bg-slate-50 rounded-xl text-sm text-slate-600">
@@ -457,17 +604,23 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                               <p><strong>Date:</strong> {new Date(selectedEvent.startTime).toLocaleString()} - {new Date(selectedEvent.endTime).toLocaleTimeString()}</p>
                               <p><strong>Lieu:</strong> {selectedEvent.location}</p>
                               <p><strong>Desc:</strong> {selectedEvent.description}</p>
-                              <p className="mt-2 font-bold">Produits prévus:</p>
-                              <ul className="list-disc pl-5">
+                              <p className="mt-2 font-bold">Produits:</p>
+                              <ul className="list-disc pl-5 mb-2">
                                   {newEventProducts.map(p => {
                                       const item = items.find(i => i.id === p.itemId);
                                       return <li key={p.itemId}>{item?.name} (x{p.quantity})</li>
                                   })}
                               </ul>
+                              <p className="font-bold">Verrerie:</p>
+                              <ul className="list-disc pl-5">
+                                  {newEventGlassware.map(g => {
+                                      const glass = glassware.find(gl => gl.id === g.glasswareId);
+                                      return <li key={g.glasswareId}>{glass?.name} (x{g.quantity})</li>
+                                  })}
+                              </ul>
                           </div>
                       )}
 
-                      {/* Comments section - Accessible to ALL */}
                       {selectedEvent && (
                           <div className="space-y-2 pt-4 border-t border-slate-100">
                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fil de discussion</label>
@@ -504,9 +657,93 @@ const DailyLife: React.FC<DailyLifeProps> = ({
           </div>
       )}
 
+      {/* CYCLE MODAL (NEW LOGIC) */}
+      {isCycleModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-2xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+                  <div className="flex justify-between items-center mb-6">
+                      <div>
+                          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                              <span className="text-2xl">♻️</span> Cycle : {cycleType}
+                          </h3>
+                          <p className="text-xs text-slate-500 font-bold">Configuration du cycle automatique infini.</p>
+                      </div>
+                      <button onClick={() => setIsCycleModalOpen(false)} className="text-slate-400 hover:text-slate-600"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-6">
+                      
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex items-center justify-between">
+                          <span className="font-bold text-slate-700 text-sm">Activer ce cycle automatique</span>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" className="sr-only peer" checked={cycleIsActive} onChange={e => setCycleIsActive(e.target.checked)} />
+                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                          </label>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Fréquence de changement</label>
+                              <select className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none" value={cycleFrequency} onChange={e => setCycleFrequency(e.target.value as any)}>
+                                  <option value="DAILY">Chaque Jour</option>
+                                  <option value="2_DAYS">Tous les 2 Jours</option>
+                                  <option value="MON_FRI">Lundi et Vendredi</option>
+                                  <option value="WEEKLY">Hebdomadaire (1 Semaine)</option>
+                                  <option value="2_WEEKS">Bi-mensuel (2 Semaines)</option>
+                              </select>
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Date de référence (Départ)</label>
+                              <input type="date" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none" value={cycleStartDate} onChange={e => setCycleStartDate(e.target.value)} />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="text-[9px] font-black uppercase text-slate-400 ml-1 mb-2 block">Sélectionner les recettes ({cycleRecipes.length})</label>
+                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 max-h-60 overflow-y-auto grid grid-cols-2 gap-2">
+                              {filteredRecipesForCycle.map(r => (
+                                  <div key={r.id} onClick={() => toggleCycleRecipe(r.id)} className={`p-3 rounded-xl border cursor-pointer flex items-center justify-between transition-all ${cycleRecipes.includes(r.id) ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}`}>
+                                      <span className="font-bold text-xs truncate">{r.name}</span>
+                                      {cycleRecipes.includes(r.id) && <span className="text-indigo-600 font-black">✓</span>}
+                                  </div>
+                              ))}
+                              {filteredRecipesForCycle.length === 0 && <p className="col-span-2 text-center text-slate-400 italic text-xs">Aucune recette disponible pour cette catégorie.</p>}
+                          </div>
+                      </div>
+
+                      {cycleRecipes.length > 0 && (
+                          <div>
+                              <label className="text-[9px] font-black uppercase text-slate-400 ml-1 mb-2 block">Ordre de rotation</label>
+                              <div className="space-y-2">
+                                  {cycleRecipes.map((rId, idx) => {
+                                      const recipe = recipes.find(r => r.id === rId);
+                                      return (
+                                          <div key={rId} className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200">
+                                              <span className="bg-slate-100 text-slate-500 w-6 h-6 flex items-center justify-center rounded-lg font-black text-xs">{idx + 1}</span>
+                                              <span className="flex-1 font-bold text-sm text-slate-700 truncate">{recipe?.name || 'Recette Inconnue'}</span>
+                                              <div className="flex gap-1">
+                                                  <button onClick={() => moveCycleRecipe(idx, 'up')} disabled={idx === 0} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 disabled:opacity-30"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg></button>
+                                                  <button onClick={() => moveCycleRecipe(idx, 'down')} disabled={idx === cycleRecipes.length - 1} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 disabled:opacity-30"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
+                                              </div>
+                                          </div>
+                                      );
+                                  })}
+                              </div>
+                          </div>
+                      )}
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 mt-4">
+                      <button onClick={handleSaveCycle} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-indigo-700 shadow-xl active:scale-95 transition-all">
+                          Enregistrer la Programmation
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* TABS */}
       <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm w-full md:w-fit mx-auto">
-          {/* ... Tabs logic unchanged ... */}
           <button 
             onClick={() => setActiveTab('TASKS')}
             className={`flex-1 md:flex-none px-8 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'TASKS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
@@ -528,7 +765,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       </div>
 
       {activeTab === 'COCKTAILS' && (
-          // ... Cocktails rendering unchanged ...
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm min-h-[600px] space-y-8 animate-in fade-in slide-in-from-bottom-2">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                   <h3 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
@@ -536,54 +772,52 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       Programmation Cocktails
                   </h3>
                   <div className="flex gap-2">
-                      <button onClick={() => setIsCycleModalOpen(true)} className="bg-slate-900 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-700 shadow-lg flex items-center gap-2">
-                          <span className="text-base">⚙️</span> Programmer Cycle
-                      </button>
                       <input type="date" className="bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-slate-700 outline-none" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
                   </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* COCKTAIL DU JOUR */}
-                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 relative group">
+                      <button onClick={() => openCycleModal('OF_THE_DAY')} className="absolute top-4 right-4 bg-white p-2 rounded-lg text-slate-400 hover:text-indigo-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" title="Programmer le cycle"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg></button>
                       <div className="flex items-center gap-3 mb-4">
                           <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center text-white font-black">1</div>
                           <div>
                               <h4 className="font-black text-slate-800 uppercase tracking-tight">Cocktail du Jour</h4>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Change Lundi & Vendredi</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Auto: {getCycleConfig('OF_THE_DAY').isActive ? 'OUI' : 'NON'}</p>
                           </div>
                       </div>
                       <select 
                         className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none"
-                        value={getCocktailForType('OF_THE_DAY')?.recipeId || ''}
+                        value={getCalculatedCocktail(selectedDate, 'OF_THE_DAY')?.recipeId || ''}
                         onChange={(e) => handleUpdateCocktail('OF_THE_DAY', e.target.value)}
                       >
-                          <option value="">-- Sélectionner une recette --</option>
-                          {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                          <option value="">-- Sélectionner --</option>
+                          {recipes.filter(r => r.category !== 'Mocktail' && r.category !== 'Thalasso').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </select>
                   </div>
 
                   {/* MOCKTAIL DU JOUR */}
-                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 relative group">
+                      <button onClick={() => openCycleModal('MOCKTAIL')} className="absolute top-4 right-4 bg-white p-2 rounded-lg text-slate-400 hover:text-indigo-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" title="Programmer le cycle"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg></button>
                       <div className="flex items-center gap-3 mb-4">
                           <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center text-white font-black">2</div>
                           <div>
                               <h4 className="font-black text-slate-800 uppercase tracking-tight">Mocktail du Jour</h4>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Change Lundi & Vendredi</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Auto: {getCycleConfig('MOCKTAIL').isActive ? 'OUI' : 'NON'}</p>
                           </div>
                       </div>
                       <select 
                         className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none"
-                        value={getCocktailForType('MOCKTAIL')?.recipeId || ''}
+                        value={getCalculatedCocktail(selectedDate, 'MOCKTAIL')?.recipeId || ''}
                         onChange={(e) => handleUpdateCocktail('MOCKTAIL', e.target.value)}
                       >
-                          <option value="">-- Sélectionner une recette --</option>
+                          <option value="">-- Sélectionner --</option>
                           {recipes.filter(r => r.category === 'Mocktail').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                          {recipes.filter(r => r.category !== 'Mocktail').map(r => <option key={r.id} value={r.id}>{r.name} (Autre)</option>)}
                       </select>
                   </div>
 
-                  {/* COCKTAIL D'ACCUEIL */}
+                  {/* COCKTAIL D'ACCUEIL (Pas de cycle auto, c'est manuel souvent) */}
                   <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
                       <div className="flex items-center gap-3 mb-4">
                           <div className="w-10 h-10 bg-indigo-500 rounded-full flex items-center justify-center text-white font-black">3</div>
@@ -606,7 +840,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                             onChange={(e) => handleUpdateCocktail('WELCOME', undefined, getCocktailForType('WELCOME')?.customName, e.target.value)}
                           />
                           
-                          {/* HISTORIQUE ACCUEIL */}
                           {recentWelcomes.length > 0 && (
                               <div className="pt-2">
                                   <p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest mb-1">Récents :</p>
@@ -627,21 +860,22 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                   </div>
 
                   {/* COCKTAIL THALASSO */}
-                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 relative group">
+                      <button onClick={() => openCycleModal('THALASSO')} className="absolute top-4 right-4 bg-white p-2 rounded-lg text-slate-400 hover:text-indigo-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" title="Programmer le cycle"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg></button>
                       <div className="flex items-center gap-3 mb-4">
                           <div className="w-10 h-10 bg-cyan-500 rounded-full flex items-center justify-center text-white font-black">4</div>
                           <div>
                               <h4 className="font-black text-slate-800 uppercase tracking-tight">Cocktail Thalasso</h4>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Rotation Quotidienne (Cycle 4)</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Auto: {getCycleConfig('THALASSO').isActive ? 'OUI' : 'NON'}</p>
                           </div>
                       </div>
                       <select 
                         className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none"
-                        value={getCocktailForType('THALASSO')?.recipeId || ''}
+                        value={getCalculatedCocktail(selectedDate, 'THALASSO')?.recipeId || ''}
                         onChange={(e) => handleUpdateCocktail('THALASSO', e.target.value)}
                       >
-                          <option value="">-- Sélectionner une recette --</option>
-                          {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                          <option value="">-- Sélectionner --</option>
+                          {recipes.filter(r => r.category === 'Thalasso' || r.category === 'Healthy').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </select>
                   </div>
               </div>
@@ -649,7 +883,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       )}
 
       {activeTab === 'TASKS' && (
-          // ... Tasks rendering unchanged ...
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* LISTE ACTIVE */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-[600px]">
@@ -741,7 +974,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                   </div>
                               </div>
                               
-                              {/* BADGES */}
                               <div className="flex gap-2 mb-3">
                                   {status?.isOrdered && (
                                       <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest flex items-center gap-1">

@@ -125,7 +125,12 @@ const App: React.FC = () => {
         if (!fetchedUsers.find(u => u.id === 'admin_secours')) fetchedUsers.push({ id: 'admin_secours', name: 'Admin Secours', role: 'ADMIN', pin: '0407' });
         
         setUsers(fetchedUsers);
-        if (data.appConfig) setAppConfig(data.appConfig);
+        
+        // Merge DB config with default
+        if (data.appConfig) {
+            setAppConfig(prev => ({...prev, ...data.appConfig}));
+        }
+        
         setIsOffline(false);
         
         // Lance le chargement lourd en arrière-plan
@@ -570,8 +575,14 @@ const App: React.FC = () => {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, isArchived: true } : m)); syncData('UPDATE_MESSAGE', { id, isArchived: true });
   };
 
+  const handleSaveConfig = (key: string, value: any) => {
+      setAppConfig(prev => ({...prev, [key]: value}));
+      syncData('SAVE_CONFIG', { key, value: JSON.stringify(value) });
+  };
+
   if (loading) return <div className="h-screen flex items-center justify-center font-black animate-pulse">CHARGEMENT...</div>;
   
+  // ... (Login Screen - No changes)
   if (!currentUser) {
      return (
        <div className="h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -611,9 +622,7 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex flex-col md:flex-row bg-slate-50 ${isTestMode ? 'border-4 border-rose-500' : ''}`}>
-      {isTestMode && <div className="fixed top-0 left-0 right-0 h-2 bg-rose-500 z-[1000]"></div>}
-      
-      {/* SIDEBAR */}
+      {/* ... Sidebar (unchanged) ... */}
       <aside className={`bg-slate-950 text-white flex flex-col md:sticky top-0 md:h-screen z-50 transition-all duration-300 ${isSidebarCollapsed ? 'w-full md:w-20' : 'w-full md:w-64'}`}>
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -762,9 +771,12 @@ const App: React.FC = () => {
               items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} 
               setEventComments={setEventComments} dailyCocktails={dailyCocktails} 
               setDailyCocktails={setDailyCocktails} recipes={recipes}
-              onCreateTemporaryItem={handleCreateTemporaryItem} // Passed for event temp products
+              onCreateTemporaryItem={handleCreateTemporaryItem}
               stockLevels={stockLevels}
               orders={orders}
+              glassware={glassware}
+              appConfig={appConfig}
+              saveConfig={handleSaveConfig}
             />
         )}
 
