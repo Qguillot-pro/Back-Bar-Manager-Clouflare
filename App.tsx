@@ -19,6 +19,7 @@ import GlobalInventory from './components/GlobalInventory';
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
+  const [loadingStep, setLoadingStep] = useState('');
   const [dataSyncing, setDataSyncing] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loginInput, setLoginInput] = useState('');
@@ -104,6 +105,7 @@ const App: React.FC = () => {
   // Phase 1: Auth Init (Ultra rapide)
   const fetchAuthData = async () => {
     setLoading(true);
+    setLoadingStep('Connexion au serveur...');
     setConnectionError(null);
     try {
         const response = await fetch('/api/init');
@@ -141,29 +143,20 @@ const App: React.FC = () => {
         setIsOffline(true);
         setConnectionError(error.message);
         loadLocalData();
-    } finally {
         setLoading(false);
     }
   };
 
-  // Phase 2: Full Data Sync (Split & Parallel)
+  // Phase 2: Full Data Sync (SEQUENTIAL / WATERFALL)
   const fetchFullData = async () => {
       setDataSyncing(true);
       try {
-          const [resStatic, resStock, resHistory] = await Promise.all([
-              fetch('/api/data_sync?scope=static'),
-              fetch('/api/data_sync?scope=stock'),
-              fetch('/api/data_sync?scope=history')
-          ]);
-
-          if (!resStatic.ok || !resStock.ok || !resHistory.ok) throw new Error("Erreur partielle synchronisation");
-
+          // --- ÉTAPE 1 : Configuration Statique (Items, Recettes...) ---
+          setLoadingStep('Chargement de la configuration...');
+          const resStatic = await fetch('/api/data_sync?scope=static');
+          if (!resStatic.ok) throw new Error("Erreur Static");
           const dataStatic = await resStatic.json();
-          const dataStock = await resStock.json();
-          const dataHistory = await resHistory.json();
-
-          // Merge Logic
-          // Static
+          
           if (dataStatic.items) setItems(dataStatic.items);
           if (dataStatic.storages) setStorages(dataStatic.storages);
           if (dataStatic.formats) setFormats(dataStatic.formats);
@@ -175,7 +168,12 @@ const App: React.FC = () => {
           if (dataStatic.glassware) setGlassware(dataStatic.glassware);
           if (dataStatic.recipes) setRecipes(dataStatic.recipes);
 
-          // Stock
+          // --- ÉTAPE 2 : État des Stocks (Actif) ---
+          setLoadingStep('Récupération des stocks...');
+          const resStock = await fetch('/api/data_sync?scope=stock');
+          if (!resStock.ok) throw new Error("Erreur Stock");
+          const dataStock = await resStock.json();
+
           if (dataStock.stockLevels) setStockLevels(dataStock.stockLevels);
           if (dataStock.consignes) setConsignes(dataStock.consignes);
           if (dataStock.dailyCocktails) setDailyCocktails(dataStock.dailyCocktails);
@@ -183,7 +181,12 @@ const App: React.FC = () => {
           if (dataStock.tasks) setTasks(dataStock.tasks);
           if (dataStock.unfulfilledOrders) setUnfulfilledOrders(dataStock.unfulfilledOrders);
           
-          // History
+          // --- ÉTAPE 3 : Historique (Lourd) ---
+          setLoadingStep('Finalisation...');
+          const resHistory = await fetch('/api/data_sync?scope=history');
+          if (!resHistory.ok) throw new Error("Erreur History");
+          const dataHistory = await resHistory.json();
+
           if (dataHistory.transactions) setTransactions(dataHistory.transactions);
           if (dataHistory.dlcHistory) setDlcHistory(dataHistory.dlcHistory);
           if (dataHistory.messages) setMessages(dataHistory.messages);
@@ -201,6 +204,7 @@ const App: React.FC = () => {
           setNotification({ title: 'Erreur Chargement', message: 'Impossible de récupérer les données complètes.', type: 'error' });
       } finally {
           setDataSyncing(false);
+          setLoading(false);
       }
   };
 
@@ -610,7 +614,11 @@ const App: React.FC = () => {
       syncData('SAVE_CONFIG', { key, value: JSON.stringify(value) });
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center font-black animate-pulse">CHARGEMENT...</div>;
+  if (loading) return <div className="h-screen flex flex-col gap-4 items-center justify-center font-black animate-pulse">
+        <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg">B</div>
+        <p className="text-indigo-900 text-xl tracking-widest uppercase">CHARGEMENT...</p>
+        {loadingStep && <p className="text-slate-400 text-xs font-bold uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full">{loadingStep}</p>}
+  </div>;
   
   // ... (Login Screen - No changes)
   if (!currentUser) {

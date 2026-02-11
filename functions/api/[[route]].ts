@@ -42,9 +42,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   const pool = new Pool({ 
     connectionString: env.DATABASE_URL,
-    connectionTimeoutMillis: 15000, 
+    // Augmentation significative pour supporter le "Cold Start" de Neon
+    connectionTimeoutMillis: 25000, // 25s
     idleTimeoutMillis: 30000,
-    max: 6 // Légère augmentation pour supporter les appels parallèles
+    max: 6 
   });
 
   try {
