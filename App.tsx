@@ -146,54 +146,59 @@ const App: React.FC = () => {
     }
   };
 
-  // Phase 2: Full Data Sync (En arrière-plan)
+  // Phase 2: Full Data Sync (Split & Parallel)
   const fetchFullData = async () => {
       setDataSyncing(true);
       try {
-          const response = await fetch('/api/data_sync');
-          if (!response.ok) throw new Error("Erreur Chargement Données");
+          const [resStatic, resStock, resHistory] = await Promise.all([
+              fetch('/api/data_sync?scope=static'),
+              fetch('/api/data_sync?scope=stock'),
+              fetch('/api/data_sync?scope=history')
+          ]);
+
+          if (!resStatic.ok || !resStock.ok || !resHistory.ok) throw new Error("Erreur partielle synchronisation");
+
+          const dataStatic = await resStatic.json();
+          const dataStock = await resStock.json();
+          const dataHistory = await resHistory.json();
+
+          // Merge Logic
+          // Static
+          if (dataStatic.items) setItems(dataStatic.items);
+          if (dataStatic.storages) setStorages(dataStatic.storages);
+          if (dataStatic.formats) setFormats(dataStatic.formats);
+          if (dataStatic.categories) setCategories(dataStatic.categories);
+          if (dataStatic.dlcProfiles) setDlcProfiles(dataStatic.dlcProfiles);
+          if (dataStatic.priorities) setPriorities(dataStatic.priorities);
+          if (dataStatic.techniques) setTechniques(dataStatic.techniques);
+          if (dataStatic.cocktailCategories) setCocktailCategories(dataStatic.cocktailCategories);
+          if (dataStatic.glassware) setGlassware(dataStatic.glassware);
+          if (dataStatic.recipes) setRecipes(dataStatic.recipes);
+
+          // Stock
+          if (dataStock.stockLevels) setStockLevels(dataStock.stockLevels);
+          if (dataStock.consignes) setConsignes(dataStock.consignes);
+          if (dataStock.dailyCocktails) setDailyCocktails(dataStock.dailyCocktails);
+          if (dataStock.events) setEvents(dataStock.events);
+          if (dataStock.tasks) setTasks(dataStock.tasks);
+          if (dataStock.unfulfilledOrders) setUnfulfilledOrders(dataStock.unfulfilledOrders);
           
-          const data = await response.json();
-          if (data && data.items) {
-              setItems(data.items || []);
-              setStorages(data.storages || []);
-              setStockLevels((data.stockLevels || []).map((l: any) => ({...l, currentQuantity: Number(l.currentQuantity)})));
-              setConsignes((data.consignes || []).map((c: any) => ({...c, minQuantity: Number(c.minQuantity), maxCapacity: c.maxCapacity ? Number(c.maxCapacity) : undefined})));
-              setTransactions((data.transactions || []).map((t: any) => ({...t, quantity: Number(t.quantity)})));
-              setOrders((data.orders || []).map((o: any) => ({...o, quantity: Number(o.quantity), initialQuantity: o.initialQuantity ? Number(o.initialQuantity) : undefined})));
-              setDlcHistory(data.dlcHistory || []);
-              setFormats(data.formats || []);
-              setCategories(data.categories || []);
-              setDlcProfiles(data.dlcProfiles || []);
-              setPriorities((data.priorities || []).map((p: any) => ({...p, priority: Number(p.priority)})));
-              setUnfulfilledOrders((data.unfulfilledOrders || []).map((u: any) => ({...u, quantity: u.quantity ? Number(u.quantity) : 1})));
-              setMessages(data.messages || []);
-              setGlassware(data.glassware || []);
-              setRecipes(data.recipes || []);
-              setTechniques(data.techniques || []);
-              setLosses(data.losses || []);
-              setUserLogs(data.userLogs || []);
-              setTasks(data.tasks || []);
-              setEvents(data.events || []);
-              setEventComments(data.eventComments || []);
-              
-              if (data.cocktailCategories && data.cocktailCategories.length > 0) {
-                  setCocktailCategories(data.cocktailCategories);
-              } else {
-                  setCocktailCategories([
-                      { id: 'cc1', name: 'Signature' },
-                      { id: 'cc2', name: 'Classique' },
-                      { id: 'cc3', name: 'Mocktail' },
-                      { id: 'cc4', name: 'Tiki' },
-                      { id: 'cc5', name: 'After Dinner' }
-                  ]);
-              }
-              setDailyCocktails(data.dailyCocktails || []);
-          }
+          // History
+          if (dataHistory.transactions) setTransactions(dataHistory.transactions);
+          if (dataHistory.dlcHistory) setDlcHistory(dataHistory.dlcHistory);
+          if (dataHistory.messages) setMessages(dataHistory.messages);
+          if (dataHistory.losses) setLosses(dataHistory.losses);
+          if (dataHistory.eventComments) setEventComments(dataHistory.eventComments);
+          if (dataHistory.userLogs) setUserLogs(dataHistory.userLogs);
+
+          // Orders are special (split across stock and history)
+          const activeOrders = dataStock.orders || [];
+          const historyOrders = dataHistory.orders || []; 
+          setOrders([...activeOrders, ...historyOrders]);
+
       } catch (e) {
           console.error("Échec chargement background", e);
-          // On ne passe pas hors ligne, on garde les données locales si dispo
-          setNotification({ title: 'Erreur Chargement', message: 'Impossible de récupérer les données (Timeout).', type: 'error' });
+          setNotification({ title: 'Erreur Chargement', message: 'Impossible de récupérer les données complètes.', type: 'error' });
       } finally {
           setDataSyncing(false);
       }
