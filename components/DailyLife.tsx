@@ -235,14 +235,11 @@ const DailyLife: React.FC<DailyLifeProps> = ({ tasks, events, eventComments, cur
           // LOGIC: Cocktail/Mocktail changes Mon (1) and Fri (5)
           if (cycleType === 'OF_THE_DAY' || cycleType === 'MOCKTAIL') {
               // On assigne tous les jours, mais on ne change d'index que le Lundi et Vendredi
-              // Cependant, pour simplifier le dashboard, on va dire que le cocktail RESTE le même jusqu'au prochain changement
-              // Donc on génère une entrée par jour pour que le dashboard l'affiche toujours
-              
+              // Cependant, pour simplifier, on associe l'entrée quotidienne
               if (dayOfWeek === 1 || dayOfWeek === 5) {
                   // Changement de recette
                   if (i > 0) recipeIndex = (recipeIndex + 1) % cycleRecipes.length;
               }
-              // Note: Le premier jour (i=0), on prend l'index 0
               shouldAssign = true;
           } 
           // LOGIC: Thalasso changes every day
@@ -276,8 +273,115 @@ const DailyLife: React.FC<DailyLifeProps> = ({ tasks, events, eventComments, cur
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+    <div className="max-w-6xl mx-auto space-y-6 pb-20 relative">
       
+      {/* EVENT MODAL (RESTORED) */}
+      {isEventModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden relative">
+                  <div className="flex justify-between items-center mb-6 shrink-0">
+                      <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+                          {selectedEvent ? 'Modifier Événement' : 'Nouvel Événement'}
+                      </h3>
+                      <button onClick={closeEventModal} className="text-slate-400 hover:text-slate-600"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                      <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Titre</label>
+                          <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none" value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} placeholder="Ex: Soirée Jazz" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Début</label>
+                              <input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-xs text-slate-900 outline-none" value={newEventStart} onChange={e => setNewEventStart(e.target.value)} />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fin</label>
+                              <input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-xs text-slate-900 outline-none" value={newEventEnd} onChange={e => setNewEventEnd(e.target.value)} />
+                          </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Lieu</label>
+                              <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none" value={newEventLocation} onChange={e => setNewEventLocation(e.target.value)} placeholder="Bar" />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Invités (Est.)</label>
+                              <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none text-center" value={newEventGuests} onChange={e => setNewEventGuests(parseInt(e.target.value) || 0)} />
+                          </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Description</label>
+                          <textarea className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-medium text-slate-900 outline-none h-24 resize-none text-sm" value={newEventDesc} onChange={e => setNewEventDesc(e.target.value)} placeholder="Détails, setup, notes..." maxLength={150} />
+                      </div>
+                      
+                      {/* Products selection simplified */}
+                      <div className="space-y-2 pt-2 border-t border-slate-100">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produits à prévoir</label>
+                          <div className="flex gap-2">
+                              <input 
+                                  list="event-items-list" 
+                                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold outline-none" 
+                                  placeholder="Ajouter produit..." 
+                                  value={productSearch}
+                                  onChange={e => setProductSearch(e.target.value)}
+                                  onKeyDown={(e) => {
+                                      if(e.key === 'Enter'){
+                                          const item = items.find(i => i.name.toLowerCase() === productSearch.toLowerCase());
+                                          if(item) { toggleProduct(item.id); setProductSearch(''); }
+                                      }
+                                  }}
+                              />
+                              <datalist id="event-items-list">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                              {newEventProducts.map(pid => {
+                                  const item = items.find(i => i.id === pid);
+                                  return (
+                                      <span key={pid} onClick={() => toggleProduct(pid)} className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-lg text-[10px] font-bold cursor-pointer hover:bg-rose-100 hover:text-rose-600 flex items-center gap-1 transition-colors">
+                                          {item?.name || 'Inconnu'} ✕
+                                      </span>
+                                  );
+                              })}
+                          </div>
+                      </div>
+
+                      {/* Comments section if existing event */}
+                      {selectedEvent && (
+                          <div className="space-y-2 pt-4 border-t border-slate-100">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Commentaires Équipe</label>
+                              <div className="bg-slate-50 rounded-xl p-3 max-h-32 overflow-y-auto space-y-2">
+                                  {eventComments.filter(c => c.eventId === selectedEvent.id).map(c => (
+                                      <div key={c.id} className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
+                                          <p className="text-[9px] font-black text-indigo-600">{c.userName} <span className="text-slate-300 font-normal">• {new Date(c.createdAt).toLocaleDateString()}</span></p>
+                                          <p className="text-xs text-slate-700">{c.content}</p>
+                                      </div>
+                                  ))}
+                                  {eventComments.filter(c => c.eventId === selectedEvent.id).length === 0 && <p className="text-[10px] text-slate-400 italic text-center">Aucun commentaire.</p>}
+                              </div>
+                              <div className="flex gap-2">
+                                  <input className="flex-1 bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold outline-none" placeholder="Ajouter une note..." value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddComment()} />
+                                  <button onClick={handleAddComment} disabled={!newComment.trim()} className="bg-slate-200 text-slate-600 px-3 rounded-xl font-black text-xs hover:bg-indigo-100 hover:text-indigo-600 transition-colors">OK</button>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-slate-100 grid grid-cols-1 gap-3 shrink-0">
+                      <button onClick={handleCreateEvent} disabled={!newEventTitle || !newEventStart || !newEventEnd} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                          {selectedEvent ? 'Mettre à jour' : 'Créer l\'événement'}
+                      </button>
+                      {selectedEvent && (
+                          <button onClick={handleDeleteEvent} className="w-full bg-white text-rose-500 border border-rose-100 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-rose-50 transition-all">
+                              Supprimer
+                          </button>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* CYCLE MODAL */}
       {isCycleModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
@@ -492,7 +596,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({ tasks, events, eventComments, cur
           </div>
       )}
 
-      {/* TASKS & CALENDAR TABS (Existing content hidden for brevity as requested by diff logic, but included in full file) */}
       {activeTab === 'TASKS' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* LISTE ACTIVE */}
