@@ -730,16 +730,42 @@ const App: React.FC = () => {
         {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={sortedStorages} onDelete={handleDeleteDlcHistory} />}
         
         {view === 'config' && currentUser?.role === 'ADMIN' && (
-            <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={sortedStorages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} cocktailCategories={cocktailCategories} setCocktailCategories={setCocktailCategories} />
+            <Configuration 
+              setItems={setItems} setStorages={setStorages} setFormats={setFormats} 
+              storages={sortedStorages} formats={formats} priorities={priorities} 
+              setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} 
+              items={items} categories={categories} setCategories={setCategories} 
+              users={users} setUsers={setUsers} currentUser={currentUser} 
+              dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} 
+              onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} 
+              glassware={glassware} setGlassware={setGlassware} techniques={techniques} 
+              setTechniques={setTechniques} cocktailCategories={cocktailCategories} 
+              setCocktailCategories={setCocktailCategories}
+              // Data for backup
+              fullData={{
+                  items, users, storages, stockLevels, consignes, transactions, orders, 
+                  dlcHistory, categories, formats, dlcProfiles, priorities, unfulfilledOrders, 
+                  appConfig, messages, glassware, recipes, techniques, losses, tasks, 
+                  events, eventComments, cocktailCategories, dailyCocktails
+              }}
+            />
         )}
         
         {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={sortedStorages} unfulfilledOrders={unfulfilledOrders} onUpdateOrderQuantity={() => {}} formats={formats} losses={losses} />}
         {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
-        {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={handleOrderUpdate} onDeleteOrder={handleDeleteOrder} onAddManualOrder={handleAddManualOrder} formats={formats} />}
+        {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={handleOrderUpdate} onDeleteOrder={handleDeleteOrder} onAddManualOrder={handleAddManualOrder} formats={formats} events={events} />}
         {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} />}
         
         {view === 'daily_life' && (
-            <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} />
+            <DailyLife 
+              tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} 
+              items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} 
+              setEventComments={setEventComments} dailyCocktails={dailyCocktails} 
+              setDailyCocktails={setDailyCocktails} recipes={recipes}
+              onCreateTemporaryItem={handleCreateTemporaryItem} // Passed for event temp products
+              stockLevels={stockLevels}
+              orders={orders}
+            />
         )}
 
         {view === 'logs' && currentUser?.role === 'ADMIN' && (

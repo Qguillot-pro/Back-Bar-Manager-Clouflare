@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, UnfulfilledOrder, PendingOrder, User, Event } from '../types';
+import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, UnfulfilledOrder, PendingOrder, User, Event, EventProduct } from '../types';
 
 interface RestockProps {
   items: StockItem[];
@@ -33,7 +33,7 @@ interface AggregatedNeed {
   maxPriority: number; 
   details: NeedDetail[];
   isUrgent?: boolean;
-  isEventRelated?: boolean; // NOUVEAU
+  isEventRelated?: boolean; 
 }
 
 const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, unfulfilledOrders, onCreateTemporaryItem, orders, currentUser, events = [] }) => {
@@ -72,39 +72,66 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
       return hasClientRupture || hasStockRupture;
   };
 
-  // Check if item is in upcoming event (7 days)
-  const isEventItem = (itemId: string) => {
-      const now = new Date();
-      const limit = new Date();
-      limit.setDate(limit.getDate() + 7);
-      
-      return events.some(e => {
-          const eDate = new Date(e.startTime);
-          if (eDate >= now && eDate <= limit && e.productsJson) {
-              try {
-                  const products: string[] = JSON.parse(e.productsJson);
-                  return products.includes(itemId);
-              } catch (err) { return false; }
-          }
-          return false;
-      });
-  };
-
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
-    const effectiveConsignes = new Map<string, Map<string, { minQty: number, isRedirected: boolean }>>();
+    // 1. Build Consignes Map
+    const effectiveConsignes = new Map<string, Map<string, { minQty: number, isRedirected: boolean, isEvent: boolean }>>();
     
+    // Standard Consignes
     consignes.forEach(c => {
         if (!effectiveConsignes.has(c.itemId)) effectiveConsignes.set(c.itemId, new Map());
-        effectiveConsignes.get(c.itemId)!.set(c.storageId, { minQty: c.minQuantity, isRedirected: false });
+        effectiveConsignes.get(c.itemId)!.set(c.storageId, { minQty: c.minQuantity, isRedirected: false, isEvent: false });
     });
 
+    // Event Logic : Add to Surstock (s0)
+    const now = new Date();
+    // Logic: If event starts > 18:00, restock ON THE DAY.
+    // If event starts < 18:00, restock DAY BEFORE.
+    
+    events.forEach(evt => {
+        const evtStart = new Date(evt.startTime);
+        const restockDate = new Date(evtStart);
+        
+        // Time logic
+        if (evtStart.getHours() < 18) {
+            restockDate.setDate(restockDate.getDate() - 1);
+        }
+        
+        // Check if "today" matches "restockDate"
+        // We use "Bar Day" concept (shift starts at 4am)
+        const currentBarDate = new Date(now);
+        if (currentBarDate.getHours() < 4) currentBarDate.setDate(currentBarDate.getDate() - 1);
+        
+        const isSameDay = 
+            restockDate.getDate() === currentBarDate.getDate() && 
+            restockDate.getMonth() === currentBarDate.getMonth() &&
+            restockDate.getFullYear() === currentBarDate.getFullYear();
+
+        if (isSameDay && evt.productsJson) {
+            try {
+                const products: EventProduct[] = JSON.parse(evt.productsJson);
+                products.forEach(p => {
+                    if (!effectiveConsignes.has(p.itemId)) effectiveConsignes.set(p.itemId, new Map());
+                    const itemMap = effectiveConsignes.get(p.itemId)!;
+                    
+                    const currentS0 = itemMap.get('s0') || { minQty: 0, isRedirected: false, isEvent: false };
+                    itemMap.set('s0', { 
+                        minQty: currentS0.minQty + p.quantity, 
+                        isRedirected: currentS0.isRedirected,
+                        isEvent: true 
+                    });
+                });
+            } catch(e) {}
+        }
+    });
+
+    // Redirect Logic (Low stock in bar -> Increase needs elsewhere)
     items.forEach(item => {
         const itemConsignes = consignes.filter(c => c.itemId === item.id);
         const itemPriorities = priorities.filter(p => p.itemId === item.id && p.storageId !== 's0').sort((a, b) => b.priority - a.priority);
 
         itemConsignes.forEach(c => {
             const minQty = c.minQuantity;
-            if (minQty > 0 && minQty < 1) {
+            if (minQty > 0 && minQty < 1) { // Partial bottle logic
                 const level = stockLevels.find(l => l.itemId === item.id && l.storageId === c.storageId);
                 const currentQty = level?.currentQuantity || 0;
 
@@ -116,9 +143,9 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                         const targetStorageId = targetPrio.storageId;
                         if (!effectiveConsignes.has(item.id)) effectiveConsignes.set(item.id, new Map());
                         const itemMap = effectiveConsignes.get(item.id)!;
-                        const currentTargetData = itemMap.get(targetStorageId) || { minQty: 0, isRedirected: false };
-                        itemMap.set(targetStorageId, { minQty: currentTargetData.minQty + 1, isRedirected: true });
-                        const sourceData = itemMap.get(c.storageId) || { minQty: 0, isRedirected: false };
+                        const currentTargetData = itemMap.get(targetStorageId) || { minQty: 0, isRedirected: false, isEvent: false };
+                        itemMap.set(targetStorageId, { ...currentTargetData, minQty: currentTargetData.minQty + 1, isRedirected: true });
+                        const sourceData = itemMap.get(c.storageId) || { minQty: 0, isRedirected: false, isEvent: false };
                         itemMap.set(c.storageId, { ...sourceData, minQty: 0 });
                     }
                 }
@@ -136,12 +163,16 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
         const item = items.find(i => i.id === itemId);
         if (!item) return;
 
+        let isEventItem = false;
+
         storageMap.forEach((data, storageId) => {
             if (data.minQty <= 0) return;
             const storage = storages.find(s => s.id === storageId);
             if (!storage) return;
             const priority = getPrio(itemId, storageId);
             if (priority === 0 && storageId !== 's0') return;
+
+            if (data.isEvent) isEventItem = true;
 
             const level = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
             const currentQty = level?.currentQuantity || 0;
@@ -151,12 +182,13 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                 const gap = Math.ceil(data.minQty - effectiveQty);
                 if (gap > 0) {
                     if (!map.has(itemId)) {
-                        map.set(itemId, { item, totalGap: 0, maxPriority: 0, details: [], isUrgent: isUrgentUnfulfilled(itemId), isEventRelated: isEventItem(itemId) });
+                        map.set(itemId, { item, totalGap: 0, maxPriority: 0, details: [], isUrgent: isUrgentUnfulfilled(itemId), isEventRelated: false });
                     }
                     const entry = map.get(itemId)!;
                     entry.details.push({ storage, currentQty, minQty: data.minQty, gap, priority, isRedirected: data.isRedirected });
                     entry.totalGap += gap;
                     entry.maxPriority = Math.max(entry.maxPriority, priority);
+                    if (data.isEvent) entry.isEventRelated = true;
                 }
             }
         });
@@ -191,6 +223,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
     return groups;
   }, [aggregatedNeeds, categories]);
 
+  // ... (rest of the component handlers unchanged) ...
   const handleOpenModal = (item: StockItem, detail: NeedDetail) => {
     setSelectedDetail({ item, detail });
     setPartialQty(''); 
@@ -199,13 +232,8 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
   const handleComplete = () => {
     if (selectedDetail) {
-        // Remontée physique (Stock)
         onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, selectedDetail.detail.gap);
-        
-        // Commande Anticipée (Panier seulement)
         if (currentUser?.role === 'ADMIN' && preOrderQty && parseInt(preOrderQty) > 0) {
-             // onAction avec qtyToAdd=0 et qtyToOrder=XXX. 
-             // Le 3ème argument est la remontée, le 4ème est la commande.
              onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, 0, parseInt(preOrderQty), false);
         }
         setSelectedDetail(null);
@@ -302,7 +330,6 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
           </div>
       )}
 
-      {/* Temp Item Modal ... (same as before) */}
       {isTempItemModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 relative overflow-hidden">

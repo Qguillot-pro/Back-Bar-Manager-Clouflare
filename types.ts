@@ -222,6 +222,11 @@ export interface EventComment {
   createdAt: string;
 }
 
+export interface EventProduct {
+    itemId: string;
+    quantity: number;
+}
+
 export interface Event {
   id: string;
   title: string;
@@ -230,8 +235,9 @@ export interface Event {
   location?: string;
   guestsCount?: number;
   description?: string; // Max 150 chars
-  productsJson?: string; // JSON array of itemIds
+  productsJson?: string; // JSON array of EventProduct { itemId, quantity }
   createdAt: string;
+  productsStatus?: 'PENDING' | 'VALIDATED'; // Pour le badge manuel admin
 }
 
 export type DailyCocktailType = 'OF_THE_DAY' | 'MOCKTAIL' | 'WELCOME' | 'THALASSO';

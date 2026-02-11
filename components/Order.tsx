@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { PendingOrder, StockItem, StorageSpace, Format } from '../types';
+import { PendingOrder, StockItem, StorageSpace, Format, Event, EventProduct } from '../types';
 
 interface OrderProps {
   orders: PendingOrder[];
@@ -10,9 +10,10 @@ interface OrderProps {
   onDeleteOrder: (orderId: string) => void;
   onAddManualOrder: (itemId: string, qty: number) => void;
   formats: Format[];
+  events?: Event[];
 }
 
-const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, onDeleteOrder, onAddManualOrder, formats }) => {
+const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, onDeleteOrder, onAddManualOrder, formats, events = [] }) => {
   const [activeTab, setActiveTab] = useState<'PENDING' | 'ORDERED'>('PENDING');
   const [manualSearch, setManualSearch] = useState('');
   const [manualQty, setManualQty] = useState(1);
@@ -21,6 +22,32 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
   // Filtres
   const pendingOrders = useMemo(() => orders.filter(o => o.status === 'PENDING'), [orders]);
   const orderedOrders = useMemo(() => orders.filter(o => o.status === 'ORDERED'), [orders]);
+
+  // Upcoming Event Suggestions (10 days)
+  const eventSuggestions = useMemo(() => {
+      const now = new Date();
+      const limit = new Date();
+      limit.setDate(limit.getDate() + 10);
+
+      const suggestions: { event: Event, products: EventProduct[] }[] = [];
+
+      events.forEach(evt => {
+          const start = new Date(evt.startTime);
+          if (start >= now && start <= limit && evt.productsJson) {
+              try {
+                  const prods: EventProduct[] = JSON.parse(evt.productsJson);
+                  // Filter out products that are already in pending or ordered
+                  const neededProds = prods.filter(p => {
+                      return !orders.some(o => o.itemId === p.itemId && (o.status === 'PENDING' || o.status === 'ORDERED'));
+                  });
+                  if (neededProds.length > 0) {
+                      suggestions.push({ event: evt, products: neededProds });
+                  }
+              } catch(e) {}
+          }
+      });
+      return suggestions;
+  }, [events, orders]);
 
   const handleValidateAll = () => {
       if (window.confirm(`Valider l'envoi de ${pendingOrders.length} lignes de commande ?`)) {
@@ -40,6 +67,10 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
       } else {
           alert("Produit introuvable. Veuillez sélectionner un produit de la liste.");
       }
+  };
+
+  const addEventProduct = (itemId: string, qty: number) => {
+      onAddManualOrder(itemId, qty);
   };
 
   const toggleSelection = (id: string) => {
@@ -99,6 +130,40 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
       {/* CONTENT */}
       {activeTab === 'PENDING' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+              
+              {/* EVENT SUGGESTIONS */}
+              {eventSuggestions.length > 0 && (
+                  <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100 space-y-4">
+                      <h3 className="font-black text-purple-800 uppercase tracking-tight flex items-center gap-2">
+                          <span className="w-1.5 h-6 bg-purple-500 rounded-full"></span>
+                          Suggestions Événements (J-10)
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {eventSuggestions.map((sug, i) => (
+                              <div key={i} className="bg-white p-4 rounded-2xl border border-purple-100 shadow-sm">
+                                  <div className="mb-2">
+                                      <p className="font-bold text-slate-800">{sug.event.title}</p>
+                                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(sug.event.startTime).toLocaleDateString()}</p>
+                                  </div>
+                                  <div className="space-y-2">
+                                      {sug.products.map(p => {
+                                          const item = items.find(i => i.id === p.itemId);
+                                          return (
+                                              <div key={p.itemId} className="flex justify-between items-center bg-slate-50 p-2 rounded-xl">
+                                                  <span className="text-xs font-bold text-slate-700">{item?.name}</span>
+                                                  <button onClick={() => addEventProduct(p.itemId, p.quantity)} className="bg-purple-500 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase hover:bg-purple-600 transition-colors">
+                                                      Ajouter (+{p.quantity})
+                                                  </button>
+                                              </div>
+                                          );
+                                      })}
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
+
               {/* AJOUT MANUEL */}
               <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100 flex flex-col md:flex-row gap-4 items-end">
                   <div className="flex-1 w-full space-y-2">
