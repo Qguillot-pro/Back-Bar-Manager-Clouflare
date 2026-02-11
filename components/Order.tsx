@@ -13,6 +13,8 @@ interface OrderProps {
   events?: Event[];
 }
 
+const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, onDeleteOrder, onAddManualOrder, formats, events = [] }) => {
   const [activeTab, setActiveTab] = useState<'PENDING' | 'ORDERED'>('PENDING');
   const [manualSearch, setManualSearch] = useState('');
@@ -59,7 +61,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
   };
 
   const handleManualAdd = () => {
-      const item = items.find(i => i.name.toLowerCase() === manualSearch.toLowerCase());
+      const item = items.find(i => normalizeText(i.name) === normalizeText(manualSearch));
       if (item) {
           onAddManualOrder(item.id, manualQty);
           setManualSearch('');

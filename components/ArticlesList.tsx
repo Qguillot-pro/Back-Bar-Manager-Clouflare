@@ -16,6 +16,8 @@ interface ArticlesListProps {
   recipes?: Recipe[]; // Ajout pour vérification dépendance
 }
 
+const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, categories, onDelete, userRole, dlcProfiles = [], onSync, filter = 'ALL', events = [], recipes = [] }) => {
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [editingPrice, setEditingPrice] = useState<{ id: string, value: string } | null>(null);
@@ -24,8 +26,8 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
   const displayedItems = (filter === 'TEMPORARY' 
       ? items.filter(i => i.isTemporary) 
       : items).filter(i => 
-          i.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-          (i.articleCode && i.articleCode.toLowerCase().includes(searchTerm.toLowerCase()))
+          normalizeText(i.name).includes(normalizeText(searchTerm)) || 
+          (i.articleCode && normalizeText(i.articleCode).includes(normalizeText(searchTerm)))
       );
 
   const updateItem = (id: string, field: keyof StockItem, value: any) => {

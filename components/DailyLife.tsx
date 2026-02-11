@@ -23,6 +23,8 @@ interface DailyLifeProps {
   saveConfig?: (key: string, value: any) => void;
 }
 
+const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
@@ -233,7 +235,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
               setProductSearch(tempProductName); 
           }
       } else {
-          const item = items.find(i => i.name.toLowerCase() === productSearch.toLowerCase());
+          const item = items.find(i => normalizeText(i.name) === normalizeText(productSearch));
           if (item) {
               setNewEventProducts(prev => {
                   const existing = prev.find(p => p.itemId === item.id);
@@ -434,11 +436,11 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                     {newEventProducts.map(p => {
                                         const item = items.find(i => i.id === p.itemId);
                                         return (
-                                            <div key={p.itemId} className={`flex justify-between items-center px-3 py-2 rounded-lg border ${!item ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100'}`}>
-                                                <span className={`text-xs font-bold ${!item ? 'text-rose-600 italic' : 'text-slate-700'}`}>{item ? item.name : 'Produit Supprimé/Inconnu'}</span>
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-xs font-black text-indigo-600">x{p.quantity}</span>
-                                                    <button onClick={() => removeProductFromEvent(p.itemId)} className="text-rose-400 hover:text-rose-600 text-[10px] font-bold">X</button>
+                                            <div key={p.itemId} className="flex justify-between items-center px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                                                <span className="text-xs font-bold text-slate-700">{item?.name || 'Inconnu'}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-black">{p.quantity}</span>
+                                                    <button onClick={() => removeProductFromEvent(p.itemId)} className="text-rose-400 hover:text-rose-600 font-bold">x</button>
                                                 </div>
                                             </div>
                                         );
@@ -446,26 +448,26 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                 </div>
                             </div>
 
-                            {/* GLASSWARE SECTION SAFEGUARDED */}
+                            {/* GLASSWARE SECTION */}
                             <div className="space-y-2 pt-2 border-t border-slate-100">
                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Verrerie à prévoir</label>
                                 <div className="flex gap-2">
                                     <select className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold outline-none" value={selectedGlasswareId} onChange={e => setSelectedGlasswareId(e.target.value)}>
-                                        <option value="">Sélectionner verre...</option>
-                                        {glassware.map(g => <option key={g.id} value={g.id}>{g.name} ({g.capacity}cl)</option>)}
+                                        <option value="">Choisir verre...</option>
+                                        {glassware.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                                     </select>
                                     <input type="number" min="1" className="w-16 bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-black text-center outline-none" value={glasswareQtyInput} onChange={e => cleanNumberInput(e.target.value, setGlasswareQtyInput)} />
-                                    <button onClick={handleAddGlasswareToEvent} className="bg-cyan-600 text-white px-3 rounded-xl font-black text-xs hover:bg-cyan-700 transition-colors">+</button>
+                                    <button onClick={handleAddGlasswareToEvent} className="bg-cyan-500 text-white px-3 rounded-xl font-black text-xs hover:bg-cyan-600 transition-colors">+</button>
                                 </div>
                                 <div className="flex flex-col gap-2 max-h-24 overflow-y-auto">
                                     {newEventGlassware.map(g => {
                                         const glass = glassware.find(gl => gl.id === g.glasswareId);
                                         return (
-                                            <div key={g.glasswareId} className="flex justify-between items-center bg-cyan-50 px-3 py-2 rounded-lg border border-cyan-100">
-                                                <span className="text-xs font-bold text-cyan-900">{glass?.name || 'Verre Inconnu'}</span>
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-xs font-black text-cyan-600">x{g.quantity}</span>
-                                                    <button onClick={() => removeGlasswareFromEvent(g.glasswareId)} className="text-rose-400 hover:text-rose-600 text-[10px] font-bold">X</button>
+                                            <div key={g.glasswareId} className="flex justify-between items-center px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                                                <span className="text-xs font-bold text-slate-700">{glass?.name || 'Inconnu'}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-black">{g.quantity}</span>
+                                                    <button onClick={() => removeGlasswareFromEvent(g.glasswareId)} className="text-rose-400 hover:text-rose-600 font-bold">x</button>
                                                 </div>
                                             </div>
                                         );
@@ -474,60 +476,42 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                             </div>
                           </>
                       ) : (
-                          // Read Only View Safe Guarded
-                          <div className="p-4 bg-slate-50 rounded-xl text-sm text-slate-600">
-                              <p><strong>Titre:</strong> {selectedEvent.title}</p>
-                              <p><strong>Date:</strong> {new Date(selectedEvent.startTime).toLocaleString()} - {new Date(selectedEvent.endTime).toLocaleTimeString()}</p>
-                              <p><strong>Lieu:</strong> {selectedEvent.location}</p>
-                              <p><strong>Desc:</strong> {selectedEvent.description}</p>
-                              <p className="mt-2 font-bold">Produits:</p>
-                              <ul className="list-disc pl-5 mb-2">
-                                  {newEventProducts.map(p => {
-                                      const item = items.find(i => i.id === p.itemId);
-                                      return <li key={p.itemId} className={!item ? 'text-rose-500 italic' : ''}>{item ? item.name : 'Produit Supprimé'} (x{p.quantity})</li>
-                                  })}
-                              </ul>
-                              <p className="font-bold">Verrerie:</p>
-                              <ul className="list-disc pl-5">
-                                  {newEventGlassware.map(g => {
-                                      const glass = glassware.find(gl => gl.id === g.glasswareId);
-                                      return <li key={g.glasswareId}>{glass?.name || 'Verre Inconnu'} (x{g.quantity})</li>
-                                  })}
-                              </ul>
-                          </div>
-                      )}
-
-                      {/* Comments section */}
-                      {selectedEvent && (
-                          <div className="space-y-2 pt-4 border-t border-slate-100">
-                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fil de discussion</label>
-                              <div className="bg-slate-50 rounded-xl p-3 max-h-32 overflow-y-auto space-y-2">
-                                  {eventComments.filter(c => c.eventId === selectedEvent.id).map(c => (
-                                      <div key={c.id} className="bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
-                                          <p className="text-[9px] font-black text-indigo-600">{c.userName} <span className="text-slate-300 font-normal">• {new Date(c.createdAt).toLocaleDateString()}</span></p>
-                                          <p className="text-xs text-slate-700">{c.content}</p>
-                                      </div>
-                                  ))}
-                                  {eventComments.filter(c => c.eventId === selectedEvent.id).length === 0 && <p className="text-[10px] text-slate-400 italic text-center">Aucun message.</p>}
+                          <div className="space-y-4">
+                              {/* Read-only view for non-admin */}
+                              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Date</p>
+                                  <p className="font-bold text-slate-900">{new Date(newEventStart).toLocaleString()}</p>
                               </div>
-                              <div className="flex gap-2">
-                                  <input className="flex-1 bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold outline-none" placeholder="Ajouter une note..." value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddComment()} />
-                                  <button onClick={handleAddComment} disabled={!newComment.trim()} className="bg-slate-200 text-slate-600 px-3 rounded-xl font-black text-xs hover:bg-indigo-100 hover:text-indigo-600 transition-colors">Envoyer</button>
+                              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Description</p>
+                                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{newEventDesc || '-'}</p>
+                              </div>
+                              {/* Comments Section */}
+                              <div className="border-t border-slate-100 pt-4">
+                                  <h4 className="font-bold text-sm mb-2">Commentaires</h4>
+                                  <div className="space-y-2 max-h-40 overflow-y-auto mb-2">
+                                      {eventComments.filter(c => c.eventId === selectedEvent.id).map(c => (
+                                          <div key={c.id} className="bg-slate-50 p-2 rounded-lg text-xs">
+                                              <span className="font-bold text-indigo-600">{c.userName}: </span>
+                                              <span>{c.content}</span>
+                                          </div>
+                                      ))}
+                                  </div>
+                                  <div className="flex gap-2">
+                                      <input className="flex-1 bg-slate-50 border rounded-lg p-2 text-xs" value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Ajouter une note..." />
+                                      <button onClick={handleAddComment} className="bg-slate-900 text-white px-3 rounded-lg text-xs font-bold">Envoyer</button>
+                                  </div>
                               </div>
                           </div>
                       )}
                   </div>
 
-                  <div className="pt-4 mt-4 border-t border-slate-100 grid grid-cols-1 gap-3 shrink-0">
-                      {(currentUser.role === 'ADMIN' || !selectedEvent) && (
-                          <button onClick={handleCreateEvent} disabled={!newEventTitle || !newEventStart || !newEventEnd} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                              {selectedEvent ? 'Enregistrer Modifications' : 'Créer l\'événement'}
-                          </button>
-                      )}
+                  <div className="mt-6 pt-4 border-t border-slate-100 flex justify-between gap-4 shrink-0">
                       {selectedEvent && currentUser.role === 'ADMIN' && (
-                          <button onClick={handleDeleteEvent} className="w-full bg-white text-rose-500 border border-rose-100 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-rose-50 transition-all">
-                              Supprimer
-                          </button>
+                          <button onClick={handleDeleteEvent} className="px-4 py-3 bg-white border border-rose-200 text-rose-600 rounded-xl font-bold text-xs uppercase hover:bg-rose-50">Supprimer</button>
+                      )}
+                      {(currentUser.role === 'ADMIN' || !selectedEvent) && (
+                          <button onClick={handleCreateEvent} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 shadow-lg">{selectedEvent ? 'Mettre à jour' : 'Créer Événement'}</button>
                       )}
                   </div>
               </div>
@@ -535,140 +519,188 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       )}
 
       {/* TABS */}
-      {/* ... (Tabs JSX unchanged) ... */}
-      <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm w-full md:w-fit mx-auto">
-          <button onClick={() => setActiveTab('TASKS')} className={`flex-1 md:flex-none px-8 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'TASKS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Tâches à faire</button>
-          <button onClick={() => setActiveTab('CALENDAR')} className={`flex-1 md:flex-none px-8 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'CALENDAR' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Agenda Événements</button>
-          <button onClick={() => setActiveTab('COCKTAILS')} className={`flex-1 md:flex-none px-8 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'COCKTAILS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>Carte du Moment</button>
+      <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
+          <button onClick={() => setActiveTab('TASKS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'TASKS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>Tâches</button>
+          <button onClick={() => setActiveTab('CALENDAR')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'CALENDAR' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>Agenda</button>
+          <button onClick={() => setActiveTab('COCKTAILS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'COCKTAILS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>Cocktails du Jour</button>
       </div>
 
-      {activeTab === 'COCKTAILS' && (
-          // ... (Cocktails JSX unchanged) ...
-          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm min-h-[600px] space-y-8 animate-in fade-in slide-in-from-bottom-2">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                  <h3 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2"><span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>Programmation Cocktails</h3>
-                  <div className="flex gap-2"><input type="date" className="bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-slate-700 outline-none" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} /></div>
+      {activeTab === 'TASKS' && (
+          <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                  <h3 className="font-black text-sm uppercase mb-4 flex items-center gap-2"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>À faire</h3>
+                  <div className="flex gap-2 mb-6">
+                      <input className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={newTaskContent} onChange={e => setNewTaskContent(e.target.value)} placeholder="Nouvelle tâche..." onKeyDown={e => e.key === 'Enter' && handleAddTask()} />
+                      <button onClick={handleAddTask} className="bg-slate-900 text-white px-6 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-800">Ajouter</button>
+                  </div>
+                  <div className="space-y-3">
+                      {activeTasks.map(t => (
+                          <div key={t.id} className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 group">
+                              <button onClick={() => handleToggleTask(t)} className="w-6 h-6 rounded-full border-2 border-slate-300 hover:border-emerald-500 transition-colors flex items-center justify-center"></button>
+                              <div className="flex-1">
+                                  <p className="font-bold text-slate-800 text-sm">{t.content}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Par {t.createdBy} • {new Date(t.createdAt).toLocaleDateString()}</p>
+                              </div>
+                              <button onClick={() => handleDeleteTask(t.id)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                          </div>
+                      ))}
+                      {activeTasks.length === 0 && <p className="text-center text-slate-400 italic text-xs">Rien à faire, profitez-en !</p>}
+                  </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 relative group">
-                      <button onClick={() => openCycleModal('OF_THE_DAY')} className="absolute top-4 right-4 bg-white p-2 rounded-lg text-slate-400 hover:text-indigo-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" title="Programmer le cycle"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg></button>
-                      <div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center text-white font-black">1</div><div><h4 className="font-black text-slate-800 uppercase tracking-tight">Cocktail du Jour</h4><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Auto: {getCycleConfig('OF_THE_DAY').isActive ? 'OUI' : 'NON'}</p></div></div>
-                      <select className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none" value={getCalculatedCocktail(selectedDate, 'OF_THE_DAY')?.recipeId || ''} onChange={(e) => handleUpdateCocktail('OF_THE_DAY', e.target.value)}><option value="">-- Sélectionner --</option>{recipes.filter(r => r.category !== 'Mocktail' && r.category !== 'Thalasso').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-                  </div>
-                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 relative group">
-                      <button onClick={() => openCycleModal('MOCKTAIL')} className="absolute top-4 right-4 bg-white p-2 rounded-lg text-slate-400 hover:text-indigo-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" title="Programmer le cycle"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg></button>
-                      <div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center text-white font-black">2</div><div><h4 className="font-black text-slate-800 uppercase tracking-tight">Mocktail du Jour</h4><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Auto: {getCycleConfig('MOCKTAIL').isActive ? 'OUI' : 'NON'}</p></div></div>
-                      <select className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none" value={getCalculatedCocktail(selectedDate, 'MOCKTAIL')?.recipeId || ''} onChange={(e) => handleUpdateCocktail('MOCKTAIL', e.target.value)}><option value="">-- Sélectionner --</option>{recipes.filter(r => r.category === 'Mocktail').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-                  </div>
-                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200">
-                      <div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-indigo-500 rounded-full flex items-center justify-center text-white font-black">3</div><div><h4 className="font-black text-slate-800 uppercase tracking-tight">Cocktail d'Accueil</h4><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Création Libre</p></div></div>
+
+              {doneTasks.length > 0 && (
+                  <div className="opacity-60">
+                      <h3 className="font-black text-xs uppercase mb-4 text-slate-400 ml-4">Terminées récemment</h3>
                       <div className="space-y-2">
-                          <input className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none" placeholder="Nom de la création..." value={getCocktailForType('WELCOME')?.customName || ''} onChange={(e) => handleUpdateCocktail('WELCOME', undefined, e.target.value, getCocktailForType('WELCOME')?.customDescription)} />
-                          <input className="w-full p-3 rounded-xl border border-slate-200 bg-white font-medium text-xs outline-none" placeholder="Brève description / Ingrédients..." value={getCocktailForType('WELCOME')?.customDescription || ''} onChange={(e) => handleUpdateCocktail('WELCOME', undefined, getCocktailForType('WELCOME')?.customName, e.target.value)} />
-                          {recentWelcomes.length > 0 && (<div className="pt-2"><p className="text-[9px] font-black text-indigo-300 uppercase tracking-widest mb-1">Récents :</p><div className="flex flex-wrap gap-2">{recentWelcomes.map(h => (<button key={h.id} onClick={() => handleUpdateCocktail('WELCOME', undefined, h.customName, h.customDescription)} className="bg-white border border-indigo-100 text-indigo-600 px-2 py-1 rounded-lg text-[10px] font-bold hover:bg-indigo-50 transition-colors">{h.customName}</button>))}</div></div>)}
+                          {doneTasks.map(t => (
+                              <div key={t.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-transparent">
+                                  <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
+                                  <p className="font-medium text-slate-500 text-xs line-through flex-1">{t.content}</p>
+                                  <span className="text-[9px] font-bold text-slate-300 uppercase">{t.doneBy}</span>
+                              </div>
+                          ))}
                       </div>
                   </div>
-                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-200 relative group">
-                      <button onClick={() => openCycleModal('THALASSO')} className="absolute top-4 right-4 bg-white p-2 rounded-lg text-slate-400 hover:text-indigo-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" title="Programmer le cycle"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg></button>
-                      <div className="flex items-center gap-3 mb-4"><div className="w-10 h-10 bg-cyan-500 rounded-full flex items-center justify-center text-white font-black">4</div><div><h4 className="font-black text-slate-800 uppercase tracking-tight">Cocktail Thalasso</h4><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Auto: {getCycleConfig('THALASSO').isActive ? 'OUI' : 'NON'}</p></div></div>
-                      <select className="w-full p-3 rounded-xl border border-slate-200 bg-white font-bold text-sm outline-none" value={getCalculatedCocktail(selectedDate, 'THALASSO')?.recipeId || ''} onChange={(e) => handleUpdateCocktail('THALASSO', e.target.value)}><option value="">-- Sélectionner --</option>{recipes.filter(r => r.category === 'Thalasso' || r.category === 'Healthy').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-                  </div>
-              </div>
+              )}
           </div>
       )}
 
-      {activeTab === 'TASKS' && (
-          // ... (Tasks JSX unchanged) ...
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-[600px]">
-                  <h3 className="font-black text-slate-800 uppercase tracking-tight mb-4 flex items-center gap-2"><span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>En cours ({activeTasks.length})</h3>
-                  <div className="flex gap-2 mb-4">
-                      <input type="text" className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" placeholder="Nouvelle tâche..." value={newTaskContent} onChange={e => setNewTaskContent(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddTask()} />
-                      <button onClick={handleAddTask} disabled={!newTaskContent.trim()} className="bg-indigo-600 text-white px-4 rounded-xl font-black text-xs uppercase hover:bg-indigo-700 disabled:opacity-50">+</button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-thin">
-                      {activeTasks.map(task => (
-                          <div key={task.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-start gap-3 group">
-                              <button onClick={() => handleToggleTask(task)} className="mt-1 w-5 h-5 rounded-full border-2 border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-all flex-shrink-0"></button>
-                              <div className="flex-1"><p className="font-bold text-slate-800 text-sm">{task.content}</p><p className="text-[9px] font-bold text-slate-400 mt-1">Ajouté par {task.createdBy} • {new Date(task.createdAt).toLocaleDateString()}</p></div>
-                              {currentUser.role === 'ADMIN' && (<button onClick={() => handleDeleteTask(task.id)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>)}
-                          </div>
-                      ))}
-                      {activeTasks.length === 0 && <p className="text-center text-slate-400 italic text-xs py-10">Rien à faire pour le moment !</p>}
-                  </div>
-              </div>
-              <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 shadow-inner flex flex-col h-[600px]">
-                  <h3 className="font-black text-slate-500 uppercase tracking-tight mb-4 flex items-center gap-2"><span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>Terminées Récemment</h3>
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-thin">
-                      {doneTasks.map(task => (
-                          <div key={task.id} className="bg-white p-3 rounded-xl border border-slate-100 flex items-start gap-3 opacity-60 hover:opacity-100 transition-opacity">
-                              <div className="mt-1 w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                              <div className="flex-1"><p className="font-bold text-slate-600 text-sm line-through">{task.content}</p><p className="text-[9px] font-bold text-slate-400 mt-1">Fait par {task.doneBy} le {new Date(task.doneAt!).toLocaleDateString()}</p></div>
-                          </div>
-                      ))}
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* CALENDAR VIEW */}
       {activeTab === 'CALENDAR' && (
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm min-h-[600px]">
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
               <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                      <span className="w-1.5 h-6 bg-indigo-600 rounded-full"></span>
-                      Prochains Événements
-                  </h3>
-                  {currentUser.role === 'ADMIN' && (
-                      <button onClick={() => openEventModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-lg">+ Créer</button>
-                  )}
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>Événements à venir</h3>
+                  <button onClick={() => openEventModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-lg">+ Créer</button>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {sortedEvents.map(evt => {
-                      const start = new Date(evt.startTime);
-                      const isToday = new Date().toDateString() === start.toDateString();
-                      const status = getEventStatus(evt);
-
+              <div className="space-y-4">
+                  {sortedEvents.filter(e => new Date(e.endTime) >= new Date()).map(e => {
+                      const status = getEventStatus(e);
                       return (
-                          <div key={evt.id} onClick={() => openEventModal(evt)} className={`p-6 rounded-3xl border cursor-pointer hover:shadow-md transition-all group relative overflow-hidden ${isToday ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200'}`}>
-                              {isToday && <div className="absolute top-0 right-0 bg-indigo-500 text-white text-[9px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-widest">Aujourd'hui</div>}
-                              
-                              <div className="mb-4">
-                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{start.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-                                  <h4 className="font-black text-lg text-slate-900 leading-tight mb-2">{evt.title}</h4>
-                                  <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                                      <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                      {start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(evt.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                          <div key={e.id} onClick={() => openEventModal(e)} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all cursor-pointer group">
+                              <div className="flex justify-between items-start">
+                                  <div className="flex gap-4">
+                                      <div className="bg-white rounded-xl p-3 text-center min-w-[60px] shadow-sm border border-slate-100">
+                                          <span className="block text-xs font-black text-indigo-600 uppercase">{new Date(e.startTime).toLocaleString('fr-FR', {month:'short'})}</span>
+                                          <span className="block text-2xl font-black text-slate-800">{new Date(e.startTime).getDate()}</span>
+                                      </div>
+                                      <div>
+                                          <h4 className="font-black text-slate-800 text-base group-hover:text-indigo-700 transition-colors">{e.title}</h4>
+                                          <div className="flex items-center gap-2 mt-1 text-xs font-bold text-slate-500">
+                                              <span>{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(e.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                              <span>•</span>
+                                              <span>{e.location}</span>
+                                              {e.guestsCount ? <span>• {e.guestsCount} pers.</span> : null}
+                                          </div>
+                                          {status && (
+                                              <div className="flex gap-2 mt-2">
+                                                  <span className={`text-[9px] font-black uppercase px-2 py-1 rounded ${status.isOrdered ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>{status.isOrdered ? 'Commandé' : 'À Commander'}</span>
+                                                  <span className={`text-[9px] font-black uppercase px-2 py-1 rounded ${status.isStockOK ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>{status.isStockOK ? 'Stock OK' : 'Stock Insuffisant'}</span>
+                                              </div>
+                                          )}
+                                      </div>
                                   </div>
-                              </div>
-                              
-                              <div className="flex gap-2 mb-3">
-                                  {status?.isOrdered && (
-                                      <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest flex items-center gap-1">
-                                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> Commandé
-                                      </span>
-                                  )}
-                                  {status?.isStockOK && (
-                                      <span className="bg-emerald-100 text-emerald-700 text-[9px] font-black px-2 py-1 rounded uppercase tracking-widest flex items-center gap-1">
-                                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Stock OK
-                                      </span>
-                                  )}
-                              </div>
-
-                              <div className="flex justify-between items-center border-t border-slate-100 pt-4">
-                                  <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                      {evt.location || 'Bar'}
-                                  </div>
-                                  <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                      {evt.guestsCount || '?'} pers.
-                                  </div>
+                                  <div className="text-slate-300 group-hover:text-indigo-400"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></div>
                               </div>
                           </div>
                       );
                   })}
+                  {sortedEvents.filter(e => new Date(e.endTime) >= new Date()).length === 0 && (
+                      <p className="text-center text-slate-400 italic py-10">Aucun événement à venir.</p>
+                  )}
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'COCKTAILS' && (
+          <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-pink-500 rounded-full"></span>Cocktails du Jour</h3>
+                  <input type="date" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 font-bold text-slate-700 outline-none" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {['OF_THE_DAY', 'MOCKTAIL', 'WELCOME', 'THALASSO'].map((typeStr) => {
+                      const type = typeStr as DailyCocktailType;
+                      const cocktail = getCocktailForType(type);
+                      const recipe = recipes.find(r => r.id === cocktail?.recipeId);
+                      const labels: Record<string, string> = { OF_THE_DAY: 'Cocktail du Jour', MOCKTAIL: 'Mocktail', WELCOME: 'Accueil', THALASSO: 'Thalasso' };
+                      
+                      return (
+                          <div key={type} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                              <div className="flex justify-between items-center mb-4">
+                                  <h4 className="font-black text-slate-800 uppercase tracking-tight">{labels[type]}</h4>
+                                  <button onClick={() => openCycleModal(type)} className="text-[10px] font-black uppercase text-indigo-500 hover:underline">Programmation</button>
+                              </div>
+                              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                  {cocktail ? (
+                                      <>
+                                          <p className="font-bold text-slate-900 text-lg mb-1">{cocktail.customName || recipe?.name || 'Non défini'}</p>
+                                          <p className="text-xs text-slate-500 line-clamp-2">{cocktail.customDescription || recipe?.description || 'Pas de description'}</p>
+                                      </>
+                                  ) : <p className="text-slate-400 italic text-sm">Rien de prévu ce jour.</p>}
+                              </div>
+                              <div className="mt-4 pt-4 border-t border-slate-100 flex gap-2">
+                                  <select 
+                                    className="flex-1 bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold outline-none"
+                                    value={cocktail?.recipeId || ''}
+                                    onChange={e => handleUpdateCocktail(type, e.target.value)}
+                                  >
+                                      <option value="">-- Sélectionner Recette --</option>
+                                      {recipes.filter(r => {
+                                          if (type === 'MOCKTAIL') return r.category === 'Mocktail';
+                                          if (type === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
+                                          return true; 
+                                      }).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                  </select>
+                              </div>
+                          </div>
+                      );
+                  })}
+              </div>
+          </div>
+      )}
+
+      {/* CYCLE MODAL */}
+      {isCycleModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-slate-200">
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-4">Programmation Cycle</h3>
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fréquence changement</label>
+                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={cycleFrequency} onChange={e => setCycleFrequency(e.target.value as CycleFrequency)}>
+                              <option value="DAILY">Tous les jours</option>
+                              <option value="2_DAYS">Tous les 2 jours</option>
+                              <option value="MON_FRI">Lun/Ven (Changement Lundi et Vendredi)</option>
+                              <option value="WEEKLY">Hebdomadaire (Tous les 7 jours)</option>
+                              <option value="2_WEEKS">Quinzaine (Tous les 14 jours)</option>
+                          </select>
+                      </div>
+                      <div>
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Date de début (Référence)</label>
+                          <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={cycleStartDate} onChange={e => setCycleStartDate(e.target.value)} />
+                      </div>
+                      <div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={cycleIsActive} onChange={e => setCycleIsActive(e.target.checked)} />
+                              <span className="font-bold text-sm text-slate-800">Activer le cycle automatique</span>
+                          </label>
+                      </div>
+                      <div className="border-t border-slate-100 pt-2">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Sélection des Recettes (Ordre)</label>
+                          <div className="max-h-40 overflow-y-auto space-y-1">
+                              {filteredRecipesForCycle.map(r => (
+                                  <label key={r.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                                      <input type="checkbox" className="rounded text-indigo-600" checked={cycleRecipes.includes(r.id)} onChange={() => toggleCycleRecipe(r.id)} />
+                                      <span className="text-xs font-bold text-slate-700">{r.name}</span>
+                                  </label>
+                              ))}
+                          </div>
+                      </div>
+                  </div>
+                  <div className="flex gap-3 mt-6">
+                      <button onClick={() => setIsCycleModalOpen(false)} className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-200">Annuler</button>
+                      <button onClick={handleSaveCycle} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 shadow-lg">Enregistrer</button>
+                  </div>
               </div>
           </div>
       )}

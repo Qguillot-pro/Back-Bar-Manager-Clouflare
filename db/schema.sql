@@ -34,10 +34,12 @@ ALTER TABLE storage_spaces ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0
 CREATE TABLE IF NOT EXISTS formats (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    value NUMERIC DEFAULT 0
+    value NUMERIC DEFAULT 0,
+    sort_order INTEGER DEFAULT 0
 );
 
 ALTER TABLE formats ADD COLUMN IF NOT EXISTS value NUMERIC DEFAULT 0;
+ALTER TABLE formats ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS categories (
     name TEXT PRIMARY KEY,
@@ -284,8 +286,8 @@ INSERT INTO users (id, name, role, pin) VALUES
 ('b1', 'Barman', 'BARMAN', '0000')
 ON CONFLICT (id) DO UPDATE SET pin = EXCLUDED.pin, role = EXCLUDED.role, name = EXCLUDED.name;
 
-INSERT INTO formats (id, name, value) VALUES 
-('f1', '70cl', 70), ('f2', '75cl', 75), ('f3', '33cl', 33), ('f4', '25cl', 25), ('f5', '1L', 100)
+INSERT INTO formats (id, name, value, sort_order) VALUES 
+('f1', '70cl', 70, 1), ('f2', '75cl', 75, 2), ('f3', '33cl', 33, 3), ('f4', '25cl', 25, 4), ('f5', '1L', 100, 5)
 ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value;
 
 INSERT INTO categories (name, sort_order) VALUES 

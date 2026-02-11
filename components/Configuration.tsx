@@ -199,6 +199,20 @@ const Configuration: React.FC<ConfigProps> = ({
     onSync('DELETE_FORMAT', { id });
   };
 
+  const moveFormat = (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === formats.length - 1) return;
+
+    const newFormats = [...formats];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    [newFormats[index], newFormats[targetIndex]] = [newFormats[targetIndex], newFormats[index]];
+    
+    setFormats(newFormats);
+    // On envoie la liste des IDs dans le nouvel ordre pour mise à jour en DB
+    onSync('REORDER_FORMATS', { formats: newFormats.map(f => f.id) });
+  };
+
   const deleteCategory = (cat: Category) => {
     if (items.some(i => i.category === cat)) {
       setErrorModal("Cette catégorie est utilisée par des articles. Impossible de la supprimer.");
@@ -302,7 +316,7 @@ const Configuration: React.FC<ConfigProps> = ({
 
   const addFormat = () => {
     if (!formatName) return;
-    const newFormat: Format = { id: 'f' + Date.now(), name: formatName, value: formatValue };
+    const newFormat: Format = { id: 'f' + Date.now(), name: formatName, value: formatValue, order: formats.length + 1 };
     setFormats(prev => [...prev, newFormat]);
     onSync('SAVE_FORMAT', newFormat);
     setFormatName('');
@@ -483,7 +497,7 @@ const Configuration: React.FC<ConfigProps> = ({
                 <button onClick={addFormat} className="bg-amber-600 text-white px-6 rounded-2xl font-black uppercase tracking-widest hover:bg-amber-700">OK</button>
               </div>
               <div className="space-y-2">
-                {formats.map(f => f && (<div key={f.id} className="flex items-center justify-between bg-slate-50 px-5 py-3 rounded-2xl border group"><div className="flex gap-2 items-center"><span className="font-black text-[10px] uppercase tracking-widest">{f.name}</span>{f.value ? <span className="bg-indigo-100 text-indigo-600 text-[9px] font-black px-1.5 rounded">{f.value}</span> : null}</div><button onClick={() => deleteFormat(f.id)} className="text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div>))}
+                {formats.map((f, index) => f && (<div key={f.id} className="flex items-center justify-between bg-slate-50 px-5 py-3 rounded-2xl border group"><div className="flex items-center gap-3"><div className="flex flex-col gap-1"><button onClick={() => moveFormat(index, 'up')} disabled={index === 0} className={`p-1 rounded bg-slate-100 hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 ${index === 0 ? 'opacity-20' : ''}`}><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg></button><button onClick={() => moveFormat(index, 'down')} disabled={index === formats.length - 1} className={`p-1 rounded bg-slate-100 hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 ${index === formats.length - 1 ? 'opacity-20' : ''}`}><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg></button></div><div className="flex gap-2 items-center"><span className="font-black text-[10px] uppercase tracking-widest">{f.name}</span>{f.value ? <span className="bg-indigo-100 text-indigo-600 text-[9px] font-black px-1.5 rounded">{f.value}</span> : null}</div></div><button onClick={() => deleteFormat(f.id)} className="text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div>))}
               </div>
             </div>
           </div>

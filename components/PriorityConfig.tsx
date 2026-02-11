@@ -11,6 +11,8 @@ interface PriorityConfigProps {
   onSync?: (action: string, payload: any) => void;
 }
 
+const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 const PriorityConfig: React.FC<PriorityConfigProps> = ({ items, storages, priorities, setPriorities, categories, onSync }) => {
   const [bulkCategory, setBulkCategory] = useState<Category | 'ALL' | 'SELECTED'>('ALL');
   const [bulkStorage, setBulkStorage] = useState<string>(storages.find(s => s.id !== 's0')?.id || storages[0]?.id || '');
@@ -19,7 +21,7 @@ const PriorityConfig: React.FC<PriorityConfigProps> = ({ items, storages, priori
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   const filteredItems = useMemo(() => {
-      return items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      return items.filter(item => normalizeText(item.name).includes(normalizeText(searchTerm)));
   }, [items, searchTerm]);
 
   const toggleSelection = (itemId: string) => {
@@ -147,27 +149,36 @@ const PriorityConfig: React.FC<PriorityConfigProps> = ({ items, storages, priori
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredItems.map(item => (
-                <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${selectedItems.has(item.id) ? 'bg-indigo-50/30' : ''}`}>
-                  <td className="p-4 border-r text-center">
-                      <input type="checkbox" className="w-4 h-4 rounded text-indigo-600 cursor-pointer" checked={selectedItems.has(item.id)} onChange={() => toggleSelection(item.id)} />
-                  </td>
-                  <td className="p-4 sticky left-0 bg-white z-10 border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                      <div className="flex flex-col">
-                          <span className="font-bold text-sm text-slate-900">{item.name}</span>
-                          <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">{item.category}</span>
-                      </div>
-                  </td>
-                  {storages.map(s => {
-                    const currentP = getPriority(item.id, s.id);
-                    return (
-                      <td key={s.id} className="p-4 border-r text-center">
-                        {s.id === 's0' ? <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-[10px] font-black">SURSTOCK</span> : <div className="inline-flex bg-slate-100 p-1 rounded-lg gap-0.5">{[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => <button key={v} onClick={() => updatePriority(item.id, s.id, v)} className={`w-7 h-8 rounded font-bold text-[11px] ${currentP === v ? (v === 0 ? 'bg-slate-800 text-white' : 'bg-indigo-600 text-white') : 'text-slate-400 hover:bg-white'}`}>{v}</button>)}</div>}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {filteredItems.map(item => {
+                // Vérifie si toutes les priorités (hors surstock s0) sont à 0
+                const isAllZero = storages.every(s => {
+                    if (s.id === 's0') return true; 
+                    const prio = priorities.find(p => p.itemId === item.id && p.storageId === s.id)?.priority || 0;
+                    return prio === 0;
+                });
+
+                return (
+                  <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${selectedItems.has(item.id) ? 'bg-indigo-50/30' : (isAllZero ? 'bg-red-50/40' : '')}`}>
+                    <td className="p-4 border-r text-center">
+                        <input type="checkbox" className="w-4 h-4 rounded text-indigo-600 cursor-pointer" checked={selectedItems.has(item.id)} onChange={() => toggleSelection(item.id)} />
+                    </td>
+                    <td className="p-4 sticky left-0 bg-white z-10 border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                        <div className="flex flex-col">
+                            <span className="font-bold text-sm text-slate-900">{item.name}</span>
+                            <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">{item.category}</span>
+                        </div>
+                    </td>
+                    {storages.map(s => {
+                      const currentP = getPriority(item.id, s.id);
+                      return (
+                        <td key={s.id} className="p-4 border-r text-center">
+                          {s.id === 's0' ? <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-[10px] font-black">SURSTOCK</span> : <div className="inline-flex bg-slate-100 p-1 rounded-lg gap-0.5">{[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => <button key={v} onClick={() => updatePriority(item.id, s.id, v)} className={`w-7 h-8 rounded font-bold text-[11px] ${currentP === v ? (v === 0 ? 'bg-slate-800 text-white' : 'bg-indigo-600 text-white') : 'text-slate-400 hover:bg-white'}`}>{v}</button>)}</div>}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

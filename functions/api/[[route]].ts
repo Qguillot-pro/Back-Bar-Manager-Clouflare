@@ -110,7 +110,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             pool.query('SELECT * FROM transactions ORDER BY date DESC'), // PAS DE LIMIT
             pool.query('SELECT * FROM orders ORDER BY date DESC'), // PAS DE LIMIT
             pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM formats'),
+            pool.query('SELECT * FROM formats ORDER BY sort_order ASC'), // ORDER BY ORDER
             pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
             pool.query('SELECT * FROM stock_priorities'),
             pool.query('SELECT * FROM dlc_profiles'),
@@ -130,7 +130,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
         const responseBody = {
             storages: storages.rows.map((s: any) => ({ id: s.id, name: s.name, order: s.sort_order })),
-            formats: formats.rows.map((f: any) => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0') })),
+            formats: formats.rows.map((f: any) => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0'), order: f.sort_order })),
             categories: categories.rows.map((c: any) => c.name),
             dlcProfiles: dlcProfiles.rows.map((p: any) => ({ id: p.id, name: p.name, durationHours: p.duration_hours, type: p.type || 'OPENING' })),
             items: items.rows.map((row: any) => ({
@@ -292,7 +292,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_STORAGE_ORDER': { await pool.query(`UPDATE storage_spaces SET sort_order = $2 WHERE id = $1`, [payload.id, payload.order]); break; }
         case 'DELETE_STORAGE': { await pool.query('DELETE FROM storage_spaces WHERE id = $1', [payload.id]); break; }
         case 'SAVE_FORMAT': {
-            await pool.query(`INSERT INTO formats (id, name, value) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, value = EXCLUDED.value`, [payload.id, payload.name, payload.value]);
+            await pool.query(`INSERT INTO formats (id, name, value, sort_order) VALUES ($1, $2, $3, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM formats)) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, value = EXCLUDED.value`, [payload.id, payload.name, payload.value]);
             break;
         }
         case 'DELETE_FORMAT': { await pool.query('DELETE FROM formats WHERE id = $1', [payload.id]); break; }
@@ -303,6 +303,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'DELETE_CATEGORY': { await pool.query('DELETE FROM categories WHERE name = $1', [payload.name]); break; }
         case 'REORDER_CATEGORIES': {
             for (let i = 0; i < payload.categories.length; i++) await pool.query('UPDATE categories SET sort_order = $1 WHERE name = $2', [i, payload.categories[i]]);
+            break;
+        }
+        case 'REORDER_FORMATS': {
+            for (let i = 0; i < payload.formats.length; i++) await pool.query('UPDATE formats SET sort_order = $1 WHERE id = $2', [i, payload.formats[i]]);
             break;
         }
         case 'SAVE_PRIORITY': {

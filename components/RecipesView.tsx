@@ -15,6 +15,8 @@ interface RecipesViewProps {
   cocktailCategories?: CocktailCategory[];
 }
 
+const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [], cocktailCategories = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
@@ -205,7 +207,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   };
 
   const filteredRecipes = useMemo(() => {
-      return recipes.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+      return recipes.filter(r => normalizeText(r.name).includes(normalizeText(search)));
   }, [recipes, search]);
 
   // --- RENDER ---

@@ -58,7 +58,8 @@ export interface StorageSpace {
 export interface Format {
   id: string;
   name: string;
-  value?: number; 
+  value?: number;
+  order?: number;
 }
 
 export interface StockItem {

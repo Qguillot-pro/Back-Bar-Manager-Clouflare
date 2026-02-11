@@ -11,6 +11,8 @@ interface ConsignesProps {
   onSync?: (action: string, payload: any) => void;
 }
 
+const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, priorities, setConsignes, onSync }) => {
   const [isEditOrderMode, setIsEditOrderMode] = useState(false);
   const [editingValue, setEditingValue] = useState<{key: string, val: string} | null>(null);
@@ -122,8 +124,8 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
   const filteredItems = useMemo(() => {
       if (!searchTerm) return items;
       return items.filter(i => 
-          i.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-          (i.articleCode && i.articleCode.toLowerCase().includes(searchTerm.toLowerCase()))
+          normalizeText(i.name).includes(normalizeText(searchTerm)) || 
+          (i.articleCode && normalizeText(i.articleCode).includes(normalizeText(searchTerm)))
       );
   }, [items, searchTerm]);
 
@@ -211,65 +213,73 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredItems.map(item => (
-              <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
-                <td className="p-6 font-bold text-sm sticky left-0 bg-white z-10 border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)]">{item.name}</td>
-                {visibleStorages.map(s => {
+            {filteredItems.map(item => {
+              // Vérifie si TOUS les stockages affichés sont à 0 pour cet item
+              const isAllZero = visibleStorages.every(s => {
                   const consigne = consignes.find(c => c.itemId === item.id && c.storageId === s.id);
-                  const priority = priorities.find(p => p.itemId === item.id && p.storageId === s.id);
-                  const currentMin = consigne?.minQuantity || 0;
-                  const currentMax = consigne?.maxCapacity || 0;
-                  
-                  const minKey = `${item.id}-${s.id}-min`;
-                  const maxKey = `${item.id}-${s.id}-max`;
-                  
-                  const displayMin = editingValue?.key === minKey ? editingValue.val : currentMin.toString().replace('.', ',');
-                  const displayMax = editingValue?.key === maxKey ? editingValue.val : (currentMax > 0 ? currentMax.toString() : '');
+                  return (consigne?.minQuantity || 0) === 0 && (consigne?.maxCapacity || 0) === 0;
+              });
+
+              return (
+                <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors group ${isAllZero ? 'bg-red-50/40' : ''}`}>
+                  <td className="p-6 font-bold text-sm sticky left-0 bg-white z-10 border-r shadow-[2px_0_5px_rgba(0,0,0,0.02)]">{item.name}</td>
+                  {visibleStorages.map(s => {
+                    const consigne = consignes.find(c => c.itemId === item.id && c.storageId === s.id);
+                    const priority = priorities.find(p => p.itemId === item.id && p.storageId === s.id);
+                    const currentMin = consigne?.minQuantity || 0;
+                    const currentMax = consigne?.maxCapacity || 0;
                     
-                  const priorityVal = priority?.priority ?? 0;
-                  const isZeroPriority = priorityVal === 0 && s.id !== 's0';
-                  
-                  return (
-                    <td key={s.id} className={`p-4 text-center border-r transition-opacity relative ${isEditOrderMode ? 'opacity-40 select-none' : 'opacity-100'} ${s.id === 's0' ? 'bg-amber-50/10' : ''}`}>
-                      <div className="flex justify-center items-center gap-1">
-                        <div className="flex flex-col items-center">
-                            <label className="text-[8px] font-bold text-slate-300 uppercase mb-1">Min</label>
-                            <input 
-                                type="text" 
-                                inputMode="decimal" 
-                                disabled={isEditOrderMode || isZeroPriority} 
-                                className={`w-16 p-3 border border-slate-200 rounded-l-2xl text-center font-black text-lg text-slate-900 outline-none transition-all ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500'}`} 
-                                value={displayMin} 
-                                onChange={e => handleInputChange(item.id, s.id, e.target.value, 'min')}
-                                onBlur={e => handleInputBlur(item.id, s.id, e.target.value, 'min')}
-                                onFocus={e => e.target.select()}
-                            />
+                    const minKey = `${item.id}-${s.id}-min`;
+                    const maxKey = `${item.id}-${s.id}-max`;
+                    
+                    const displayMin = editingValue?.key === minKey ? editingValue.val : currentMin.toString().replace('.', ',');
+                    const displayMax = editingValue?.key === maxKey ? editingValue.val : (currentMax > 0 ? currentMax.toString() : '');
+                      
+                    const priorityVal = priority?.priority ?? 0;
+                    const isZeroPriority = priorityVal === 0 && s.id !== 's0';
+                    
+                    return (
+                      <td key={s.id} className={`p-4 text-center border-r transition-opacity relative ${isEditOrderMode ? 'opacity-40 select-none' : 'opacity-100'} ${s.id === 's0' ? 'bg-amber-50/10' : ''}`}>
+                        <div className="flex justify-center items-center gap-1">
+                          <div className="flex flex-col items-center">
+                              <label className="text-[8px] font-bold text-slate-300 uppercase mb-1">Min</label>
+                              <input 
+                                  type="text" 
+                                  inputMode="decimal" 
+                                  disabled={isEditOrderMode || isZeroPriority} 
+                                  className={`w-16 p-3 border border-slate-200 rounded-l-2xl text-center font-black text-lg text-slate-900 outline-none transition-all ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500'}`} 
+                                  value={displayMin} 
+                                  onChange={e => handleInputChange(item.id, s.id, e.target.value, 'min')}
+                                  onBlur={e => handleInputBlur(item.id, s.id, e.target.value, 'min')}
+                                  onFocus={e => e.target.select()}
+                              />
+                          </div>
+                          <div className="flex flex-col items-center">
+                              <label className="text-[8px] font-bold text-slate-300 uppercase mb-1">Max</label>
+                              <input 
+                                  type="text" 
+                                  inputMode="numeric" 
+                                  disabled={isEditOrderMode || isZeroPriority} 
+                                  placeholder="-"
+                                  className={`w-14 p-3 border-y border-r border-slate-200 rounded-r-2xl text-center font-bold text-sm text-slate-500 outline-none transition-all placeholder-slate-200 ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-white focus:bg-slate-50 focus:ring-4 focus:ring-slate-500/10 focus:border-slate-400'}`} 
+                                  value={displayMax} 
+                                  onChange={e => handleInputChange(item.id, s.id, e.target.value, 'max')}
+                                  onBlur={e => handleInputBlur(item.id, s.id, e.target.value, 'max')}
+                                  onFocus={e => e.target.select()}
+                              />
+                          </div>
                         </div>
-                        <div className="flex flex-col items-center">
-                            <label className="text-[8px] font-bold text-slate-300 uppercase mb-1">Max</label>
-                            <input 
-                                type="text" 
-                                inputMode="numeric" 
-                                disabled={isEditOrderMode || isZeroPriority} 
-                                placeholder="-"
-                                className={`w-14 p-3 border-y border-r border-slate-200 rounded-r-2xl text-center font-bold text-sm text-slate-500 outline-none transition-all placeholder-slate-200 ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-white focus:bg-slate-50 focus:ring-4 focus:ring-slate-500/10 focus:border-slate-400'}`} 
-                                value={displayMax} 
-                                onChange={e => handleInputChange(item.id, s.id, e.target.value, 'max')}
-                                onBlur={e => handleInputBlur(item.id, s.id, e.target.value, 'max')}
-                                onFocus={e => e.target.select()}
-                            />
-                        </div>
-                      </div>
-                      {isZeroPriority && !isEditOrderMode && (
-                        <div className="absolute top-2 right-2 w-4 h-4 bg-slate-300 rounded-full flex items-center justify-center shadow-sm" title="Priorité 0 : Saisie désactivée">
-                            <span className="text-white font-bold text-[10px]">✕</span>
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                        {isZeroPriority && !isEditOrderMode && (
+                          <div className="absolute top-2 right-2 w-4 h-4 bg-slate-300 rounded-full flex items-center justify-center shadow-sm" title="Priorité 0 : Saisie désactivée">
+                              <span className="text-white font-bold text-[10px]">✕</span>
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
             {filteredItems.length === 0 && (
                 <tr>
                     <td colSpan={visibleStorages.length + 1} className="p-8 text-center text-slate-400 italic">Aucun article trouvé.</td>

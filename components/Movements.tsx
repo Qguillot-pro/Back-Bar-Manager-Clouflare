@@ -19,6 +19,8 @@ interface MovementsProps {
   onDlcConsumption?: (itemId: string) => void;
 }
 
+const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [], onUndo, dlcHistory = [], onDlcEntry, onDlcConsumption }) => {
   const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'UNFULFILLED'>('MOVEMENTS');
   
@@ -43,8 +45,8 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [tempItemQty, setTempItemQty] = useState<number>(0);
 
   const handleAction = (type: 'IN' | 'OUT') => {
-    const searchNormalized = search.trim().toLowerCase();
-    const item = items.find(i => i.name.trim().toLowerCase() === searchNormalized);
+    const searchNormalized = normalizeText(search.trim());
+    const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
 
     if (!item) {
         alert(`Produit "${search}" introuvable.\nVeuillez sélectionner un produit existant dans la liste.`);
@@ -187,8 +189,8 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   };
 
   const handleAddUnfulfilled = () => {
-      const searchNormalized = unfulfilledSearch.trim().toLowerCase();
-      const item = items.find(i => i.name.trim().toLowerCase() === searchNormalized);
+      const searchNormalized = normalizeText(unfulfilledSearch.trim());
+      const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
       
       if (item) {
           if (window.confirm(`Déclarer une rupture client pour "${item.name}" (Qté: ${unfulfilledQty}) ?\n\nCela mettra les stocks à jour.`)) {

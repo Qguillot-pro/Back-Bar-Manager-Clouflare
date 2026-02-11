@@ -13,6 +13,8 @@ interface StockTableProps {
 
 type FilterLevel = 'ALL' | 'RUPTURE' | 'LOW' | 'OK';
 
+const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, priorities, onUpdateStock, consignes = [] }) => {
   const [activeTab, setActiveTab] = useState<'GLOBAL' | 'PRODUCT' | 'STORAGE'>('GLOBAL');
   const [filterLevel, setFilterLevel] = useState<FilterLevel>('ALL');
@@ -68,7 +70,7 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
   };
 
   const handleProductSearch = () => {
-      const found = items.find(i => i.name.toLowerCase().includes(productSearch.toLowerCase()));
+      const found = items.find(i => normalizeText(i.name).includes(normalizeText(productSearch)));
       if (found) setSelectedProduct(found);
       else alert("Produit non trouvé");
   };
