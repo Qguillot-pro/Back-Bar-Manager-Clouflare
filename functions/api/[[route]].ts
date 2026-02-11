@@ -40,11 +40,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
-  // Augmentation du timeout à 10s et max connections à 3
+  // Configuration du pool optimisée pour Cloudflare
   const pool = new Pool({ 
     connectionString: env.DATABASE_URL,
-    connectionTimeoutMillis: 10000, 
-    max: 3 
+    connectionTimeoutMillis: 15000, // Timeout allongé à 15s pour être large
+    max: 5 // Augmentation légère des connexions simultanées si possible
   });
 
   try {
@@ -76,6 +76,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         const responseBody = {
             users: users.rows,
             appConfig: configMap,
+            // Renvoi de tableaux vides pour la sécurité du typage front
             items: [], storages: [], stockLevels: [], consignes: [], transactions: [], 
             orders: [], dlcHistory: [], formats: [], categories: [], priorities: [], 
             dlcProfiles: [], unfulfilledOrders: [], messages: [], glassware: [], 
@@ -89,47 +90,42 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
     }
 
-    // --- 3. ROUTE DATA FULL (Optimisée Séquentielle) ---
+    // --- 3. ROUTE DATA FULL (Débridée / Parallèle) ---
     if (request.method === 'GET' && path.includes('/data_sync')) {
         
-        // Bloc 1 : Structure de base (Articles, Catégories, Stockages...)
-        // On attend que ce bloc soit fini avant de lancer la suite
-        const [storages, formats, categories, dlcProfiles, items] = await Promise.all([
+        // Exécution de TOUTES les requêtes en parallèle.
+        // Le driver Postgres (pg/neon) gère la file d'attente interne via le pool.
+        // C'est généralement plus rapide que d'attendre séquentiellement.
+        const [
+            items, storages, stockLevels, consignes, transactions, 
+            orders, dlcHistory, formats, categories, priorities, 
+            dlcProfiles, unfulfilledOrders, messages, glassware, 
+            recipes, techniques, losses, tasks, events, eventComments, 
+            dailyCocktails, cocktailCats, userLogs
+        ] = await Promise.all([
+            pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
             pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
-            pool.query('SELECT * FROM formats'),
-            pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
-            pool.query('SELECT * FROM dlc_profiles'),
-            pool.query('SELECT * FROM items ORDER BY sort_order ASC')
-        ]);
-
-        // Bloc 2 : État des stocks (Lourd si beaucoup d'items)
-        const [stockLevels, consignes, priorities] = await Promise.all([
             pool.query('SELECT * FROM stock_levels'),
             pool.query('SELECT * FROM stock_consignes'),
-            pool.query('SELECT * FROM stock_priorities')
-        ]);
-
-        // Bloc 3 : Historique Récent (Limité)
-        const [transactions, orders, dlcHistory, unfulfilledOrders, messages] = await Promise.all([
-            pool.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 100'),
-            pool.query('SELECT * FROM orders ORDER BY date DESC LIMIT 50'),
-            pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 100'),
-            pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 50'),
-            pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 50')
-        ]);
-
-        // Bloc 4 : Modules Annexes (Bar, Vie Quotidienne)
-        const [glassware, recipes, techniques, cocktailCats, dailyCocktails, losses, tasks, events, comments, logs] = await Promise.all([
+            pool.query('SELECT * FROM transactions ORDER BY date DESC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM orders ORDER BY date DESC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM formats'),
+            pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
+            pool.query('SELECT * FROM stock_priorities'),
+            pool.query('SELECT * FROM dlc_profiles'),
+            pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM messages ORDER BY date DESC'), // PAS DE LIMIT
             pool.query('SELECT * FROM glassware ORDER BY name ASC'),
             pool.query('SELECT * FROM recipes ORDER BY name ASC'),
             pool.query('SELECT * FROM techniques ORDER BY name ASC'),
+            pool.query('SELECT * FROM losses ORDER BY discarded_at DESC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM tasks ORDER BY created_at DESC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM events ORDER BY start_time ASC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM event_comments ORDER BY created_at ASC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM daily_cocktails'), // PAS DE LIMIT
             pool.query('SELECT * FROM cocktail_categories'),
-            pool.query('SELECT * FROM daily_cocktails WHERE date >= NOW() - INTERVAL \'7 days\''),
-            pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 50'),
-            pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 50'),
-            pool.query('SELECT * FROM events ORDER BY start_time ASC LIMIT 30'),
-            pool.query('SELECT * FROM event_comments ORDER BY created_at ASC LIMIT 50'),
-            pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 50')
+            pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC') // PAS DE LIMIT
         ]);
 
         const responseBody = {
@@ -173,10 +169,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             cocktailCategories: cocktailCats.rows.map((c: any) => ({ id: c.id, name: c.name })),
             dailyCocktails: dailyCocktails.rows.map((d: any) => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description })),
             losses: losses.rows.map((l: any) => ({ id: l.id, itemId: l.item_id, openedAt: l.opened_at, discardedAt: l.discarded_at, quantity: parseFloat(l.quantity || '0'), userName: l.user_name })),
-            userLogs: logs.rows.map((l: any) => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
+            userLogs: userLogs.rows.map((l: any) => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
             tasks: tasks.rows.map((t: any) => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at })),
             events: events.rows.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, createdAt: e.created_at })),
-            eventComments: comments.rows.map((c: any) => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }))
+            eventComments: eventComments.rows.map((c: any) => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }))
         };
 
         return new Response(JSON.stringify(responseBody), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
