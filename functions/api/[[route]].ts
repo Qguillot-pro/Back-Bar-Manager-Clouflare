@@ -10,7 +10,7 @@ interface EventContext<Env, P extends string, Data> {
   functionPath: string;
   waitUntil: (promise: Promise<any>) => void;
   passThroughOnException: () => void;
-  next: (input?: Request | string, init?: RequestInit) => Promise<Response>;
+  next: (input?: Request | string, init?: Request | RequestInit) => Promise<Response>;
   env: Env;
   params: Record<P, string | string[]>;
   data: Data;
@@ -40,11 +40,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
-  // Configuration du pool optimisée pour Cloudflare
+  // Configuration du pool optimisée pour éviter les Timeouts
   const pool = new Pool({ 
     connectionString: env.DATABASE_URL,
-    connectionTimeoutMillis: 15000, // Timeout allongé à 15s pour être large
-    max: 5 // Augmentation légère des connexions simultanées si possible
+    connectionTimeoutMillis: 45000, // Augmenté à 45s pour les démarrages à froid
+    idleTimeoutMillis: 45000,
+    max: 20 // Augmenté pour traiter les 23 requêtes parallèles plus vite
   });
 
   try {
@@ -94,8 +95,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     if (request.method === 'GET' && path.includes('/data_sync')) {
         
         // Exécution de TOUTES les requêtes en parallèle.
-        // Le driver Postgres (pg/neon) gère la file d'attente interne via le pool.
-        // C'est généralement plus rapide que d'attendre séquentiellement.
+        // Ajout de LIMIT pour éviter de charger des milliers de lignes inutiles sur l'historique
         const [
             items, storages, stockLevels, consignes, transactions, 
             orders, dlcHistory, formats, categories, priorities, 
@@ -107,25 +107,25 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
             pool.query('SELECT * FROM stock_levels'),
             pool.query('SELECT * FROM stock_consignes'),
-            pool.query('SELECT * FROM transactions ORDER BY date DESC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM orders ORDER BY date DESC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM formats ORDER BY sort_order ASC'), // ORDER BY ORDER
+            pool.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 3000'), // Limité aux 3000 derniers mouvements
+            pool.query('SELECT * FROM orders ORDER BY date DESC LIMIT 1000'), // Limité
+            pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 1000'), 
+            pool.query('SELECT * FROM formats ORDER BY sort_order ASC'), 
             pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
             pool.query('SELECT * FROM stock_priorities'),
             pool.query('SELECT * FROM dlc_profiles'),
-            pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM messages ORDER BY date DESC'), // PAS DE LIMIT
+            pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500'),
+            pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 200'), 
             pool.query('SELECT * FROM glassware ORDER BY name ASC'),
             pool.query('SELECT * FROM recipes ORDER BY name ASC'),
             pool.query('SELECT * FROM techniques ORDER BY name ASC'),
-            pool.query('SELECT * FROM losses ORDER BY discarded_at DESC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM tasks ORDER BY created_at DESC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM events ORDER BY start_time ASC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM event_comments ORDER BY created_at ASC'), // PAS DE LIMIT
-            pool.query('SELECT * FROM daily_cocktails'), // PAS DE LIMIT
+            pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 1000'), 
+            pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200'), 
+            pool.query('SELECT * FROM events ORDER BY start_time ASC LIMIT 200'), 
+            pool.query('SELECT * FROM event_comments ORDER BY created_at ASC LIMIT 500'), 
+            pool.query('SELECT * FROM daily_cocktails ORDER BY date DESC LIMIT 365'), 
             pool.query('SELECT * FROM cocktail_categories'),
-            pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC') // PAS DE LIMIT
+            pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 200') // Logs limités
         ]);
 
         const responseBody = {
