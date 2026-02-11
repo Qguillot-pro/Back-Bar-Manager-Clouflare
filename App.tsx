@@ -188,7 +188,7 @@ const App: React.FC = () => {
       } catch (e) {
           console.error("Échec chargement background", e);
           // On ne passe pas hors ligne, on garde les données locales si dispo
-          // setNotification({ title: 'Attention', message: 'Sync données incomplète', type: 'error' });
+          setNotification({ title: 'Erreur Chargement', message: 'Impossible de récupérer les données (Timeout).', type: 'error' });
       } finally {
           setDataSyncing(false);
       }
@@ -758,7 +758,7 @@ const App: React.FC = () => {
             />
         )}
       </main>
-      {notification && <div className="fixed bottom-6 right-6 bg-white p-4 rounded-xl shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right z-[100]"><span className="font-bold text-sm">{notification.message}</span><button onClick={() => setNotification(null)} className="text-indigo-600 font-black">OK</button></div>}
+      {notification && <div className={`fixed bottom-6 right-6 p-4 rounded-xl shadow-2xl border flex items-center gap-4 animate-in slide-in-from-right z-[100] ${notification.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-white border-slate-100'}`}><span className="font-bold text-sm">{notification.message}</span><button onClick={() => setNotification(null)} className={`font-black ${notification.type === 'error' ? 'text-rose-600' : 'text-indigo-600'}`}>OK</button></div>}
     </div>
   );
 };

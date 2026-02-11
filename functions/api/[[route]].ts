@@ -40,18 +40,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
-  // Utilisation de Pool pour permettre le parallélisme lors du chargement des données
+  // Augmentation du timeout à 10s et max connections à 3
   const pool = new Pool({ 
     connectionString: env.DATABASE_URL,
-    connectionTimeoutMillis: 5000,
-    max: 3 // Limite basse pour éviter "too many clients"
+    connectionTimeoutMillis: 10000, 
+    max: 3 
   });
 
   try {
     const url = new URL(request.url);
     const path = url.pathname; 
 
-    // --- 1. ROUTE PING (Test connexion simple) ---
+    // --- 1. ROUTE PING ---
     if (request.method === 'GET' && path.includes('/ping')) {
         const result = await pool.query('SELECT NOW()');
         return new Response(JSON.stringify({ status: 'ok', time: result.rows[0] }), {
@@ -60,9 +60,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
     }
 
-    // --- 2. ROUTE INIT AUTH (Ultra légère pour débloquer l'écran de login) ---
+    // --- 2. ROUTE INIT AUTH ---
     if (request.method === 'GET' && path.includes('/init')) {
-        // On charge uniquement ce qu'il faut pour se loguer
         const [users, appConfig] = await Promise.all([
             pool.query('SELECT * FROM users'),
             pool.query('SELECT * FROM app_config')
@@ -74,11 +73,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
         });
 
-        // Structure minimale pour passer l'étape de login
         const responseBody = {
             users: users.rows,
             appConfig: configMap,
-            // Tableaux vides pour le reste (chargés ensuite)
             items: [], storages: [], stockLevels: [], consignes: [], transactions: [], 
             orders: [], dlcHistory: [], formats: [], categories: [], priorities: [], 
             dlcProfiles: [], unfulfilledOrders: [], messages: [], glassware: [], 
@@ -92,11 +89,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
     }
 
-    // --- 3. ROUTE DATA FULL (Chargement des données métier) ---
+    // --- 3. ROUTE DATA FULL (Optimisée Séquentielle) ---
     if (request.method === 'GET' && path.includes('/data_sync')) {
         
-        // Exécution en parallèle par blocs pour la rapidité
-        const p1 = Promise.all([
+        // Bloc 1 : Structure de base (Articles, Catégories, Stockages...)
+        // On attend que ce bloc soit fini avant de lancer la suite
+        const [storages, formats, categories, dlcProfiles, items] = await Promise.all([
             pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
             pool.query('SELECT * FROM formats'),
             pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
@@ -104,14 +102,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             pool.query('SELECT * FROM items ORDER BY sort_order ASC')
         ]);
 
-        const p2 = Promise.all([
+        // Bloc 2 : État des stocks (Lourd si beaucoup d'items)
+        const [stockLevels, consignes, priorities] = await Promise.all([
             pool.query('SELECT * FROM stock_levels'),
             pool.query('SELECT * FROM stock_consignes'),
             pool.query('SELECT * FROM stock_priorities')
         ]);
 
-        // Données historiques (Limitées)
-        const p3 = Promise.all([
+        // Bloc 3 : Historique Récent (Limité)
+        const [transactions, orders, dlcHistory, unfulfilledOrders, messages] = await Promise.all([
             pool.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 100'),
             pool.query('SELECT * FROM orders ORDER BY date DESC LIMIT 50'),
             pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 100'),
@@ -119,8 +118,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 50')
         ]);
 
-        // Données Annexes
-        const p4 = Promise.all([
+        // Bloc 4 : Modules Annexes (Bar, Vie Quotidienne)
+        const [glassware, recipes, techniques, cocktailCats, dailyCocktails, losses, tasks, events, comments, logs] = await Promise.all([
             pool.query('SELECT * FROM glassware ORDER BY name ASC'),
             pool.query('SELECT * FROM recipes ORDER BY name ASC'),
             pool.query('SELECT * FROM techniques ORDER BY name ASC'),
@@ -133,15 +132,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 50')
         ]);
 
-        const [r1, r2, r3, r4] = await Promise.all([p1, p2, p3, p4]);
-        
-        const [storages, formats, categories, dlcProfiles, items] = r1;
-        const [stockLevels, consignes, priorities] = r2;
-        const [transactions, orders, dlcHistory, unfulfilledOrders, messages] = r3;
-        const [glassware, recipes, techniques, cocktailCats, dailyCocktails, losses, tasks, events, comments, logs] = r4;
-
         const responseBody = {
-            // MAPPING COMPLET
             storages: storages.rows.map((s: any) => ({ id: s.id, name: s.name, order: s.sort_order })),
             formats: formats.rows.map((f: any) => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0') })),
             categories: categories.rows.map((c: any) => c.name),
