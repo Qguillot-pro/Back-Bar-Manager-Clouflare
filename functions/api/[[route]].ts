@@ -40,12 +40,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
-  // Configuration du pool optimisée pour éviter les Timeouts
+  // Pool Configuration
   const pool = new Pool({ 
     connectionString: env.DATABASE_URL,
-    connectionTimeoutMillis: 10000, // 10s suffisent généralement si le pool n'est pas saturé
-    idleTimeoutMillis: 45000,
-    max: 12 // Limité pour éviter de surcharger les connexions serverless simultanées
+    connectionTimeoutMillis: 20000, // 20s
+    idleTimeoutMillis: 30000,
+    max: 5 // Réduit car nous faisons désormais moins de requêtes parallèles
   });
 
   try {
@@ -91,98 +91,90 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
     }
 
-    // --- 3. ROUTE DATA FULL (Optimisée par Lots / Batching) ---
+    // --- 3. ROUTE DATA FULL (Optimisée : Single Query JSON Aggregation) ---
     if (request.method === 'GET' && path.includes('/data_sync')) {
         
-        // Au lieu de lancer 23 requêtes en même temps (ce qui tue le pool),
-        // on les lance par lots séquentiels (Batch 1, puis Batch 2, puis Batch 3).
+        // REQUÊTE UNIQUE MONOLITHIQUE
+        // On demande à Postgres de construire tout le JSON.
+        // C'est la méthode la plus performante pour éviter les timeouts réseaux.
         
-        // BATCH 1 : Configuration et Structure (Données légères)
-        const batch1 = await Promise.all([
-            pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
-            pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
-            pool.query('SELECT * FROM formats ORDER BY sort_order ASC'),
-            pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
-            pool.query('SELECT * FROM dlc_profiles'),
-            pool.query('SELECT * FROM stock_priorities'),
-            pool.query('SELECT * FROM techniques ORDER BY name ASC'),
-            pool.query('SELECT * FROM cocktail_categories'),
-            pool.query('SELECT * FROM glassware ORDER BY name ASC'),
-            pool.query('SELECT * FROM recipes ORDER BY name ASC')
-        ]);
-        
-        const [items, storages, formats, categories, dlcProfiles, priorities, techniques, cocktailCats, glassware, recipes] = batch1;
+        const bigQuery = `
+            SELECT json_build_object(
+                'items', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM items ORDER BY sort_order) t),
+                'storages', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM storage_spaces ORDER BY sort_order, name) t),
+                'formats', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM formats ORDER BY sort_order) t),
+                'categories', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM categories ORDER BY sort_order) t),
+                'dlcProfiles', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM dlc_profiles) t),
+                'priorities', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM stock_priorities) t),
+                'stockLevels', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM stock_levels) t),
+                'consignes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM stock_consignes) t),
+                'techniques', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM techniques ORDER BY name) t),
+                'cocktailCategories', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM cocktail_categories) t),
+                'glassware', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM glassware ORDER BY name) t),
+                'recipes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM recipes ORDER BY name) t),
+                'transactions', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM transactions ORDER BY date DESC LIMIT 1000) t),
+                'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders ORDER BY date DESC LIMIT 500) t),
+                'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 200) t),
+                'dlcHistory', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 500) t),
+                'messages', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM messages ORDER BY date DESC LIMIT 100) t),
+                'losses', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 500) t),
+                'tasks', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100) t),
+                'events', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM events WHERE start_time >= NOW() - INTERVAL '30 days') t),
+                'eventComments', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM event_comments ORDER BY created_at DESC LIMIT 200) t),
+                'dailyCocktails', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM daily_cocktails ORDER BY date DESC LIMIT 60) t),
+                'userLogs', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 100) t)
+            ) as all_data;
+        `;
 
-        // BATCH 2 : État Actuel (Données opérationnelles)
-        const batch2 = await Promise.all([
-            pool.query('SELECT * FROM stock_levels'),
-            pool.query('SELECT * FROM stock_consignes'),
-            pool.query('SELECT * FROM daily_cocktails ORDER BY date DESC LIMIT 60'),
-            pool.query("SELECT * FROM events WHERE start_time >= NOW() - INTERVAL '30 days'"), // Événements récents ou futurs
-            pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100')
-        ]);
+        const result = await pool.query(bigQuery);
+        const rawData = result.rows[0].all_data;
 
-        const [stockLevels, consignes, dailyCocktails, activeEvents, tasks] = batch2;
-
-        // BATCH 3 : Historique et Logs (Données lourdes avec LIMIT)
-        const batch3 = await Promise.all([
-            pool.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 2000'), // Historique limité pour performance
-            pool.query('SELECT * FROM orders ORDER BY date DESC LIMIT 1000'),
-            pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 200'),
-            pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 500'),
-            pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 100'),
-            pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 500'),
-            pool.query('SELECT * FROM event_comments ORDER BY created_at DESC LIMIT 200'),
-            pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 100')
-        ]);
-
-        const [transactions, orders, unfulfilledOrders, dlcHistory, messages, losses, eventComments, userLogs] = batch3;
-
+        // Mapping pour correspondre aux noms de variables du Frontend (camelCase) vs DB (snake_case)
         const responseBody = {
-            storages: storages.rows.map((s: any) => ({ id: s.id, name: s.name, order: s.sort_order })),
-            formats: formats.rows.map((f: any) => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0'), order: f.sort_order })),
-            categories: categories.rows.map((c: any) => c.name),
-            dlcProfiles: dlcProfiles.rows.map((p: any) => ({ id: p.id, name: p.name, durationHours: p.duration_hours, type: p.type || 'OPENING' })),
-            items: items.rows.map((row: any) => ({
+            storages: rawData.storages.map((s: any) => ({ id: s.id, name: s.name, order: s.sort_order })),
+            formats: rawData.formats.map((f: any) => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0'), order: f.sort_order })),
+            categories: rawData.categories.map((c: any) => c.name),
+            dlcProfiles: rawData.dlcProfiles.map((p: any) => ({ id: p.id, name: p.name, durationHours: p.duration_hours, type: p.type || 'OPENING' })),
+            items: rawData.items.map((row: any) => ({
                 id: row.id, articleCode: row.article_code, name: row.name, category: row.category, formatId: row.format_id,
                 pricePerUnit: parseFloat(row.price_per_unit || '0'), lastUpdated: row.last_updated, createdAt: row.created_at,
                 isDLC: row.is_dlc, dlcProfileId: row.dlc_profile_id, isConsigne: row.is_consigne, order: row.sort_order,
                 isDraft: row.is_draft, isTemporary: row.is_temporary, isInventoryOnly: row.is_inventory_only
             })),
-            stockLevels: stockLevels.rows.map((row: any) => ({ itemId: row.item_id, storageId: row.storage_id, currentQuantity: parseFloat(row.quantity || '0') })),
-            consignes: consignes.rows.map((row: any) => ({ 
+            stockLevels: rawData.stockLevels.map((row: any) => ({ itemId: row.item_id, storageId: row.storage_id, currentQuantity: parseFloat(row.quantity || '0') })),
+            consignes: rawData.consignes.map((row: any) => ({ 
                 itemId: row.item_id, storageId: row.storage_id, minQuantity: parseFloat(row.min_quantity || '0'), maxCapacity: row.max_capacity ? parseFloat(row.max_capacity) : undefined 
             })),
-            priorities: priorities.rows.map((p: any) => ({ itemId: p.item_id, storageId: p.storage_id, priority: p.priority })),
-            transactions: transactions.rows.map((t: any) => ({
+            priorities: rawData.priorities.map((p: any) => ({ itemId: p.item_id, storageId: p.storage_id, priority: p.priority })),
+            transactions: rawData.transactions.map((t: any) => ({
                 ...t, itemId: t.item_id, storageId: t.storage_id, quantity: parseFloat(t.quantity || '0'), isCaveTransfer: t.is_cave_transfer, userName: t.user_name
             })),
-            orders: orders.rows.map((row: any) => ({ 
+            orders: rawData.orders.map((row: any) => ({ 
                 id: row.id, itemId: row.item_id, quantity: parseFloat(row.quantity || '0'), initialQuantity: row.initial_quantity ? parseFloat(row.initial_quantity) : null,
                 date: row.date, status: row.status, userName: row.user_name, ruptureDate: row.rupture_date, orderedAt: row.ordered_at, receivedAt: row.received_at
             })),
-            dlcHistory: dlcHistory.rows.map((d: any) => ({...d, itemId: d.item_id, storageId: d.storage_id, openedAt: d.opened_at, userName: d.user_name})),
-            unfulfilledOrders: unfulfilledOrders.rows.map((u: any) => ({ 
+            dlcHistory: rawData.dlcHistory.map((d: any) => ({...d, itemId: d.item_id, storageId: d.storage_id, openedAt: d.opened_at, userName: d.user_name})),
+            unfulfilledOrders: rawData.unfulfilledOrders.map((u: any) => ({ 
                 id: u.id, itemId: u.item_id, date: u.date, userName: u.user_name, quantity: parseFloat(u.quantity || '1') 
             })),
-            messages: messages.rows.map((m: any) => {
+            messages: rawData.messages.map((m: any) => {
                 let readBy: string[] = []; try { if (m.read_by) readBy = JSON.parse(m.read_by); } catch(e) {}
                 return { id: m.id, content: m.content, userName: m.user_name, date: m.date, isArchived: m.is_archived, adminReply: m.admin_reply, replyDate: m.reply_date, readBy };
             }),
-            glassware: glassware.rows.map((g: any) => ({ id: g.id, name: g.name, capacity: parseFloat(g.capacity || '0'), imageUrl: g.image_url, quantity: g.quantity || 0, lastUpdated: g.last_updated })),
-            recipes: recipes.rows.map((r: any) => ({
+            glassware: rawData.glassware.map((g: any) => ({ id: g.id, name: g.name, capacity: parseFloat(g.capacity || '0'), imageUrl: g.image_url, quantity: g.quantity || 0, lastUpdated: g.last_updated })),
+            recipes: rawData.recipes.map((r: any) => ({
                 id: r.id, name: r.name, category: r.category, glasswareId: r.glassware_id, technique: r.technique, description: r.description,
                 history: r.history, decoration: r.decoration, sellingPrice: parseFloat(r.selling_price || '0'), costPrice: parseFloat(r.cost_price || '0'),
                 status: r.status, createdBy: r.created_by, createdAt: r.created_at, ingredients: r.ingredients
             })),
-            techniques: techniques.rows.map((t: any) => ({ id: t.id, name: t.name })),
-            cocktailCategories: cocktailCats.rows.map((c: any) => ({ id: c.id, name: c.name })),
-            dailyCocktails: dailyCocktails.rows.map((d: any) => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description })),
-            losses: losses.rows.map((l: any) => ({ id: l.id, itemId: l.item_id, openedAt: l.opened_at, discardedAt: l.discarded_at, quantity: parseFloat(l.quantity || '0'), userName: l.user_name })),
-            userLogs: userLogs.rows.map((l: any) => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
-            tasks: tasks.rows.map((t: any) => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at })),
-            events: activeEvents.rows.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, glasswareJson: e.glassware_json, createdAt: e.created_at })),
-            eventComments: eventComments.rows.map((c: any) => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }))
+            techniques: rawData.techniques.map((t: any) => ({ id: t.id, name: t.name })),
+            cocktailCategories: rawData.cocktailCategories.map((c: any) => ({ id: c.id, name: c.name })),
+            dailyCocktails: rawData.dailyCocktails.map((d: any) => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description })),
+            losses: rawData.losses.map((l: any) => ({ id: l.id, itemId: l.item_id, openedAt: l.opened_at, discardedAt: l.discarded_at, quantity: parseFloat(l.quantity || '0'), userName: l.user_name })),
+            userLogs: rawData.userLogs.map((l: any) => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
+            tasks: rawData.tasks.map((t: any) => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at })),
+            events: rawData.events.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, glasswareJson: e.glassware_json, createdAt: e.created_at })),
+            eventComments: rawData.eventComments.map((c: any) => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }))
         };
 
         return new Response(JSON.stringify(responseBody), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
