@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { StockItem, Format, Category, UserRole, DLCProfile } from '../types';
+import { StockItem, Format, Category, UserRole, DLCProfile, Event, Recipe, EventProduct } from '../types';
 
 interface ArticlesListProps {
   items: StockItem[];
@@ -12,9 +12,11 @@ interface ArticlesListProps {
   dlcProfiles?: DLCProfile[];
   onSync: (action: string, payload: any) => void;
   filter?: 'ALL' | 'TEMPORARY';
+  events?: Event[]; // Ajout pour vérification dépendance
+  recipes?: Recipe[]; // Ajout pour vérification dépendance
 }
 
-const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, categories, onDelete, userRole, dlcProfiles = [], onSync, filter = 'ALL' }) => {
+const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, categories, onDelete, userRole, dlcProfiles = [], onSync, filter = 'ALL', events = [], recipes = [] }) => {
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [editingPrice, setEditingPrice] = useState<{ id: string, value: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -87,6 +89,36 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
     // Mise à jour locale et DB
     updateItem(currentItem.id, 'order', newOrderCurrent);
     updateItem(targetItem.id, 'order', newOrderTarget);
+  };
+
+  const handleSafeDelete = (item: StockItem) => {
+      // 1. Check Events
+      const linkedEvents = events.filter(e => {
+          try {
+              const products: EventProduct[] = JSON.parse(e.productsJson || '[]');
+              return products.some(p => p.itemId === item.id);
+          } catch(err) { return false; }
+      });
+
+      // 2. Check Recipes
+      const linkedRecipes = recipes.filter(r => 
+          r.ingredients.some(ing => ing.itemId === item.id)
+      );
+
+      if (linkedEvents.length > 0 || linkedRecipes.length > 0) {
+          let message = `Impossible de supprimer "${item.name}" car il est utilisé dans :\n`;
+          if (linkedEvents.length > 0) {
+              message += `- Événements : ${linkedEvents.map(e => e.title).join(', ')}\n`;
+          }
+          if (linkedRecipes.length > 0) {
+              message += `- Recettes : ${linkedRecipes.map(r => r.name).join(', ')}\n`;
+          }
+          message += "\nVeuillez retirer cet article de ces éléments avant de le supprimer.";
+          alert(message);
+          return;
+      }
+
+      onDelete(item.id);
   };
 
   return (
@@ -260,7 +292,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                       <div className="flex gap-2">
                           <button 
                             type="button"
-                            onClick={() => onDelete(item.id)}
+                            onClick={() => handleSafeDelete(item)}
                             className="bg-rose-500 text-white px-3 py-1.5 rounded-lg font-black text-[9px] uppercase hover:bg-rose-600 shadow-sm transition-all"
                             title="Refuser et Supprimer"
                           >
@@ -282,7 +314,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        onDelete(item.id);
+                        handleSafeDelete(item);
                       }}
                       className="p-3 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-2xl transition-all active:scale-90 cursor-pointer shadow-sm border border-transparent hover:border-rose-100"
                       title={`Supprimer ${item.name}`}

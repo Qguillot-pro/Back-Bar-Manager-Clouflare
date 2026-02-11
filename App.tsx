@@ -759,7 +759,14 @@ const App: React.FC = () => {
         )}
         
         {view === 'restock' && <CaveRestock items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={handleCreateTemporaryItem} orders={orders} currentUser={currentUser} events={events} />}
-        {view === 'articles' && <ArticlesList items={sortedItems} setItems={setItems} formats={formats} categories={categories} userRole={currentUser?.role || 'BARMAN'} onDelete={handleDeleteItem} onSync={syncData} dlcProfiles={dlcProfiles} filter={articlesFilter} />}
+        {view === 'articles' && (
+            <ArticlesList 
+                items={sortedItems} setItems={setItems} formats={formats} categories={categories} 
+                userRole={currentUser?.role || 'BARMAN'} onDelete={handleDeleteItem} onSync={syncData} 
+                dlcProfiles={dlcProfiles} filter={articlesFilter} 
+                events={events} recipes={recipes} // AJOUT DES PROPS POUR PROTECTION
+            />
+        )}
         {view === 'consignes' && <Consignes items={sortedItems} storages={sortedStorages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
         {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={sortedStorages} onDelete={handleDeleteDlcHistory} />}
         
