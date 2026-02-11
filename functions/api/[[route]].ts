@@ -43,9 +43,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   // Configuration du pool optimisée pour éviter les Timeouts
   const pool = new Pool({ 
     connectionString: env.DATABASE_URL,
-    connectionTimeoutMillis: 45000, // Augmenté à 45s pour les démarrages à froid
+    connectionTimeoutMillis: 10000, // 10s suffisent généralement si le pool n'est pas saturé
     idleTimeoutMillis: 45000,
-    max: 20 // Augmenté pour traiter les 23 requêtes parallèles plus vite
+    max: 12 // Limité pour éviter de surcharger les connexions serverless simultanées
   });
 
   try {
@@ -91,42 +91,52 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
     }
 
-    // --- 3. ROUTE DATA FULL (Débridée / Parallèle) ---
+    // --- 3. ROUTE DATA FULL (Optimisée par Lots / Batching) ---
     if (request.method === 'GET' && path.includes('/data_sync')) {
         
-        // Exécution de TOUTES les requêtes en parallèle.
-        // Ajout de LIMIT pour éviter de charger des milliers de lignes inutiles sur l'historique
-        const [
-            items, storages, stockLevels, consignes, transactions, 
-            orders, dlcHistory, formats, categories, priorities, 
-            dlcProfiles, unfulfilledOrders, messages, glassware, 
-            recipes, techniques, losses, tasks, events, eventComments, 
-            dailyCocktails, cocktailCats, userLogs
-        ] = await Promise.all([
+        // Au lieu de lancer 23 requêtes en même temps (ce qui tue le pool),
+        // on les lance par lots séquentiels (Batch 1, puis Batch 2, puis Batch 3).
+        
+        // BATCH 1 : Configuration et Structure (Données légères)
+        const batch1 = await Promise.all([
             pool.query('SELECT * FROM items ORDER BY sort_order ASC'),
             pool.query('SELECT * FROM storage_spaces ORDER BY sort_order ASC, name ASC'),
+            pool.query('SELECT * FROM formats ORDER BY sort_order ASC'),
+            pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
+            pool.query('SELECT * FROM dlc_profiles'),
+            pool.query('SELECT * FROM stock_priorities'),
+            pool.query('SELECT * FROM techniques ORDER BY name ASC'),
+            pool.query('SELECT * FROM cocktail_categories'),
+            pool.query('SELECT * FROM glassware ORDER BY name ASC'),
+            pool.query('SELECT * FROM recipes ORDER BY name ASC')
+        ]);
+        
+        const [items, storages, formats, categories, dlcProfiles, priorities, techniques, cocktailCats, glassware, recipes] = batch1;
+
+        // BATCH 2 : État Actuel (Données opérationnelles)
+        const batch2 = await Promise.all([
             pool.query('SELECT * FROM stock_levels'),
             pool.query('SELECT * FROM stock_consignes'),
-            pool.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 3000'), // Limité aux 3000 derniers mouvements
-            pool.query('SELECT * FROM orders ORDER BY date DESC LIMIT 1000'), // Limité
-            pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 1000'), 
-            pool.query('SELECT * FROM formats ORDER BY sort_order ASC'), 
-            pool.query('SELECT * FROM categories ORDER BY sort_order ASC'),
-            pool.query('SELECT * FROM stock_priorities'),
-            pool.query('SELECT * FROM dlc_profiles'),
-            pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500'),
-            pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 200'), 
-            pool.query('SELECT * FROM glassware ORDER BY name ASC'),
-            pool.query('SELECT * FROM recipes ORDER BY name ASC'),
-            pool.query('SELECT * FROM techniques ORDER BY name ASC'),
-            pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 1000'), 
-            pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200'), 
-            pool.query('SELECT * FROM events ORDER BY start_time ASC LIMIT 200'), 
-            pool.query('SELECT * FROM event_comments ORDER BY created_at ASC LIMIT 500'), 
-            pool.query('SELECT * FROM daily_cocktails ORDER BY date DESC LIMIT 365'), 
-            pool.query('SELECT * FROM cocktail_categories'),
-            pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 200') // Logs limités
+            pool.query('SELECT * FROM daily_cocktails ORDER BY date DESC LIMIT 60'),
+            pool.query("SELECT * FROM events WHERE start_time >= NOW() - INTERVAL '30 days'"), // Événements récents ou futurs
+            pool.query('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100')
         ]);
+
+        const [stockLevels, consignes, dailyCocktails, activeEvents, tasks] = batch2;
+
+        // BATCH 3 : Historique et Logs (Données lourdes avec LIMIT)
+        const batch3 = await Promise.all([
+            pool.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 2000'), // Historique limité pour performance
+            pool.query('SELECT * FROM orders ORDER BY date DESC LIMIT 1000'),
+            pool.query('SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 200'),
+            pool.query('SELECT * FROM dlc_history ORDER BY opened_at DESC LIMIT 500'),
+            pool.query('SELECT * FROM messages ORDER BY date DESC LIMIT 100'),
+            pool.query('SELECT * FROM losses ORDER BY discarded_at DESC LIMIT 500'),
+            pool.query('SELECT * FROM event_comments ORDER BY created_at DESC LIMIT 200'),
+            pool.query('SELECT * FROM user_logs ORDER BY timestamp DESC LIMIT 100')
+        ]);
+
+        const [transactions, orders, unfulfilledOrders, dlcHistory, messages, losses, eventComments, userLogs] = batch3;
 
         const responseBody = {
             storages: storages.rows.map((s: any) => ({ id: s.id, name: s.name, order: s.sort_order })),
@@ -171,7 +181,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             losses: losses.rows.map((l: any) => ({ id: l.id, itemId: l.item_id, openedAt: l.opened_at, discardedAt: l.discarded_at, quantity: parseFloat(l.quantity || '0'), userName: l.user_name })),
             userLogs: userLogs.rows.map((l: any) => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp })),
             tasks: tasks.rows.map((t: any) => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at })),
-            events: events.rows.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, createdAt: e.created_at })),
+            events: activeEvents.rows.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, glasswareJson: e.glassware_json, createdAt: e.created_at })),
             eventComments: eventComments.rows.map((c: any) => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }))
         };
 
@@ -205,12 +215,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'SAVE_EVENT': {
-            const { id, title, startTime, endTime, location, guestsCount, description, productsJson } = payload;
+            const { id, title, startTime, endTime, location, guestsCount, description, productsJson, glasswareJson } = payload;
             await pool.query(`
-                INSERT INTO events (id, title, start_time, end_time, location, guests_count, description, products_json, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-                ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, location = EXCLUDED.location, guests_count = EXCLUDED.guests_count, description = EXCLUDED.description, products_json = EXCLUDED.products_json
-            `, [id, title, startTime, endTime, location, guestsCount, description, productsJson]);
+                INSERT INTO events (id, title, start_time, end_time, location, guests_count, description, products_json, glassware_json, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, location = EXCLUDED.location, guests_count = EXCLUDED.guests_count, description = EXCLUDED.description, products_json = EXCLUDED.products_json, glassware_json = EXCLUDED.glassware_json
+            `, [id, title, startTime, endTime, location, guestsCount, description, productsJson, glasswareJson]);
             break;
         }
         case 'DELETE_EVENT': {
