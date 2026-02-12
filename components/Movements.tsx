@@ -44,8 +44,8 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [tempItemQty, setTempItemQty] = useState<number>(0);
 
   const handleAction = (type: 'IN' | 'OUT') => {
-    const searchNormalized = normalizeText(search.trim());
-    const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
+    const searchNormalized = normalizeText(search);
+    const item = items.find(i => normalizeText(i.name) === searchNormalized);
 
     if (!item) {
         alert(`Produit "${search}" introuvable.\nVeuillez sélectionner un produit existant dans la liste.`);
@@ -188,8 +188,8 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   };
 
   const handleAddUnfulfilled = () => {
-      const searchNormalized = normalizeText(unfulfilledSearch.trim());
-      const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
+      const searchNormalized = normalizeText(unfulfilledSearch);
+      const item = items.find(i => normalizeText(i.name) === searchNormalized);
       
       if (item) {
           if (window.confirm(`Déclarer une rupture client pour "${item.name}" (Qté: ${unfulfilledQty}) ?\n\nCela mettra les stocks à jour.`)) {
