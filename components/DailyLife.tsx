@@ -357,8 +357,13 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const filteredRecipesForCycle = useMemo(() => {
       return recipes.filter(r => {
           if (cycleType === 'MOCKTAIL') return r.category === 'Mocktail';
-          if (cycleType === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy'; 
-          if (cycleType === 'OF_THE_DAY') return r.category !== 'Mocktail' && r.category !== 'Thalasso' && r.category !== 'Healthy';
+          if (cycleType === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
+          if (cycleType === 'WELCOME') return r.category === 'Accueil' || r.category.toLowerCase().includes('accueil'); 
+          if (cycleType === 'OF_THE_DAY') {
+              // Exclut Mocktail, Thalasso, Healthy, Accueil
+              const cat = r.category.toLowerCase();
+              return !cat.includes('mocktail') && !cat.includes('thalasso') && !cat.includes('healthy') && !cat.includes('accueil');
+          }
           return true;
       });
   }, [recipes, cycleType]);

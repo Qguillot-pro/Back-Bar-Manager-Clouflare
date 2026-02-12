@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { StockItem, StorageSpace, StockLevel, Category, StockConsigne } from '../types';
+import { StockItem, StorageSpace, StockLevel, Category, StockConsigne, Format } from '../types';
 
 interface GlobalInventoryProps {
   items: StockItem[];
@@ -10,9 +10,10 @@ interface GlobalInventoryProps {
   consignes: StockConsigne[];
   onSync: (action: string, payload: any) => void;
   onUpdateStock: (itemId: string, storageId: string, qty: number) => void;
+  formats: Format[];
 }
 
-const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stockLevels, categories, consignes, onSync, onUpdateStock }) => {
+const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stockLevels, categories, consignes, onSync, onUpdateStock, formats = [] }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<Category | 'ALL'>('ALL');
   const [newItemName, setNewItemName] = useState('');
@@ -29,7 +30,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
   const displayedItems = useMemo(() => {
       let filtered = items.filter(i => 
           (filterCategory === 'ALL' || i.category === filterCategory) &&
-          i.name.toLowerCase().includes(searchTerm.toLowerCase())
+          i.name.toLowerCase().includes(searchTerm.trim().toLowerCase())
       );
       
       // Tri par ordre personnalisé
@@ -121,7 +122,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
   };
 
   const handleConfirmExport = () => {
-      let csv = "\uFEFFCatégorie,Produit,Stock Bar,Stock Autre/Resto,Total\n";
+      let csv = "\uFEFFCatégorie,Produit,Format,Stock Bar,Stock Autre/Resto,Total\n";
       
       // Items sorted by global order, filtered by selected categories
       const itemsToExport = items
@@ -132,7 +133,8 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
           const bar = getBarStock(i.id);
           const other = getGlobalStock(i.id);
           const total = bar + other;
-          csv += `"${i.category}","${i.name}","${bar}","${other}","${total}"\n`;
+          const fmt = formats.find(f => f.id === i.formatId)?.name || '';
+          csv += `"${i.category}","${i.name}","${fmt}","${bar}","${other}","${total}"\n`;
       });
       
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -272,6 +274,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                     {displayedItems.map((item, idx) => {
                         const barStock = getBarStock(item.id);
                         const otherStock = getGlobalStock(item.id);
+                        const formatName = formats.find(f => f.id === item.formatId)?.name;
 
                         return (
                             <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
@@ -283,6 +286,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                 </td>
                                 <td className="p-4 font-bold text-sm text-slate-800">
                                     {item.name}
+                                    {formatName && <span className="ml-2 text-slate-400 text-xs font-normal">({formatName})</span>}
                                     {item.isInventoryOnly && <span className="ml-2 bg-indigo-100 text-indigo-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-wider font-black">Hors Bar</span>}
                                 </td>
                                 <td className="p-4 text-xs font-bold text-slate-400 uppercase">{item.category}</td>

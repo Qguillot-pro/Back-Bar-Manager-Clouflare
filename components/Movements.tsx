@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile, DLCHistory } from '../types';
 
@@ -281,49 +280,28 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                     )}
                 </div>
 
-                {/* CONTENT BASED ON STEP */}
-                <div className="space-y-4">
-                    {dlcStep === 'LABEL_CHECK' && (
-                        <>
-                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Étiquetage Requis</h3>
-                            <p className="text-slate-500 font-bold">Merci d'apposer l'étiquette DLC sur :</p>
-                            <p className="text-xl font-black text-indigo-600">{pendingDlcItem.name}</p>
-                            <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl inline-block mt-2">
-                                <p className="text-xs font-black text-amber-600 uppercase tracking-widest">
-                                    DURÉE : {getDlcDurationLabel(pendingDlcItem)}
-                                </p>
-                            </div>
-                        </>
-                    )}
-
-                    {dlcStep === 'USE_OLDEST' && (
-                        <>
-                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Rotation Stock</h3>
-                            <p className="text-slate-500 font-bold">Attention ! Plusieurs lots sont disponibles.</p>
-                            <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl">
-                                <p className="text-sm font-bold text-amber-800">Utilisez le produit qui périme en premier !</p>
-                            </div>
-                            <p className="text-xs text-slate-400">Le stock le plus ancien sera décompté.</p>
-                        </>
-                    )}
-
-                    {dlcStep === 'EMPTY' && (
-                        <>
-                            <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Stock Frais Vide</h3>
-                            <p className="text-slate-500 font-bold">Aucun lot actif trouvé pour ce produit.</p>
-                            <div className="bg-rose-50 border border-rose-100 p-4 rounded-xl">
-                                <p className="text-sm font-bold text-rose-800">Pensez à lancer une production rapidement !</p>
-                            </div>
-                        </>
+                <div className="space-y-2">
+                    <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
+                        {dlcStep === 'EMPTY' ? 'Rupture DLC' : (dlcStep === 'USE_OLDEST' ? 'Rotation Stock' : 'Étiquetage Requis')}
+                    </h3>
+                    <p className="text-slate-500 font-medium leading-relaxed">
+                        {dlcStep === 'EMPTY' && "Plus aucun lot frais disponible. Pensez à lancer une production !"}
+                        {dlcStep === 'USE_OLDEST' && "Des lots sont déjà ouverts/produits. Merci d'utiliser le plus ancien en priorité."}
+                        {dlcStep === 'LABEL_CHECK' && "N'oubliez pas d'étiqueter la bouteille/contenant avec la date du jour."}
+                    </p>
+                    {pendingDlcItem && (
+                        <div className="bg-slate-50 p-3 rounded-xl inline-block mt-2">
+                            <span className="font-bold text-slate-800">{pendingDlcItem.name}</span>
+                            <span className="block text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Durée: {getDlcDurationLabel(pendingDlcItem)}</span>
+                        </div>
                     )}
                 </div>
 
-                {/* ACTIONS */}
-                <div className="flex gap-4 pt-4">
-                    <button onClick={() => setDlcModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">Annuler</button>
-                    <button onClick={finalizeDlcTransaction} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 shadow-xl active:scale-95 transition-all">
-                        {dlcStep === 'EMPTY' ? "J'ai compris" : "Valider"}
+                <div className="grid grid-cols-1 gap-3">
+                    <button onClick={finalizeDlcTransaction} className="w-full py-4 bg-slate-900 text-white rounded-xl font-black uppercase text-sm tracking-widest hover:bg-slate-800 shadow-lg active:scale-95 transition-all">
+                        Confirmer & Continuer
                     </button>
+                    <button onClick={() => setDlcModalOpen(false)} className="text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-slate-600">Annuler</button>
                 </div>
             </div>
         </div>
@@ -334,200 +312,174 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
             <div className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl border border-slate-200 text-center space-y-8 relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
-                <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                    <svg className="w-10 h-10 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
+                <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 bg-blue-100 text-blue-600">
+                    <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </div>
                 <div className="space-y-2">
-                    <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Bouteille Consignée</h3>
-                    <p className="text-slate-500 font-bold">Ne pas jeter ! Merci de placer la bouteille dans le bac de recyclage :</p>
-                    <p className="text-xl font-black text-blue-600">{pendingConsigneItem.name}</p>
+                    <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Consigne</h3>
+                    <p className="text-slate-500 font-medium leading-relaxed">
+                        Cet article est consigné. Veuillez placer la bouteille vide dans le bac de recyclage approprié.
+                    </p>
+                    <div className="bg-slate-50 p-3 rounded-xl inline-block mt-2">
+                        <span className="font-bold text-slate-800">{pendingConsigneItem.name}</span>
+                    </div>
                 </div>
-                <div className="flex gap-4 pt-4">
-                    <button onClick={() => setConsigneModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">Annuler</button>
-                    <button onClick={confirmConsigneAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-600 shadow-xl shadow-blue-200 transition-all active:scale-95">
-                        Valider
-                    </button>
-                </div>
+                <button onClick={confirmConsigneAction} className="w-full py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-sm tracking-widest hover:bg-blue-700 shadow-lg active:scale-95 transition-all">
+                    C'est fait
+                </button>
             </div>
         </div>
       )}
 
-      {/* PRODUIT NON PREVU MODAL */}
+      {/* TEMP ITEM MODAL */}
       {isTempItemModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500"></div>
                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Produit Non Prévu</h3>
-                  <p className="text-slate-500 text-xs font-bold">Création rapide d'un article temporaire en Surstock.</p>
-
                   <div className="space-y-4">
-                      <div className="text-left space-y-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du produit</label>
-                          <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none focus:border-amber-500 transition-colors" value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} placeholder="Ex: Vin Spécial..." autoFocus />
-                      </div>
-                      <div className="text-left space-y-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Consigne Surstock (Objectif)</label>
-                          <input type="number" step="1" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none focus:border-amber-500 transition-colors text-center" value={tempItemQty} onChange={(e) => setTempItemQty(parseInt(e.target.value) || 0)} />
-                          <p className="text-[9px] text-slate-400 italic">Si &gt; 0, l'article apparaîtra dans la liste des besoins (Stock actuel: 0).</p>
-                      </div>
+                      <div className="text-left space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du produit</label><input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none" value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} autoFocus /></div>
+                      <div className="text-left space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Consigne Surstock</label><input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none text-center" value={tempItemQty} onChange={(e) => setTempItemQty(parseInt(e.target.value) || 0)} /></div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-3 pt-2">
                       <button onClick={() => setIsTempItemModalOpen(false)} className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all">Annuler</button>
-                      <button onClick={handleCreateTempItem} disabled={!tempItemName} className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-amber-200 active:scale-95 transition-all disabled:opacity-50">Créer</button>
+                      <button onClick={handleCreateTempItem} disabled={!tempItemName} className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-amber-200 active:scale-95 transition-all">Créer</button>
                   </div>
               </div>
           </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex bg-slate-200 p-1 rounded-2xl">
-          <button onClick={() => setActiveTab('MOVEMENTS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Mouvements Standards</button>
-          <button onClick={() => setActiveTab('UNFULFILLED')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'UNFULFILLED' ? 'bg-white text-rose-500 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Commandes non-honorées</button>
+      {/* HEADER TABS */}
+      <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex gap-2">
+          <button onClick={() => setActiveTab('MOVEMENTS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>Mouvements Stock</button>
+          <button onClick={() => setActiveTab('UNFULFILLED')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'UNFULFILLED' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>Ruptures Client</button>
       </div>
 
       {activeTab === 'MOVEMENTS' && (
-        <>
-            <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-sm font-black uppercase flex items-center gap-2">
-                        <span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>
-                        Nouveau Mouvement
-                    </h2>
-                    <div className="flex gap-2">
+          <div className="animate-in fade-in slide-in-from-bottom-2 space-y-6">
+              
+              {/* ACTION AREA */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                  <div className="flex gap-4">
+                      <div className="flex-1 space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit</label>
+                          <input 
+                            list="movement-items"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                            placeholder="Rechercher..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                          />
+                          <datalist id="movement-items">
+                              {items.map(i => <option key={i.id} value={i.name} />)}
+                          </datalist>
+                      </div>
+                      <div className="w-24 space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Qté</label>
+                          <input 
+                            type="text" 
+                            inputMode="decimal"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-center text-slate-900 outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                            value={qty}
+                            onChange={(e) => setQty(e.target.value)}
+                            onFocus={(e) => e.target.select()}
+                          />
+                      </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                      <button onClick={() => handleAction('IN')} className="bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-100 active:scale-95 transition-all">Entrée (+)</button>
+                      <button onClick={() => handleAction('OUT')} className="bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95 transition-all">Sortie (-)</button>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2">
+                        <button onClick={() => setIsTempItemModalOpen(true)} className="text-[9px] font-black text-amber-500 uppercase tracking-widest hover:text-amber-600 flex items-center gap-1"><span className="w-4 h-4 bg-amber-100 rounded flex items-center justify-center">+</span> Produit non prévu</button>
                         {onUndo && (
-                            <button onClick={onUndo} className="bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg font-black text-[9px] uppercase hover:bg-slate-200 transition-colors flex items-center gap-1 border border-slate-200">
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
-                                Annuler
+                            <button onClick={onUndo} className="text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg> Annuler dernier
                             </button>
                         )}
-                        {onCreateTemporaryItem && (
-                            <button onClick={() => setIsTempItemModalOpen(true)} className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg font-black text-[9px] uppercase hover:bg-amber-100 transition-colors flex items-center gap-1 border border-amber-100">
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                Produit non prévu
-                            </button>
-                        )}
-                    </div>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="md:col-span-2 space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit</label>
-                    <input list="items-list" className="w-full bg-slate-50 p-3 border rounded-xl outline-none font-bold" placeholder="Rechercher produit..." value={search} onChange={e => setSearch(e.target.value)} />
-                    <datalist id="items-list">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantité</label>
-                    <input type="text" inputMode="decimal" className="w-full bg-slate-50 p-3 border rounded-xl outline-none font-bold text-center" value={qty} onChange={e => { if (/^[0-9]*[.,]?[0-9]*$/.test(e.target.value)) setQty(e.target.value); }} />
-                </div>
-                </div>
+                  </div>
+              </div>
 
-                <div className="flex gap-4">
-                <button className="flex-[2] bg-rose-500 text-white py-6 rounded-xl font-black uppercase text-base hover:bg-rose-600 transition-all shadow-lg shadow-rose-100 active:scale-95" onClick={() => handleAction('OUT')}>
-                    Sortie (-)
-                </button>
-                <button className="flex-1 bg-emerald-500 text-white py-6 rounded-xl font-black uppercase text-xs hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-100 active:scale-95" onClick={() => handleAction('IN')}>
-                    Entrée (+)
-                </button>
-                </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="p-4 bg-slate-50 border-b">
-                    <h3 className="font-black text-slate-800 uppercase tracking-tight text-[10px]">Historique récent (Regroupé)</h3>
-                </div>
-                <div className="max-h-80 overflow-y-auto">
-                <table className="w-full text-left">
-                    <thead className="bg-white text-[9px] uppercase text-slate-400 font-black tracking-widest border-b">
-                    <tr>
-                        <th className="p-4">Date</th>
-                        <th className="p-4">Utilisateur</th>
-                        <th className="p-4">Produit</th>
-                        <th className="p-4 text-right">Qté</th>
-                    </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                    {groupedTransactions.map((t, idx) => {
-                        const item = items.find(i => i.id === t.itemId);
-                        const storageNames = Array.from(t.storageNames).join(' / ');
-                        return (
-                        <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50">
-                            <td className="p-4 text-[10px] text-slate-400">{new Date(t.date).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
-                            <td className="p-4"><span className="text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase tracking-wider">{t.userName || 'Inconnu'}</span></td>
-                            <td className="p-4">
-                                <div className="flex flex-col">
-                                    <span className="font-bold text-sm flex items-center gap-2">
-                                        {item?.name || 'Inconnu'}
-                                        {item?.isTemporary && <span className="bg-amber-500 text-white text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest">TEMP</span>}
-                                        {item?.isConsigne && <span className="bg-blue-100 text-blue-500 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest font-black" title="Bouteille Consignée">♻</span>}
-                                    </span>
-                                    <span className="text-[9px] text-slate-400 uppercase">({storageNames})</span>
-                                </div>
-                            </td>
-                            <td className={`p-4 font-black text-right ${t.type === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {t.type === 'IN' ? '+' : '-'}{parseFloat(Number(t.quantity).toFixed(2))}
-                            </td>
-                        </tr>
-                        );
-                    })}
-                    </tbody>
-                </table>
-                </div>
-            </div>
-        </>
+              {/* RECENT LIST */}
+              <div className="space-y-3">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 ml-4">Récemment</h3>
+                  {groupedTransactions.map((t, idx) => {
+                      const item = items.find(i => i.id === t.itemId);
+                      return (
+                          <div key={`${t.id}-${idx}`} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
+                              <div>
+                                  <p className="font-bold text-slate-800 text-sm">{item?.name || 'Inconnu'}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                      {new Date(t.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {t.userName} • {Array.from(t.storageNames).join(', ')}
+                                  </p>
+                              </div>
+                              <div className={`px-3 py-1.5 rounded-lg font-black text-xs ${t.type === 'IN' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                                  {t.type === 'IN' ? '+' : '-'}{parseFloat(Number(t.quantity).toFixed(2))}
+                              </div>
+                          </div>
+                      );
+                  })}
+                  {groupedTransactions.length === 0 && <p className="text-center text-slate-400 italic py-4">Aucun mouvement récent.</p>}
+              </div>
+          </div>
       )}
 
       {activeTab === 'UNFULFILLED' && (
-         <>
-            <div className="bg-rose-50 p-6 rounded-2xl border border-rose-100 shadow-sm">
-                <h2 className="text-sm font-black uppercase mb-2 flex items-center gap-2 text-rose-700">
-                <span className="w-1.5 h-4 bg-rose-500 rounded-full"></span>
-                Déclarer une Rupture Client
-                </h2>
-                <p className="text-[10px] text-rose-500 mb-6 font-medium">Ajoute le produit à la liste des manques urgents et met les stocks à 0.</p>
-                
-                <div className="flex gap-2">
-                    <input list="items-list-unfulfilled" className="flex-1 bg-white p-3 border border-rose-200 rounded-xl outline-none font-bold text-rose-900 placeholder-rose-300" placeholder="Produit manquant..." value={unfulfilledSearch} onChange={e => setUnfulfilledSearch(e.target.value)} />
-                    <datalist id="items-list-unfulfilled">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
-                    
-                    <input type="number" min="1" className="w-20 bg-white p-3 border border-rose-200 rounded-xl outline-none font-bold text-rose-900 text-center" value={unfulfilledQty} onChange={e => setUnfulfilledQty(parseInt(e.target.value) || 1)} />
-                    
-                    <button onClick={handleAddUnfulfilled} className="bg-rose-500 text-white px-6 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-rose-600 transition-all shadow-lg shadow-rose-200 active:scale-95">Ajouter</button>
-                </div>
-            </div>
+          <div className="animate-in fade-in slide-in-from-bottom-2 space-y-6">
+              <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100 shadow-sm flex flex-col gap-4">
+                  <div className="flex justify-between items-center">
+                      <h3 className="font-black text-rose-800 uppercase tracking-tight">Déclarer une rupture</h3>
+                      <button onClick={handleExportUnfulfilled} className="text-[9px] font-black text-rose-400 uppercase tracking-widest hover:text-rose-600">Export CSV</button>
+                  </div>
+                  <div className="flex gap-4">
+                      <div className="flex-1 space-y-1">
+                          <label className="text-[9px] font-black text-rose-400 uppercase tracking-widest ml-1">Produit</label>
+                          <input 
+                            list="unfulfilled-items"
+                            className="w-full bg-white border border-rose-200 rounded-2xl p-4 font-bold text-rose-900 outline-none placeholder-rose-300"
+                            placeholder="Rechercher..."
+                            value={unfulfilledSearch}
+                            onChange={(e) => setUnfulfilledSearch(e.target.value)}
+                          />
+                          <datalist id="unfulfilled-items">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
+                      </div>
+                      <div className="w-24 space-y-1">
+                          <label className="text-[9px] font-black text-rose-400 uppercase tracking-widest ml-1">Qté</label>
+                          <input 
+                            type="number" 
+                            min="1"
+                            className="w-full bg-white border border-rose-200 rounded-2xl p-4 font-black text-center text-rose-900 outline-none"
+                            value={unfulfilledQty}
+                            onChange={(e) => setUnfulfilledQty(parseInt(e.target.value) || 1)}
+                          />
+                      </div>
+                  </div>
+                  <button onClick={handleAddUnfulfilled} className="w-full bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-200 active:scale-95 transition-all">Signaler Rupture Client</button>
+              </div>
 
-            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden min-h-[200px] flex flex-col">
-                <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
-                    <h3 className="font-black text-slate-800 uppercase tracking-tight text-[10px]">Historique Ruptures Clients</h3>
-                    <button onClick={handleExportUnfulfilled} disabled={unfulfilledOrders.length === 0} className={`text-[10px] font-black uppercase tracking-widest transition-colors ${unfulfilledOrders.length === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-indigo-600 hover:text-indigo-800 hover:underline'}`}>Exporter CSV</button>
-                </div>
-                <div className="max-h-80 overflow-y-auto flex-1">
-                <table className="w-full text-left">
-                    <thead className="bg-white text-[9px] uppercase text-slate-400 font-black tracking-widest border-b sticky top-0">
-                    <tr><th className="p-4">Date</th><th className="p-4">Heure</th><th className="p-4">Utilisateur</th><th className="p-4">Produit</th><th className="p-4 text-right">Qté</th></tr>
-                    </thead>
-                    <tbody className="divide-y">
-                    {unfulfilledOrders.map((u) => {
-                        const item = items.find(i => i.id === u.itemId);
-                        const d = new Date(u.date);
-                        return (
-                        <tr key={u.id} className="hover:bg-slate-50">
-                            <td className="p-4 text-[10px] font-bold text-slate-600">{d.toLocaleDateString()}</td>
-                            <td className="p-4 text-[10px] font-bold text-slate-400">{d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
-                            <td className="p-4"><span className="text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase tracking-wider">{u.userName || '-'}</span></td>
-                            <td className="p-4"><span className="font-black text-sm text-rose-600">{item?.name || 'Inconnu'}</span></td>
-                            <td className="p-4 text-right font-black text-rose-600">{u.quantity || 1}</td>
-                        </tr>
-                        );
-                    })}
-                    {unfulfilledOrders.length === 0 && (<tr><td colSpan={5} className="p-12 text-center text-slate-400 italic text-sm">Aucune commande non-honorée enregistrée.</td></tr>)}
-                    </tbody>
-                </table>
-                </div>
-            </div>
-         </>
+              <div className="space-y-3">
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 ml-4">Historique Ruptures</h3>
+                  {unfulfilledOrders.slice(0, 20).map(u => {
+                      const item = items.find(i => i.id === u.itemId);
+                      return (
+                          <div key={u.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm opacity-80">
+                              <div>
+                                  <p className="font-bold text-slate-800 text-sm">{item?.name || 'Inconnu'}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                      {new Date(u.date).toLocaleDateString()} {new Date(u.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {u.userName}
+                                  </p>
+                              </div>
+                              <div className="px-3 py-1.5 rounded-lg font-black text-xs bg-slate-100 text-slate-600">
+                                  {u.quantity}
+                              </div>
+                          </div>
+                      );
+                  })}
+                  {unfulfilledOrders.length === 0 && <p className="text-center text-slate-400 italic py-4">Aucune rupture signalée.</p>}
+              </div>
+          </div>
       )}
     </div>
   );

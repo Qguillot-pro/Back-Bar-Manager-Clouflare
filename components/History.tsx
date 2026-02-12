@@ -243,7 +243,7 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
             const item = items.find(i => i.id === t.itemId);
             const d = new Date(t.date);
             const fmt = getFormatName(item?.formatId);
-            csvContent += `"${d.toLocaleDateString()}","${d.toLocaleTimeString()}","${t.userName || '-'}","${item?.name || 'Inconnu'}","${fmt}","${t.type}","${t.quantity}"\n`;
+            csvContent += `"${d.toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})}","${d.toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris'})}","${t.userName || '-'}","${item?.name || 'Inconnu'}","${fmt}","${t.type}","${t.quantity}"\n`;
         });
     } else if (activeTab === 'CLIENT_RUPTURE') {
         filename = `ruptures_clients_${periodFilter}_${new Date().toISOString().slice(0,10)}.csv`;
@@ -252,7 +252,7 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
             const item = items.find(i => i.id === u.itemId);
             const d = new Date(u.date);
             const fmt = getFormatName(item?.formatId);
-            csvContent += `"${d.toLocaleDateString()}","${periodFilter === 'DAY' ? d.toLocaleTimeString() : '-'}","${u.userName || '-'}","${item?.name || 'Inconnu'}","${fmt}","${u.quantity || 1}"\n`;
+            csvContent += `"${d.toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})}","${periodFilter === 'DAY' ? d.toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris'}) : '-'}","${u.userName || '-'}","${item?.name || 'Inconnu'}","${fmt}","${u.quantity || 1}"\n`;
         });
     } else if (activeTab === 'STOCK_RUPTURE') {
         filename = `articles_tension_${periodFilter}_${new Date().toISOString().slice(0,10)}.csv`;
@@ -261,8 +261,8 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
             const item = items.find(i => i.id === o.itemId);
             const isOrdered = o.status === 'ORDERED' && o.orderedAt;
             const dateStr = isOrdered 
-                ? (o.orderedAt ? new Date(o.orderedAt).toLocaleDateString() : '-')
-                : (o.ruptureDate ? new Date(o.ruptureDate).toLocaleDateString() : '-');
+                ? (o.orderedAt ? new Date(o.orderedAt).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'}) : '-')
+                : (o.ruptureDate ? new Date(o.ruptureDate).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'}) : '-');
             const typeStr = isOrdered ? 'Date Commande' : 'Date Rupture';
             
             const fmt = getFormatName(item?.formatId);
@@ -283,8 +283,8 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
         filteredLosses.forEach(l => {
             const item = items.find(i => i.id === l.itemId);
             const d = new Date(l.discardedAt);
-            const openD = l.openedAt ? new Date(l.openedAt).toLocaleDateString() : '-';
-            csvContent += `"${d.toLocaleDateString()}","${d.toLocaleTimeString()}","${openD}","${item?.name || 'Inconnu'}","${l.quantity}","${l.userName || '-'}"\n`;
+            const openD = l.openedAt ? new Date(l.openedAt).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'}) : '-';
+            csvContent += `"${d.toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})}","${d.toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris'})}","${openD}","${item?.name || 'Inconnu'}","${l.quantity}","${l.userName || '-'}"\n`;
         });
     }
 
@@ -395,7 +395,7 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                             return (
                                 <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
                                     <td className="p-4 text-xs font-bold text-slate-600">
-                                        {new Date(t.date).toLocaleDateString()} <span className="text-slate-400 text-[10px]">{new Date(t.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                        {new Date(t.date).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})} <span className="text-slate-400 text-[10px]">{new Date(t.date).toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris', hour:'2-digit', minute:'2-digit'})}</span>
                                     </td>
                                     <td className="p-4 text-xs font-bold text-slate-800">{t.userName || '-'}</td>
                                     <td className="p-4 font-black text-slate-900">{item?.name || 'Inconnu'}</td>
@@ -442,12 +442,12 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                               return (
                                   <tr key={l.id} className="hover:bg-rose-50/10 transition-colors">
                                       <td className="p-4 text-xs font-bold text-slate-600">
-                                          {new Date(l.discardedAt).toLocaleDateString()} <span className="text-slate-400 text-[10px]">{new Date(l.discardedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                          {new Date(l.discardedAt).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})} <span className="text-slate-400 text-[10px]">{new Date(l.discardedAt).toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris', hour:'2-digit', minute:'2-digit'})}</span>
                                       </td>
                                       <td className="p-4 text-xs font-bold text-slate-800">{l.userName || '-'}</td>
                                       <td className="p-4 font-black text-slate-900">{item?.name || 'Inconnu'}</td>
                                       <td className="p-4 text-xs text-slate-500">
-                                          {l.openedAt ? new Date(l.openedAt).toLocaleDateString() : '-'}
+                                          {l.openedAt ? new Date(l.openedAt).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'}) : '-'}
                                       </td>
                                       <td className="p-4 text-right font-black text-rose-600">
                                           {l.quantity}
@@ -487,8 +487,8 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                         const d = new Date(u.date);
                         return (
                         <tr key={u.id} className="hover:bg-slate-50">
-                            <td className="p-4 text-[10px] font-bold text-slate-600">{d.toLocaleDateString()}</td>
-                            {periodFilter === 'DAY' && <td className="p-4 text-[10px] font-bold text-slate-400">{d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>}
+                            <td className="p-4 text-[10px] font-bold text-slate-600">{d.toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})}</td>
+                            {periodFilter === 'DAY' && <td className="p-4 text-[10px] font-bold text-slate-400">{d.toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris', hour:'2-digit', minute:'2-digit'})}</td>}
                             <td className="p-4"><span className="text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase tracking-wider">{u.userName || '-'}</span></td>
                             <td className="p-4"><span className="font-black text-sm text-rose-600">{item?.name || 'Inconnu'}</span></td>
                             <td className="p-4 text-right font-black text-rose-600">{u.quantity || 1}</td>
@@ -530,8 +530,8 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                                           <div className="flex flex-col">
                                               <span className={`text-xs font-bold ${isOrdered ? 'text-indigo-600' : 'text-rose-500'}`}>
                                                   {isOrdered && o.orderedAt 
-                                                    ? new Date(o.orderedAt).toLocaleDateString()
-                                                    : (o.ruptureDate ? new Date(o.ruptureDate).toLocaleDateString() : '-')
+                                                    ? new Date(o.orderedAt).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})
+                                                    : (o.ruptureDate ? new Date(o.ruptureDate).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'}) : '-')
                                                   }
                                               </span>
                                               <span className="text-[9px] text-slate-400 font-bold uppercase">

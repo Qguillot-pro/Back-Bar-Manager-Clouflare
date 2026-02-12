@@ -219,10 +219,6 @@ const App: React.FC = () => {
           const hours = now.getHours();
           const minutes = now.getMinutes();
           
-          // Logic:
-          // 1. From 10:00 to 23:59 -> OK
-          // 2. From 00:00 to 00:30 -> OK
-          
           const isRange1 = hours >= 10; // 10:00 - 23:59
           const isRange2 = hours === 0 && minutes <= 30; // 00:00 - 00:30
 
@@ -751,7 +747,7 @@ const App: React.FC = () => {
         {view === 'dashboard' && (
             <Dashboard 
                 items={sortedItems} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser?.role || 'BARMAN'} transactions={transactions} messages={messages} currentUserName={currentUser.name}
-                events={events} tasks={tasks} dailyCocktails={dailyCocktails} recipes={recipes}
+                events={events} tasks={tasks} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware}
                 onNavigate={(v) => { if (v === 'articles') { setView('articles'); setArticlesFilter('ALL'); } else setView(v as any); }}
                 onSendMessage={handleSendMessage} onArchiveMessage={handleArchiveMessage}
             />
@@ -838,6 +834,7 @@ const App: React.FC = () => {
                 consignes={consignes} 
                 onSync={syncData} 
                 onUpdateStock={handleStockUpdate} 
+                formats={formats}
             />
         )}
       </main>

@@ -206,8 +206,12 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       }
   };
 
+  const handlePrint = () => {
+      window.print();
+  };
+
   const filteredRecipes = useMemo(() => {
-      return recipes.filter(r => normalizeText(r.name).includes(normalizeText(search)));
+      return recipes.filter(r => normalizeText(r.name).includes(normalizeText(search.trim())));
   }, [recipes, search]);
 
   // --- RENDER ---
@@ -417,33 +421,42 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       const glass = glassware.find(g => g.id === selectedRecipe.glasswareId);
       return (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-                  <div className="relative h-32 bg-slate-900 flex items-center justify-center p-6 shrink-0">
+              <style>{`
+                @media print {
+                    @page { margin: 0; size: auto; }
+                    body { background: white; }
+                    .print-hidden { display: none !important; }
+                    .print-visible { display: block !important; position: static !important; width: 100% !important; height: auto !important; overflow: visible !important; }
+                    .modal-content { box-shadow: none; border: none; max-width: none; width: 100%; }
+                }
+              `}</style>
+              <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] modal-content print-visible">
+                  <div className="relative h-32 bg-slate-900 flex items-center justify-center p-6 shrink-0 print:bg-white print:border-b print:border-black">
                       <div className="text-center">
-                          <h2 className="text-3xl font-black text-white uppercase tracking-tighter">{selectedRecipe.name}</h2>
+                          <h2 className="text-3xl font-black text-white uppercase tracking-tighter print:text-black">{selectedRecipe.name}</h2>
                           {selectedRecipe.status === 'VALIDATED' && (
-                              <div className="absolute top-4 right-4 bg-emerald-500 text-white text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-lg">
+                              <div className="absolute top-4 right-4 bg-emerald-500 text-white text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-lg print-hidden">
                                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                                   Vérifié
                               </div>
                           )}
-                          <p className="text-indigo-300 font-bold uppercase tracking-widest text-xs mt-1">{selectedRecipe.category}</p>
+                          <p className="text-indigo-300 font-bold uppercase tracking-widest text-xs mt-1 print:text-slate-600">{selectedRecipe.category}</p>
                       </div>
-                      <button onClick={() => { setViewMode('LIST'); setSelectedRecipe(null); }} className="absolute top-6 right-6 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all">
+                      <button onClick={() => { setViewMode('LIST'); setSelectedRecipe(null); }} className="absolute top-6 right-6 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all print-hidden">
                           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                       </button>
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-8 space-y-8">
                       <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-slate-50 p-4 rounded-2xl">
+                          <div className="bg-slate-50 p-4 rounded-2xl print:border print:border-slate-300">
                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Verrerie</p>
                               <p className="font-bold text-slate-800 flex items-center gap-2">
                                   {glass?.name || 'Standard'}
                                   <span className="text-xs text-slate-400 font-normal">({glass?.capacity}cl)</span>
                               </p>
                           </div>
-                          <div className="bg-slate-50 p-4 rounded-2xl">
+                          <div className="bg-slate-50 p-4 rounded-2xl print:border print:border-slate-300">
                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Technique</p>
                               <p className="font-bold text-slate-800">{selectedRecipe.technique}</p>
                           </div>
@@ -455,7 +468,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                               {selectedRecipe.ingredients.map((ing, i) => (
                                   <li key={i} className="flex justify-between items-center text-sm font-bold text-slate-700">
                                       <span>{ing.itemId ? items.find(it => it.id === ing.itemId)?.name : ing.tempName}</span>
-                                      <span className="bg-slate-100 px-2 py-1 rounded text-slate-900">{ing.quantity} {ing.unit}</span>
+                                      <span className="bg-slate-100 px-2 py-1 rounded text-slate-900 print:bg-transparent print:border print:border-slate-300">{ing.quantity} {ing.unit}</span>
                                   </li>
                               ))}
                           </ul>
@@ -464,20 +477,24 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           )}
                       </div>
 
-                      <div className="bg-indigo-50 p-6 rounded-2xl text-indigo-900 text-sm leading-relaxed border border-indigo-100">
+                      <div className="bg-indigo-50 p-6 rounded-2xl text-indigo-900 text-sm leading-relaxed border border-indigo-100 print:bg-white print:border-slate-300 print:text-black">
                           <p className="font-bold mb-2">💡 Histoire & Description</p>
                           <p className="mb-2">{selectedRecipe.description}</p>
                           <p className="italic opacity-70 text-xs">{selectedRecipe.history}</p>
                       </div>
                   </div>
 
-                  <div className="p-6 border-t bg-slate-50 flex justify-between items-center shrink-0">
+                  <div className="p-6 border-t bg-slate-50 flex justify-between items-center shrink-0 print-hidden">
                       <div className="flex flex-col">
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Prix Vente</span>
                           <span className="text-2xl font-black text-slate-900">{selectedRecipe.sellingPrice?.toFixed(2)} €</span>
                       </div>
                       
                       <div className="flex gap-2">
+                          <button onClick={handlePrint} className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-700 flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                              Imprimer
+                          </button>
                           {currentUser.role === 'ADMIN' && (
                               <>
                                 <button onClick={() => handleDelete(selectedRecipe.id)} className="px-4 py-2 bg-white border border-rose-200 text-rose-600 rounded-xl font-bold text-xs uppercase hover:bg-rose-50">Supprimer</button>

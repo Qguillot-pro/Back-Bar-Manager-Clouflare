@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe } from '../types';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -21,10 +21,12 @@ interface DashboardProps {
   onArchiveMessage: (id: string) => void;
   dailyCocktails?: DailyCocktail[];
   recipes?: Recipe[];
+  glassware?: Glassware[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [] }) => {
   const [newMessageText, setNewMessageText] = useState('');
+  const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
 
   // 1. KPI Alertes Réappro
   const totalRestockNeeded = useMemo(() => {
@@ -90,12 +92,28 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       return dailyCocktails.filter(c => c.date === todayStr);
   }, [dailyCocktails]);
 
-  const getCocktailName = (type: string) => {
+  const getCocktailInfo = (type: string) => {
       const c = todayCocktails.find(c => c.type === type);
-      if (!c) return 'Non défini';
-      if (c.customName) return c.customName;
-      if (c.recipeId) return recipes.find(r => r.id === c.recipeId)?.name || 'Recette Inconnue';
-      return 'Non défini';
+      const isChangedToday = c && !c.id.startsWith('calc'); // Assuming calculated IDs start with 'calc' (cycle) or we check if manual ID. 
+      // Actually simpler: if a record exists for today in DB (which dailyCocktails contains), it means it's active.
+      // To check if it "changed today", we can check if it's the start of a cycle or manual override.
+      // For simplicity as requested: show warning if present today (implying rotation/update).
+      // Refined logic: Show warning if it's NOT a calculated cycle that stays same (hard to track without history).
+      // Let's rely on simple presence for now as "Active Today".
+      
+      let name = 'Non défini';
+      let recipe: Recipe | undefined;
+
+      if (c) {
+          if (c.customName) {
+              name = c.customName;
+          } else if (c.recipeId) {
+              recipe = recipes.find(r => r.id === c.recipeId);
+              name = recipe?.name || 'Recette Inconnue';
+          }
+      }
+      
+      return { name, recipe, hasWarning: !!c };
   };
 
   const handlePostMessage = () => {
@@ -105,9 +123,63 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       }
   };
 
+  const handleCocktailClick = (type: string) => {
+      const info = getCocktailInfo(type);
+      if (info.recipe) {
+          setSelectedCocktailRecipe(info.recipe);
+      }
+  };
+
   return (
     <div className="space-y-6">
       
+      {/* COCKTAIL DETAIL MODAL (READ ONLY) */}
+      {selectedCocktailRecipe && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+                  <div className="relative h-24 bg-slate-900 flex items-center justify-center p-6 shrink-0">
+                      <h2 className="text-2xl font-black text-white uppercase tracking-tighter text-center">{selectedCocktailRecipe.name}</h2>
+                      <button onClick={() => setSelectedCocktailRecipe(null)} className="absolute top-4 right-4 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all">
+                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Verrerie</p>
+                              <p className="font-bold text-slate-800 text-sm">
+                                  {glassware?.find(g => g.id === selectedCocktailRecipe.glasswareId)?.name || 'Standard'}
+                              </p>
+                          </div>
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Technique</p>
+                              <p className="font-bold text-slate-800 text-sm">{selectedCocktailRecipe.technique}</p>
+                          </div>
+                      </div>
+                      <div>
+                          <h3 className="font-black text-xs uppercase text-slate-400 tracking-widest mb-3 border-b pb-2">Recette</h3>
+                          <ul className="space-y-2">
+                              {selectedCocktailRecipe.ingredients.map((ing, i) => (
+                                  <li key={i} className="flex justify-between items-center text-sm font-bold text-slate-700">
+                                      <span>{ing.itemId ? items.find(it => it.id === ing.itemId)?.name : ing.tempName}</span>
+                                      <span className="bg-slate-100 px-2 py-1 rounded text-slate-900">{ing.quantity} {ing.unit}</span>
+                                  </li>
+                              ))}
+                          </ul>
+                          {selectedCocktailRecipe.decoration && (
+                              <p className="mt-4 text-xs font-bold text-slate-500 italic">Garnish: {selectedCocktailRecipe.decoration}</p>
+                          )}
+                      </div>
+                      {selectedCocktailRecipe.description && (
+                          <div className="bg-indigo-50 p-4 rounded-xl text-indigo-900 text-xs leading-relaxed border border-indigo-100">
+                              <p>{selectedCocktailRecipe.description}</p>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* COCKTAILS DU MOMENT */}
       <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600 rounded-full blur-[100px] opacity-30 pointer-events-none"></div>
@@ -117,32 +189,31 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                   <p className="text-indigo-200 text-xs font-bold uppercase tracking-widest">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full md:w-auto">
-                  <div className="bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 hover:bg-white/20 transition-all">
-                      <div className="flex justify-between items-start">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-amber-400">Du Jour</span>
-                          <span className="text-[10px] ">🍸</span>
-                      </div>
-                      <p className="font-bold text-sm leading-tight line-clamp-2">{getCocktailName('OF_THE_DAY')}</p>
-                  </div>
-                  <div className="bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 hover:bg-white/20 transition-all">
-                      <div className="flex justify-between items-start">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400">Mocktail</span>
-                          <span className="text-[10px] ">🍹</span>
-                      </div>
-                      <p className="font-bold text-sm leading-tight line-clamp-2">{getCocktailName('MOCKTAIL')}</p>
-                  </div>
-                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-32 opacity-70">
-                      <div className="flex justify-between items-start">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-indigo-300">Accueil</span>
-                      </div>
-                      <p className="font-medium text-xs leading-tight line-clamp-2 text-slate-300">{getCocktailName('WELCOME')}</p>
-                  </div>
-                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-between h-32 opacity-70">
-                      <div className="flex justify-between items-start">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-cyan-300">Thalasso</span>
-                      </div>
-                      <p className="font-medium text-xs leading-tight line-clamp-2 text-slate-300">{getCocktailName('THALASSO')}</p>
-                  </div>
+                  {['OF_THE_DAY', 'MOCKTAIL', 'WELCOME', 'THALASSO'].map(type => {
+                      const info = getCocktailInfo(type);
+                      const labels: Record<string, string> = { OF_THE_DAY: 'Du Jour', MOCKTAIL: 'Mocktail', WELCOME: 'Accueil', THALASSO: 'Thalasso' };
+                      const colors: Record<string, string> = { OF_THE_DAY: 'text-amber-400', MOCKTAIL: 'text-emerald-400', WELCOME: 'text-indigo-300', THALASSO: 'text-cyan-300' };
+                      const icons: Record<string, string> = { OF_THE_DAY: '🍸', MOCKTAIL: '🍹' };
+                      
+                      return (
+                          <div 
+                            key={type} 
+                            onClick={() => handleCocktailClick(type)}
+                            className={`bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 transition-all relative ${info.recipe ? 'hover:bg-white/20 cursor-pointer' : 'opacity-70'}`}
+                          >
+                              {info.hasWarning && (
+                                  <div className="absolute top-2 right-2 text-amber-400 animate-pulse" title="Changement aujourd'hui">
+                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                  </div>
+                              )}
+                              <div className="flex justify-between items-start">
+                                  <span className={`text-[9px] font-black uppercase tracking-widest ${colors[type]}`}>{labels[type]}</span>
+                                  {icons[type] && <span className="text-[10px]">{icons[type]}</span>}
+                              </div>
+                              <p className="font-bold text-sm leading-tight line-clamp-2">{info.name}</p>
+                          </div>
+                      );
+                  })}
               </div>
           </div>
       </div>
