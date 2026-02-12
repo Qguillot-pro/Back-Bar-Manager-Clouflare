@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile, DLCHistory } from '../types';
 
@@ -44,8 +45,8 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [tempItemQty, setTempItemQty] = useState<number>(0);
 
   const handleAction = (type: 'IN' | 'OUT') => {
-    const searchNormalized = normalizeText(search);
-    const item = items.find(i => normalizeText(i.name) === searchNormalized);
+    const searchNormalized = normalizeText(search.trim());
+    const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
 
     if (!item) {
         alert(`Produit "${search}" introuvable.\nVeuillez sélectionner un produit existant dans la liste.`);
@@ -188,8 +189,8 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   };
 
   const handleAddUnfulfilled = () => {
-      const searchNormalized = normalizeText(unfulfilledSearch);
-      const item = items.find(i => normalizeText(i.name) === searchNormalized);
+      const searchNormalized = normalizeText(unfulfilledSearch.trim());
+      const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
       
       if (item) {
           if (window.confirm(`Déclarer une rupture client pour "${item.name}" (Qté: ${unfulfilledQty}) ?\n\nCela mettra les stocks à jour.`)) {
@@ -387,9 +388,9 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                       </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
-                      <button onClick={() => handleAction('IN')} className="bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-100 active:scale-95 transition-all">Entrée (+)</button>
-                      <button onClick={() => handleAction('OUT')} className="bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95 transition-all">Sortie (-)</button>
+                  <div className="grid grid-cols-3 gap-4">
+                      <button onClick={() => handleAction('IN')} className="col-span-1 bg-emerald-500 hover:bg-emerald-600 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-100 active:scale-95 transition-all text-xs">Entrée (+)</button>
+                      <button onClick={() => handleAction('OUT')} className="col-span-2 bg-rose-500 hover:bg-rose-600 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95 transition-all text-lg">Sortie (-)</button>
                   </div>
 
                   <div className="flex justify-between items-center pt-2">
