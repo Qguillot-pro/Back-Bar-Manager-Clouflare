@@ -76,6 +76,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const [cycleRecipes, setCycleRecipes] = useState<string[]>([]); // Ordered IDs
   const [cycleStartDate, setCycleStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [cycleIsActive, setCycleIsActive] = useState(false);
+  const [recipeToAddId, setRecipeToAddId] = useState<string>(''); // For the dropdown in modal
 
   // Helper for cleaner number inputs
   const cleanNumberInput = (val: string, setFn: (v: string) => void) => {
@@ -294,7 +295,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       return { isOrdered, isStockOK };
   };
 
-  // ... (Cycles logic identical to previous version) ...
+  // ... (Cycles logic FIX) ...
   const getCycleConfig = (type: DailyCocktailType): CycleConfig => {
       if (!appConfig) return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
       const configStr = appConfig[`cycle_${type}`];
@@ -302,31 +303,67 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
   };
 
+  // Helper pour calculer la différence de jours calendaires strictes (Ignore UTC/Fuseau)
+  const getDayDiff = (d1Str: string, d2Str: string) => {
+      // Format attendu: YYYY-MM-DD (partie gauche de l'ISO)
+      const parseDate = (str: string) => {
+          // On coupe au 'T' si présent pour ne garder que la date
+          const cleanStr = str.split('T')[0];
+          const [y, m, d] = cleanStr.split('-').map(Number);
+          // On utilise UTC pour éviter tout décalage d'heure d'été/hiver
+          return Date.UTC(y, m - 1, d);
+      };
+
+      const t1 = parseDate(d1Str);
+      const t2 = parseDate(d2Str);
+      
+      const msPerDay = 1000 * 60 * 60 * 24;
+      return Math.floor((t1 - t2) / msPerDay);
+  };
+
   const getCalculatedCocktail = (dateStr: string, type: DailyCocktailType): DailyCocktail | undefined => {
+      // 1. Vérifier si une entrée manuelle existe (priorité absolue)
       const manualEntry = dailyCocktails.find(c => c.date === dateStr && c.type === type);
       if (manualEntry) return manualEntry;
+
+      // 2. Récupérer la config
       const config = getCycleConfig(type);
       if (!config.isActive || config.recipeIds.length === 0) return undefined;
-      const targetDate = new Date(dateStr);
-      const startDate = new Date(config.startDate);
-      targetDate.setHours(0,0,0,0);
-      startDate.setHours(0,0,0,0);
-      const diffTime = targetDate.getTime() - startDate.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays < 0) return undefined;
+
+      // 3. Calculer l'index via différence de jours STRICTE
+      const diffDays = getDayDiff(dateStr, config.startDate);
+      
+      if (diffDays < 0) return undefined; // Cycle hasn't started yet
+
       let index = 0;
       const listLen = config.recipeIds.length;
+      
+      // Récupération jour semaine pour MON_FRI
+      // On re-parse la date cible en UTC pour avoir le bon jour de semaine (0=Dimanche, 1=Lundi...)
+      const cleanTargetDate = dateStr.split('T')[0];
+      const [y, m, d] = cleanTargetDate.split('-').map(Number);
+      const targetDayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+
       if (config.frequency === 'DAILY') { index = diffDays % listLen; } 
       else if (config.frequency === '2_DAYS') { index = Math.floor(diffDays / 2) % listLen; } 
       else if (config.frequency === 'WEEKLY') { index = Math.floor(diffDays / 7) % listLen; } 
       else if (config.frequency === '2_WEEKS') { index = Math.floor(diffDays / 14) % listLen; } 
       else if (config.frequency === 'MON_FRI') {
+          // Logique pour saut de weekend (Lundi -> Vendredi seulement ?)
+          // Ici on suppose un cycle simple : 
+          // Semaine 1 : Recette A (Lun-Jeu), Recette B (Ven-Dim) ?
+          // Ou juste index basé sur les semaines.
+          // Pour faire simple et robuste : On utilise la logique temporelle simple du modulo
+          // "Changement Lundi et Vendredi" -> 2 slots par semaine
+          
           const weeksPassed = Math.floor(diffDays / 7);
-          const dayOfCurrentWeek = (diffDays % 7 + startDate.getDay()) % 7; 
-          const isSecondSlot = (dayOfCurrentWeek === 5 || dayOfCurrentWeek === 6 || dayOfCurrentWeek === 0);
+          // Si on est Vendredi(5), Samedi(6) ou Dimanche(0), on est dans le 2ème slot de la semaine
+          const isSecondSlot = (targetDayOfWeek === 5 || targetDayOfWeek === 6 || targetDayOfWeek === 0);
+          
           const totalSlotsPassed = weeksPassed * 2 + (isSecondSlot ? 1 : 0);
           index = totalSlotsPassed % listLen;
       }
+      
       return { id: `calc-${dateStr}-${type}`, date: dateStr, type, recipeId: config.recipeIds[index] };
   };
 
@@ -336,22 +373,55 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       const conf = getCycleConfig(type);
       setCycleFrequency(conf.frequency);
       setCycleRecipes(conf.recipeIds);
-      setCycleStartDate(conf.startDate.split('T')[0]);
+      
+      // On s'assure d'afficher la date YYYY-MM-DD propre dans l'input
+      const cleanStartDate = conf.startDate.split('T')[0];
+      setCycleStartDate(cleanStartDate);
+      
       setCycleIsActive(conf.isActive);
+      setRecipeToAddId('');
       setIsCycleModalOpen(true);
   };
 
   const handleSaveCycle = () => {
       if (!saveConfig) return;
-      const config: CycleConfig = { frequency: cycleFrequency, recipeIds: cycleRecipes, startDate: new Date(cycleStartDate).toISOString(), isActive: cycleIsActive };
+      
+      // On sauvegarde juste la date YYYY-MM-DD.
+      // Le système de calcul utilisera cette chaine directement.
+      const config: CycleConfig = { 
+          frequency: cycleFrequency, 
+          recipeIds: cycleRecipes, 
+          startDate: cycleStartDate, // Format YYYY-MM-DD direct
+          isActive: cycleIsActive 
+      };
       saveConfig(`cycle_${cycleType}`, config);
       setIsCycleModalOpen(false);
   };
 
-  const toggleCycleRecipe = (rId: string) => {
-      setCycleRecipes(prev => { if (prev.includes(rId)) return prev.filter(id => id !== rId); return [...prev, rId]; });
+  const addRecipeToCycle = () => {
+      if (!recipeToAddId) return;
+      if (!cycleRecipes.includes(recipeToAddId)) {
+          setCycleRecipes([...cycleRecipes, recipeToAddId]);
+      }
+      setRecipeToAddId('');
   };
 
+  const removeRecipeFromCycle = (index: number) => {
+      const newArr = [...cycleRecipes];
+      newArr.splice(index, 1);
+      setCycleRecipes(newArr);
+  };
+
+  const moveCycleRecipe = (index: number, direction: 'up' | 'down') => {
+      if (direction === 'up' && index === 0) return;
+      if (direction === 'down' && index === cycleRecipes.length - 1) return;
+      const newArr = [...cycleRecipes];
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      [newArr[index], newArr[swapIndex]] = [newArr[swapIndex], newArr[index]];
+      setCycleRecipes(newArr);
+  };
+
+  // Liste des recettes éligibles pour le cycle (filtrée par catégorie configurée)
   const filteredRecipesForCycle = useMemo(() => {
       // Logic with Config Mapping
       const allowedCategories = appConfig?.programMapping?.[cycleType] || [];
@@ -634,23 +704,25 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       const recipe = recipes.find(r => r.id === cocktail?.recipeId);
                       const labels: Record<string, string> = { OF_THE_DAY: 'Cocktail du Jour', MOCKTAIL: 'Mocktail', WELCOME: 'Accueil', THALASSO: 'Thalasso' };
                       const config = getCycleConfig(type);
+                      const isAutoCycle = config.isActive;
                       
                       return (
                           <div key={type} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full">
                               <div className="flex justify-between items-center mb-4">
                                   <div className="flex items-center gap-2">
                                       <h4 className="font-black text-slate-800 uppercase tracking-tight">{labels[type]}</h4>
-                                      {config.isActive && <span title="Cycle Automatique Actif">🔄</span>}
+                                      {isAutoCycle && <span title="Cycle Automatique Actif">🔄</span>}
                                   </div>
                                   <button onClick={() => openCycleModal(type)} className="text-[10px] font-black uppercase text-indigo-500 hover:underline">Programmation</button>
                               </div>
-                              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-4 flex-1">
+                              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-4 flex-1 relative">
                                   {cocktail ? (
                                       <>
                                           <p className="font-bold text-slate-900 text-lg mb-1">{cocktail.customName || recipe?.name || 'Non défini'}</p>
                                           <p className="text-xs text-slate-500 line-clamp-2">{cocktail.customDescription || recipe?.description || 'Pas de description'}</p>
                                       </>
                                   ) : <p className="text-slate-400 italic text-sm">Rien de prévu ce jour.</p>}
+                                  {isAutoCycle && <div className="absolute top-2 right-2 text-indigo-200"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg></div>}
                               </div>
                               
                               <div className="pt-4 border-t border-slate-100">
@@ -658,10 +730,11 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                     <div className="flex flex-col gap-3 w-full">
                                         <input 
                                             type="text"
-                                            className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-pink-100"
+                                            className={`w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-pink-100 ${isAutoCycle ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                                             placeholder="Ingrédients du cocktail d'accueil..."
                                             value={cocktail?.customName || ''}
-                                            onChange={e => handleUpdateCocktail(type, undefined, e.target.value)}
+                                            onChange={e => !isAutoCycle && handleUpdateCocktail(type, undefined, e.target.value)}
+                                            disabled={isAutoCycle}
                                         />
                                         <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-50">
                                             <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-2">Historique (7 jours)</p>
@@ -678,9 +751,10 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                     </div>
                                 ) : (
                                     <select 
-                                        className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none cursor-pointer"
+                                        className={`w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none cursor-pointer ${isAutoCycle ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                                         value={cocktail?.recipeId || ''}
                                         onChange={e => handleUpdateCocktail(type, e.target.value)}
+                                        disabled={isAutoCycle}
                                     >
                                         <option value="">-- Sélectionner Recette --</option>
                                         {filteredRecipesForCycle.filter(r => {
@@ -711,42 +785,78 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       {/* CYCLE MODAL */}
       {isCycleModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-slate-200">
-                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-4">Programmation Cycle</h3>
-                  <div className="space-y-4">
-                      <div>
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fréquence changement</label>
-                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={cycleFrequency} onChange={e => setCycleFrequency(e.target.value as CycleFrequency)}>
-                              <option value="DAILY">Tous les jours</option>
-                              <option value="2_DAYS">Tous les 2 jours</option>
-                              <option value="MON_FRI">Lun/Ven (Changement Lundi et Vendredi)</option>
-                              <option value="WEEKLY">Hebdomadaire (Tous les 7 jours)</option>
-                              <option value="2_WEEKS">Quinzaine (Tous les 14 jours)</option>
-                          </select>
-                      </div>
-                      <div>
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Date de début (Référence)</label>
-                          <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={cycleStartDate} onChange={e => setCycleStartDate(e.target.value)} />
-                      </div>
-                      <div>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={cycleIsActive} onChange={e => setCycleIsActive(e.target.checked)} />
-                              <span className="font-bold text-sm text-slate-800">Activer le cycle automatique</span>
-                          </label>
-                      </div>
-                      <div className="border-t border-slate-100 pt-2">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Sélection des Recettes (Ordre)</label>
-                          <div className="max-h-40 overflow-y-auto space-y-1">
-                              {filteredRecipesForCycle.map(r => (
-                                  <label key={r.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
-                                      <input type="checkbox" className="rounded text-indigo-600" checked={cycleRecipes.includes(r.id)} onChange={() => toggleCycleRecipe(r.id)} />
-                                      <span className="text-xs font-bold text-slate-700">{r.name}</span>
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-2xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-4 flex-shrink-0">Programmation Cycle</h3>
+                  
+                  <div className="overflow-y-auto pr-2 space-y-6 flex-1">
+                      <div className="grid grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                              <div>
+                                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fréquence changement</label>
+                                  <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={cycleFrequency} onChange={e => setCycleFrequency(e.target.value as CycleFrequency)}>
+                                      <option value="DAILY">Tous les jours</option>
+                                      <option value="2_DAYS">Tous les 2 jours</option>
+                                      <option value="MON_FRI">Lun/Ven (Changement Lundi et Vendredi)</option>
+                                      <option value="WEEKLY">Hebdomadaire (Tous les 7 jours)</option>
+                                      <option value="2_WEEKS">Quinzaine (Tous les 14 jours)</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Date de début (Référence)</label>
+                                  <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={cycleStartDate} onChange={e => setCycleStartDate(e.target.value)} />
+                              </div>
+                              <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                      <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={cycleIsActive} onChange={e => setCycleIsActive(e.target.checked)} />
+                                      <span className="font-bold text-sm text-indigo-900">Activer le cycle automatique</span>
                                   </label>
-                              ))}
+                                  <p className="text-[10px] text-indigo-600 mt-1 leading-tight">Ceci désactivera la sélection manuelle sur le tableau de bord pour ce créneau.</p>
+                              </div>
+                          </div>
+
+                          <div className="space-y-2">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Ajouter une Recette</label>
+                              <div className="flex gap-2">
+                                  <select 
+                                      className="flex-1 bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none"
+                                      value={recipeToAddId}
+                                      onChange={(e) => setRecipeToAddId(e.target.value)}
+                                  >
+                                      <option value="">-- Choisir --</option>
+                                      {filteredRecipesForCycle.map(r => (
+                                          <option key={r.id} value={r.id} disabled={cycleRecipes.includes(r.id)}>{r.name}</option>
+                                      ))}
+                                  </select>
+                                  <button onClick={addRecipeToCycle} disabled={!recipeToAddId} className="bg-indigo-600 text-white px-4 rounded-xl font-black text-xs hover:bg-indigo-700 disabled:opacity-50">+</button>
+                              </div>
+                              
+                              <div className="mt-4">
+                                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Séquence du Cycle</label>
+                                  <div className="bg-slate-50 rounded-xl border border-slate-200 max-h-[300px] overflow-y-auto p-2 space-y-1">
+                                      {cycleRecipes.map((id, index) => {
+                                          const recipe = recipes.find(r => r.id === id);
+                                          return (
+                                              <div key={id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 group">
+                                                  <div className="flex items-center gap-3">
+                                                      <span className="text-[10px] font-black text-slate-300 w-4">{index + 1}</span>
+                                                      <span className="text-xs font-bold text-slate-700">{recipe?.name || 'Recette Inconnue'}</span>
+                                                  </div>
+                                                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                      <button onClick={() => moveCycleRecipe(index, 'up')} disabled={index === 0} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 disabled:opacity-30">▲</button>
+                                                      <button onClick={() => moveCycleRecipe(index, 'down')} disabled={index === cycleRecipes.length - 1} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 disabled:opacity-30">▼</button>
+                                                      <button onClick={() => removeRecipeFromCycle(index)} className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-500">✕</button>
+                                                  </div>
+                                              </div>
+                                          );
+                                      })}
+                                      {cycleRecipes.length === 0 && <p className="text-center text-xs text-slate-400 py-4 italic">Aucune recette dans le cycle.</p>}
+                                  </div>
+                              </div>
                           </div>
                       </div>
                   </div>
-                  <div className="flex gap-3 mt-6">
+
+                  <div className="flex gap-3 mt-6 flex-shrink-0">
                       <button onClick={() => setIsCycleModalOpen(false)} className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-200">Annuler</button>
                       <button onClick={handleSaveCycle} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 shadow-lg">Enregistrer</button>
                   </div>
