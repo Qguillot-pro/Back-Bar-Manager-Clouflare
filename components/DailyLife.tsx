@@ -356,7 +356,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 
   const filteredRecipesForCycle = useMemo(() => {
       return recipes.filter(r => {
-          if (cycleType === 'MOCKTAIL') return r.category === 'Mocktail';
+          if (cycleType === 'MOCKTAIL') return r.category === 'Mocktail' || r.category === 'Mocktails du moment';
           if (cycleType === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
           if (cycleType === 'WELCOME') return r.category === 'Accueil' || r.category.toLowerCase().includes('accueil'); 
           if (cycleType === 'OF_THE_DAY') {
@@ -385,14 +385,14 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       onSync('SAVE_DAILY_COCKTAIL', newCocktail);
   };
 
-  const recentWelcomes = useMemo(() => {
-      const welcomes = dailyCocktails.filter(c => c.type === 'WELCOME' && c.customName);
-      welcomes.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      const unique: DailyCocktail[] = [];
-      const seen = new Set<string>();
-      for (const w of welcomes) { if (w.customName && !seen.has(w.customName)) { seen.add(w.customName); unique.push(w); } }
-      return unique.slice(0, 5);
-  }, [dailyCocktails]);
+  // Calcul de l'historique des cocktails d'accueil pour la date sélectionnée (7 jours précédents)
+  const previousWelcomeCocktails = useMemo(() => {
+      // On filtre pour ne garder que les cocktails d'accueil AVANT la date sélectionnée
+      return dailyCocktails
+          .filter(c => c.type === 'WELCOME' && c.date < selectedDate && c.customName)
+          .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .slice(0, 7);
+  }, [dailyCocktails, selectedDate]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20 relative">
@@ -630,12 +630,12 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       const labels: Record<string, string> = { OF_THE_DAY: 'Cocktail du Jour', MOCKTAIL: 'Mocktail', WELCOME: 'Accueil', THALASSO: 'Thalasso' };
                       
                       return (
-                          <div key={type} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                          <div key={type} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full">
                               <div className="flex justify-between items-center mb-4">
                                   <h4 className="font-black text-slate-800 uppercase tracking-tight">{labels[type]}</h4>
                                   <button onClick={() => openCycleModal(type)} className="text-[10px] font-black uppercase text-indigo-500 hover:underline">Programmation</button>
                               </div>
-                              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-4 flex-1">
                                   {cocktail ? (
                                       <>
                                           <p className="font-bold text-slate-900 text-lg mb-1">{cocktail.customName || recipe?.name || 'Non défini'}</p>
@@ -643,19 +643,48 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                       </>
                                   ) : <p className="text-slate-400 italic text-sm">Rien de prévu ce jour.</p>}
                               </div>
-                              <div className="mt-4 pt-4 border-t border-slate-100 flex gap-2">
-                                  <select 
-                                    className="flex-1 bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold outline-none"
-                                    value={cocktail?.recipeId || ''}
-                                    onChange={e => handleUpdateCocktail(type, e.target.value)}
-                                  >
-                                      <option value="">-- Sélectionner Recette --</option>
-                                      {recipes.filter(r => {
-                                          if (type === 'MOCKTAIL') return r.category === 'Mocktail';
-                                          if (type === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
-                                          return true; 
-                                      }).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                  </select>
+                              
+                              <div className="pt-4 border-t border-slate-100">
+                                {type === 'WELCOME' ? (
+                                    <div className="flex flex-col gap-3 w-full">
+                                        <input 
+                                            type="text"
+                                            className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-pink-100"
+                                            placeholder="Nom du cocktail d'accueil..."
+                                            value={cocktail?.customName || ''}
+                                            onChange={e => handleUpdateCocktail(type, undefined, e.target.value)}
+                                        />
+                                        <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-50">
+                                            <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-2">Historique (7 jours)</p>
+                                            <div className="space-y-1">
+                                                {previousWelcomeCocktails.map(h => (
+                                                    <div key={h.id} className="flex justify-between text-[10px] items-center">
+                                                        <span className="text-slate-400">{new Date(h.date).toLocaleDateString('fr-FR', {weekday:'short', day:'numeric'})}</span>
+                                                        <span className="font-bold text-slate-700">{h.customName || 'Non défini'}</span>
+                                                    </div>
+                                                ))}
+                                                {previousWelcomeCocktails.length === 0 && <span className="text-[10px] text-slate-400 italic">Aucun historique récent.</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <select 
+                                        className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none cursor-pointer"
+                                        value={cocktail?.recipeId || ''}
+                                        onChange={e => handleUpdateCocktail(type, e.target.value)}
+                                    >
+                                        <option value="">-- Sélectionner Recette --</option>
+                                        {recipes.filter(r => {
+                                            if (type === 'MOCKTAIL') return r.category === 'Mocktail' || r.category === 'Mocktails du moment';
+                                            if (type === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
+                                            if (type === 'OF_THE_DAY') {
+                                                const cat = r.category.toLowerCase();
+                                                return !cat.includes('mocktail') && !cat.includes('thalasso') && !cat.includes('healthy') && !cat.includes('accueil');
+                                            }
+                                            return true; 
+                                        }).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                    </select>
+                                )}
                               </div>
                           </div>
                       );
