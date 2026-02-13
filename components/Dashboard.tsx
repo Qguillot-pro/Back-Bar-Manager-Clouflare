@@ -94,12 +94,6 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
 
   const getCocktailInfo = (type: string) => {
       const c = todayCocktails.find(c => c.type === type);
-      const isChangedToday = c && !c.id.startsWith('calc'); // Assuming calculated IDs start with 'calc' (cycle) or we check if manual ID. 
-      // Actually simpler: if a record exists for today in DB (which dailyCocktails contains), it means it's active.
-      // To check if it "changed today", we can check if it's the start of a cycle or manual override.
-      // For simplicity as requested: show warning if present today (implying rotation/update).
-      // Refined logic: Show warning if it's NOT a calculated cycle that stays same (hard to track without history).
-      // Let's rely on simple presence for now as "Active Today".
       
       let name = 'Non défini';
       let recipe: Recipe | undefined;
@@ -127,6 +121,9 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       const info = getCocktailInfo(type);
       if (info.recipe) {
           setSelectedCocktailRecipe(info.recipe);
+      } else {
+          // Si pas de recette, on redirige vers la configuration (Vie Quotidienne)
+          onNavigate('daily_life:COCKTAILS');
       }
   };
 
@@ -199,7 +196,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                           <div 
                             key={type} 
                             onClick={() => handleCocktailClick(type)}
-                            className={`bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 transition-all relative ${info.recipe ? 'hover:bg-white/20 cursor-pointer' : 'opacity-70'}`}
+                            className={`bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 transition-all relative hover:bg-white/20 cursor-pointer`}
                           >
                               {info.hasWarning && (
                                   <div className="absolute top-2 right-2 text-amber-400 animate-pulse" title="Changement aujourd'hui">
@@ -210,7 +207,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                                   <span className={`text-[9px] font-black uppercase tracking-widest ${colors[type]}`}>{labels[type]}</span>
                                   {icons[type] && <span className="text-[10px]">{icons[type]}</span>}
                               </div>
-                              <p className="font-bold text-sm leading-tight line-clamp-2">{info.name}</p>
+                              <p className={`font-bold text-sm leading-tight line-clamp-2 ${info.name === 'Non défini' ? 'opacity-50 italic' : ''}`}>{info.name}</p>
                           </div>
                       );
                   })}
@@ -248,7 +245,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
 
       {/* VIE QUOTIDIENNE WIDGETS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div onClick={() => onNavigate('daily_life')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-indigo-300 transition-all relative overflow-hidden group">
+          <div onClick={() => onNavigate('daily_life:CALENDAR')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-indigo-300 transition-all relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-50 rounded-bl-[4rem] -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
               <h3 className="font-black text-sm uppercase tracking-widest text-indigo-900 mb-4 relative z-10 flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -269,7 +266,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
               </div>
           </div>
 
-          <div onClick={() => onNavigate('daily_life')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-amber-300 transition-all relative overflow-hidden group">
+          <div onClick={() => onNavigate('daily_life:TASKS')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-amber-300 transition-all relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-20 h-20 bg-amber-50 rounded-bl-[4rem] -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
               <h3 className="font-black text-sm uppercase tracking-widest text-amber-800 mb-4 relative z-10 flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>

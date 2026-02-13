@@ -21,6 +21,7 @@ interface DailyLifeProps {
   glassware?: Glassware[];
   appConfig?: AppConfig;
   saveConfig?: (key: string, value: any) => void;
+  initialTab?: string;
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -28,10 +29,16 @@ const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
-    appConfig, saveConfig
+    appConfig, saveConfig, initialTab
 }) => {
   const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS'>('TASKS');
   
+  useEffect(() => {
+      if (initialTab && (initialTab === 'TASKS' || initialTab === 'CALENDAR' || initialTab === 'COCKTAILS')) {
+          setActiveTab(initialTab);
+      }
+  }, [initialTab]);
+
   // Tasks State
   const [newTaskContent, setNewTaskContent] = useState('');
   
@@ -345,28 +352,26 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       setCycleRecipes(prev => { if (prev.includes(rId)) return prev.filter(id => id !== rId); return [...prev, rId]; });
   };
 
-  const moveCycleRecipe = (index: number, direction: 'up' | 'down') => {
-      if (direction === 'up' && index === 0) return;
-      if (direction === 'down' && index === cycleRecipes.length - 1) return;
-      const newArr = [...cycleRecipes];
-      const swapIndex = direction === 'up' ? index - 1 : index + 1;
-      [newArr[index], newArr[swapIndex]] = [newArr[swapIndex], newArr[index]];
-      setCycleRecipes(newArr);
-  };
-
   const filteredRecipesForCycle = useMemo(() => {
+      // Logic with Config Mapping
+      const allowedCategories = appConfig?.programMapping?.[cycleType] || [];
+      
+      if (allowedCategories.length > 0) {
+          return recipes.filter(r => allowedCategories.includes(r.category));
+      }
+
+      // Fallback Legacy Logic
       return recipes.filter(r => {
           if (cycleType === 'MOCKTAIL') return r.category === 'Mocktail' || r.category === 'Mocktails du moment';
           if (cycleType === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
           if (cycleType === 'WELCOME') return r.category === 'Accueil' || r.category.toLowerCase().includes('accueil'); 
           if (cycleType === 'OF_THE_DAY') {
-              // Exclut Mocktail, Thalasso, Healthy, Accueil
               const cat = r.category.toLowerCase();
               return !cat.includes('mocktail') && !cat.includes('thalasso') && !cat.includes('healthy') && !cat.includes('accueil');
           }
           return true;
       });
-  }, [recipes, cycleType]);
+  }, [recipes, cycleType, appConfig]);
 
   const getCocktailForType = (type: DailyCocktailType) => getCalculatedCocktail(selectedDate, type);
 
@@ -628,11 +633,15 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       const cocktail = getCocktailForType(type);
                       const recipe = recipes.find(r => r.id === cocktail?.recipeId);
                       const labels: Record<string, string> = { OF_THE_DAY: 'Cocktail du Jour', MOCKTAIL: 'Mocktail', WELCOME: 'Accueil', THALASSO: 'Thalasso' };
+                      const config = getCycleConfig(type);
                       
                       return (
                           <div key={type} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full">
                               <div className="flex justify-between items-center mb-4">
-                                  <h4 className="font-black text-slate-800 uppercase tracking-tight">{labels[type]}</h4>
+                                  <div className="flex items-center gap-2">
+                                      <h4 className="font-black text-slate-800 uppercase tracking-tight">{labels[type]}</h4>
+                                      {config.isActive && <span title="Cycle Automatique Actif">🔄</span>}
+                                  </div>
                                   <button onClick={() => openCycleModal(type)} className="text-[10px] font-black uppercase text-indigo-500 hover:underline">Programmation</button>
                               </div>
                               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-4 flex-1">
@@ -650,7 +659,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                         <input 
                                             type="text"
                                             className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:ring-2 focus:ring-pink-100"
-                                            placeholder="Nom du cocktail d'accueil..."
+                                            placeholder="Ingrédients du cocktail d'accueil..."
                                             value={cocktail?.customName || ''}
                                             onChange={e => handleUpdateCocktail(type, undefined, e.target.value)}
                                         />
@@ -674,12 +683,18 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                         onChange={e => handleUpdateCocktail(type, e.target.value)}
                                     >
                                         <option value="">-- Sélectionner Recette --</option>
-                                        {recipes.filter(r => {
-                                            if (type === 'MOCKTAIL') return r.category === 'Mocktail' || r.category === 'Mocktails du moment';
-                                            if (type === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
+                                        {filteredRecipesForCycle.filter(r => {
+                                            if (type === 'MOCKTAIL') {
+                                                const allowed = appConfig?.programMapping?.['MOCKTAIL'];
+                                                if (allowed && allowed.length > 0) return allowed.includes(r.category);
+                                            }
+                                            if (type === 'THALASSO') {
+                                                const allowed = appConfig?.programMapping?.['THALASSO'];
+                                                if (allowed && allowed.length > 0) return allowed.includes(r.category);
+                                            }
                                             if (type === 'OF_THE_DAY') {
-                                                const cat = r.category.toLowerCase();
-                                                return !cat.includes('mocktail') && !cat.includes('thalasso') && !cat.includes('healthy') && !cat.includes('accueil');
+                                                const allowed = appConfig?.programMapping?.['OF_THE_DAY'];
+                                                if (allowed && allowed.length > 0) return allowed.includes(r.category);
                                             }
                                             return true; 
                                         }).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}

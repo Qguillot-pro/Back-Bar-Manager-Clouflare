@@ -62,7 +62,7 @@ const App: React.FC = () => {
   const [eventComments, setEventComments] = useState<EventComment[]>([]);
   const [dailyCocktails, setDailyCocktails] = useState<DailyCocktail[]>([]);
   
-  const [view, setView] = useState<'dashboard' | 'movements' | 'inventory' | 'articles' | 'restock' | 'config' | 'consignes' | 'orders' | 'dlc_tracking' | 'history' | 'messages' | 'recipes' | 'daily_life' | 'logs' | 'global_inventory'>('dashboard');
+  const [view, setView] = useState<string>('dashboard');
   const [articlesFilter, setArticlesFilter] = useState<'ALL' | 'TEMPORARY'>('ALL'); 
   const [notification, setNotification] = useState<{ title: string, message: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -657,7 +657,7 @@ const App: React.FC = () => {
   return (
     <div className={`min-h-screen flex flex-col md:flex-row bg-slate-50 ${isTestMode ? 'border-4 border-rose-500' : ''}`}>
       {/* ... Sidebar (unchanged) ... */}
-      <aside className={`bg-slate-950 text-white flex flex-col md:sticky top-0 md:h-screen z-50 transition-all duration-300 ${isSidebarCollapsed ? 'w-full md:w-20' : 'w-full md:w-64'}`}>
+      <aside className={`bg-slate-900 text-white flex flex-col md:sticky top-0 md:h-screen z-50 transition-all duration-300 ${isSidebarCollapsed ? 'w-full md:w-20' : 'w-full md:w-64'}`}>
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-black text-xs shrink-0">B</div>
@@ -683,7 +683,7 @@ const App: React.FC = () => {
           <NavItem collapsed={isSidebarCollapsed} active={view === 'history'} onClick={() => setView('history')} label="Historique" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'dlc_tracking'} onClick={() => setView('dlc_tracking')} label="Suivi DLC" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'messages'} onClick={() => setView('messages')} label="Messagerie" icon="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" badge={unreadMessagesCount} />
-          <NavItem collapsed={isSidebarCollapsed} active={view === 'daily_life'} onClick={() => setView('daily_life')} label="Vie Quotidienne" icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" badge={activeTasksCount + todayEventsCount} />
+          <NavItem collapsed={isSidebarCollapsed} active={view.startsWith('daily_life')} onClick={() => setView('daily_life')} label="Vie Quotidienne" icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" badge={activeTasksCount + todayEventsCount} />
 
           <div className="pt-4 mt-4 border-t border-white/5">
               <button onClick={() => setIsGestionOpen(!isGestionOpen)} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors`} title="Gestion">
@@ -806,7 +806,7 @@ const App: React.FC = () => {
         {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={handleOrderUpdate} onDeleteOrder={handleDeleteOrder} onAddManualOrder={handleAddManualOrder} formats={formats} events={events} />}
         {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} />}
         
-        {view === 'daily_life' && (
+        {view.startsWith('daily_life') && (
             <DailyLife 
               tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} 
               items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} 
@@ -818,6 +818,7 @@ const App: React.FC = () => {
               glassware={glassware}
               appConfig={appConfig}
               saveConfig={handleSaveConfig}
+              initialTab={view.split(':')[1]} // "COCKTAILS" for example
             />
         )}
 

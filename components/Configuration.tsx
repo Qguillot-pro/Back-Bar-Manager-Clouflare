@@ -583,7 +583,7 @@ const Configuration: React.FC<ConfigProps> = ({
       )}
 
       {activeSubTab === 'cocktail_cats' && setCocktailCategories && (
-          <CocktailCategoriesConfig categories={cocktailCategories} setCategories={setCocktailCategories} onSync={onSync} />
+          <CocktailCategoriesConfig categories={cocktailCategories} setCategories={setCocktailCategories} onSync={onSync} appConfig={appConfig} setAppConfig={setAppConfig} />
       )}
       
       {activeSubTab === 'dlc' && currentUser?.role === 'ADMIN' && (

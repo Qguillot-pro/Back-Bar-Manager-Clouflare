@@ -23,6 +23,7 @@ export type UserRole = 'ADMIN' | 'BARMAN';
 export interface AppConfig {
   tempItemDuration: '3_DAYS' | '7_DAYS' | '14_DAYS' | '1_MONTH' | '3_MONTHS' | 'INFINITE';
   defaultMargin?: number; // Pourcentage (ex: 82)
+  programMapping?: Record<string, string[]>; // Map ProgramType (OF_THE_DAY...) -> Array of Category Names
   // Stockage des configurations de cycles en JSON string dans la DB, mais typé ici si besoin
   [key: string]: any; 
 }
