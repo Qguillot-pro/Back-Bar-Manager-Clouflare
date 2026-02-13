@@ -349,17 +349,14 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       else if (config.frequency === 'WEEKLY') { index = Math.floor(diffDays / 7) % listLen; } 
       else if (config.frequency === '2_WEEKS') { index = Math.floor(diffDays / 14) % listLen; } 
       else if (config.frequency === 'MON_FRI') {
-          // Logique pour saut de weekend (Lundi -> Vendredi seulement ?)
-          // Ici on suppose un cycle simple : 
-          // Semaine 1 : Recette A (Lun-Jeu), Recette B (Ven-Dim) ?
-          // Ou juste index basé sur les semaines.
-          // Pour faire simple et robuste : On utilise la logique temporelle simple du modulo
-          // "Changement Lundi et Vendredi" -> 2 slots par semaine
-          
           const weeksPassed = Math.floor(diffDays / 7);
-          // Si on est Vendredi(5), Samedi(6) ou Dimanche(0), on est dans le 2ème slot de la semaine
-          const isSecondSlot = (targetDayOfWeek === 5 || targetDayOfWeek === 6 || targetDayOfWeek === 0);
           
+          const cleanStartStr = config.startDate.split('T')[0];
+          const [sy, sm, sd] = cleanStartStr.split('-').map(Number);
+          const startDate = new Date(Date.UTC(sy, sm - 1, sd));
+
+          const dayOfCurrentWeek = (diffDays % 7 + startDate.getUTCDay()) % 7; 
+          const isSecondSlot = (targetDayOfWeek === 5 || targetDayOfWeek === 6 || targetDayOfWeek === 0);
           const totalSlotsPassed = weeksPassed * 2 + (isSecondSlot ? 1 : 0);
           index = totalSlotsPassed % listLen;
       }
@@ -387,7 +384,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       if (!saveConfig) return;
       
       // On sauvegarde juste la date YYYY-MM-DD.
-      // Le système de calcul utilisera cette chaine directement.
       const config: CycleConfig = { 
           frequency: cycleFrequency, 
           recipeIds: cycleRecipes, 
@@ -421,10 +417,10 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       setCycleRecipes(newArr);
   };
 
-  // Liste des recettes éligibles pour le cycle (filtrée par catégorie configurée)
-  const filteredRecipesForCycle = useMemo(() => {
+  // Fonction générique pour filtrer les recettes selon le type de programme (utilisée pour l'affichage ET la modale)
+  const getRecipesForType = (type: DailyCocktailType) => {
       // Logic with Config Mapping
-      const allowedCategories = appConfig?.programMapping?.[cycleType] || [];
+      const allowedCategories = appConfig?.programMapping?.[type] || [];
       
       if (allowedCategories.length > 0) {
           return recipes.filter(r => allowedCategories.includes(r.category));
@@ -432,16 +428,19 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 
       // Fallback Legacy Logic
       return recipes.filter(r => {
-          if (cycleType === 'MOCKTAIL') return r.category === 'Mocktail' || r.category === 'Mocktails du moment';
-          if (cycleType === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
-          if (cycleType === 'WELCOME') return r.category === 'Accueil' || r.category.toLowerCase().includes('accueil'); 
-          if (cycleType === 'OF_THE_DAY') {
+          if (type === 'MOCKTAIL') return r.category === 'Mocktail' || r.category === 'Mocktails du moment';
+          if (type === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
+          if (type === 'WELCOME') return r.category === 'Accueil' || r.category.toLowerCase().includes('accueil'); 
+          if (type === 'OF_THE_DAY') {
               const cat = r.category.toLowerCase();
               return !cat.includes('mocktail') && !cat.includes('thalasso') && !cat.includes('healthy') && !cat.includes('accueil');
           }
           return true;
       });
-  }, [recipes, cycleType, appConfig]);
+  };
+
+  // Utilisation dans la modale (dépend du state cycleType)
+  const recipesForCurrentModal = useMemo(() => getRecipesForType(cycleType), [recipes, cycleType, appConfig]);
 
   const getCocktailForType = (type: DailyCocktailType) => getCalculatedCocktail(selectedDate, type);
 
@@ -460,9 +459,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       onSync('SAVE_DAILY_COCKTAIL', newCocktail);
   };
 
-  // Calcul de l'historique des cocktails d'accueil pour la date sélectionnée (7 jours précédents)
   const previousWelcomeCocktails = useMemo(() => {
-      // On filtre pour ne garder que les cocktails d'accueil AVANT la date sélectionnée
       return dailyCocktails
           .filter(c => c.type === 'WELCOME' && c.date < selectedDate && c.customName)
           .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -757,21 +754,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                         disabled={isAutoCycle}
                                     >
                                         <option value="">-- Sélectionner Recette --</option>
-                                        {filteredRecipesForCycle.filter(r => {
-                                            if (type === 'MOCKTAIL') {
-                                                const allowed = appConfig?.programMapping?.['MOCKTAIL'];
-                                                if (allowed && allowed.length > 0) return allowed.includes(r.category);
-                                            }
-                                            if (type === 'THALASSO') {
-                                                const allowed = appConfig?.programMapping?.['THALASSO'];
-                                                if (allowed && allowed.length > 0) return allowed.includes(r.category);
-                                            }
-                                            if (type === 'OF_THE_DAY') {
-                                                const allowed = appConfig?.programMapping?.['OF_THE_DAY'];
-                                                if (allowed && allowed.length > 0) return allowed.includes(r.category);
-                                            }
-                                            return true; 
-                                        }).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                        {getRecipesForType(type).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                     </select>
                                 )}
                               </div>
@@ -823,7 +806,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                       onChange={(e) => setRecipeToAddId(e.target.value)}
                                   >
                                       <option value="">-- Choisir --</option>
-                                      {filteredRecipesForCycle.map(r => (
+                                      {recipesForCurrentModal.map(r => (
                                           <option key={r.id} value={r.id} disabled={cycleRecipes.includes(r.id)}>{r.name}</option>
                                       ))}
                                   </select>
