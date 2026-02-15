@@ -432,7 +432,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       setCycleRecipes(newArr);
   };
 
-  // Fonction générique pour filtrer les recettes selon le type de programme (utilisée pour l'affichage ET la modale)
+  // Fonction générique pour filtrer les recettes selon le type de programme
   // MODIFIÉ : Respect strict de la configuration (ignore les défauts si config présente)
   const getRecipesForType = (type: DailyCocktailType) => {
       // Cas WELCOME : Exception car souvent texte libre ou catégorie "Accueil"
@@ -444,7 +444,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       }
 
       // Cas Généraux (OF_THE_DAY, MOCKTAIL, THALASSO)
-      // On respecte strictement la configuration si appConfig existe
       const allowedCategories = appConfig?.programMapping?.[type];
 
       if (allowedCategories) {
@@ -452,14 +451,12 @@ const DailyLife: React.FC<DailyLifeProps> = ({
           return recipes.filter(r => allowedCategories.includes(r.category));
       }
 
-      // Si aucune configuration n'existe pour ce type dans le mapping global,
-      // on retourne une liste vide pour forcer l'utilisateur à configurer via le panneau Admin.
-      // Cela évite les comportements "magiques" ou "par défaut" indésirables.
+      // Si aucune configuration, liste vide (force configuration)
       return []; 
   };
 
-  // Utilisation dans la modale (dépend du state cycleType)
-  const recipesForCurrentModal = useMemo(() => getRecipesForType(cycleType), [recipes, cycleType, appConfig]);
+  // Utilisation directe pour la modale
+  const recipesForCurrentModal = getRecipesForType(cycleType);
 
   const getCocktailForType = (type: DailyCocktailType) => getCalculatedCocktail(selectedDate, type);
 
@@ -722,6 +719,8 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       const config = getCycleConfig(type);
                       const isAutoCycle = config.isActive;
                       
+                      const availableRecipes = getRecipesForType(type);
+
                       return (
                           <div key={type} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full">
                               <div className="flex justify-between items-center mb-4">
@@ -788,9 +787,10 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                         disabled={isAutoCycle}
                                     >
                                         <option value="">-- Sélectionner Recette --</option>
-                                        {recipesForCurrentModal.map(r => (
-                                          <option key={r.id} value={r.id} disabled={cycleRecipes.includes(r.id)}>{r.name}</option>
+                                        {availableRecipes.map(r => (
+                                          <option key={r.id} value={r.id}>{r.name}</option>
                                         ))}
+                                        {availableRecipes.length === 0 && <option disabled value="">(Aucune recette - Vérifier config)</option>}
                                     </select>
                                 )}
                               </div>
@@ -845,6 +845,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                       {recipesForCurrentModal.map(r => (
                                           <option key={r.id} value={r.id} disabled={cycleRecipes.includes(r.id)}>{r.name}</option>
                                       ))}
+                                      {recipesForCurrentModal.length === 0 && <option disabled>(Vide)</option>}
                                   </select>
                                   <button onClick={addRecipeToCycle} disabled={!recipeToAddId} className="bg-indigo-600 text-white px-4 rounded-xl font-black text-xs hover:bg-indigo-700 disabled:opacity-50">+</button>
                               </div>
