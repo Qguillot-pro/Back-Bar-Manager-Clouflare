@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -607,7 +607,28 @@ const App: React.FC = () => {
 
   const handleSaveConfig = (key: string, value: any) => {
       setAppConfig(prev => ({...prev, [key]: value}));
-      syncData('SAVE_CONFIG', { key, value: JSON.stringify(value) });
+      syncData('SAVE_CONFIG', { key, value: typeof value === 'object' ? JSON.stringify(value) : value });
+  };
+
+  // Nouvelle fonction centrale pour les cocktails
+  const handleSaveDailyCocktail = (cocktail: DailyCocktail) => {
+      setDailyCocktails(prev => {
+          const idx = prev.findIndex(c => c.id === cocktail.id);
+          if (idx >= 0) { 
+              const copy = [...prev]; 
+              copy[idx] = cocktail; 
+              return copy; 
+          }
+          // On vérifie aussi par date/type pour éviter doublons si ID changeant
+          const idx2 = prev.findIndex(c => c.date === cocktail.date && c.type === cocktail.type);
+          if (idx2 >= 0) {
+              const copy = [...prev]; 
+              copy[idx2] = cocktail; 
+              return copy;
+          }
+          return [...prev, cocktail];
+      });
+      syncData('SAVE_DAILY_COCKTAIL', cocktail);
   };
 
   if (loading) return <div className="h-screen flex flex-col gap-4 items-center justify-center font-black animate-pulse">
@@ -750,6 +771,7 @@ const App: React.FC = () => {
                 events={events} tasks={tasks} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware}
                 onNavigate={(v) => { if (v === 'articles') { setView('articles'); setArticlesFilter('ALL'); } else setView(v as any); }}
                 onSendMessage={handleSendMessage} onArchiveMessage={handleArchiveMessage}
+                onUpdateDailyCocktail={handleSaveDailyCocktail}
             />
         )}
         {view === 'inventory' && <StockTable items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleStockUpdate} consignes={consignes} />}
@@ -811,7 +833,12 @@ const App: React.FC = () => {
               tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} 
               items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} 
               setEventComments={setEventComments} dailyCocktails={dailyCocktails} 
-              setDailyCocktails={setDailyCocktails} recipes={recipes}
+              setDailyCocktails={(val) => {
+                  // We handle partial updates via generic sync but here we update state
+                  if (typeof val === 'function') setDailyCocktails(val);
+                  else setDailyCocktails(val);
+              }}
+              recipes={recipes}
               onCreateTemporaryItem={handleCreateTemporaryItem}
               stockLevels={stockLevels}
               orders={orders}

@@ -26,6 +26,13 @@ interface DailyLifeProps {
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
+// Helper to get bar day (4am threshold)
+const getBarDateStr = (d: Date = new Date()) => {
+    const shift = new Date(d);
+    if (shift.getHours() < 4) shift.setDate(shift.getDate() - 1);
+    return shift.toISOString().split('T')[0];
+};
+
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
@@ -66,15 +73,15 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 
   const [newComment, setNewComment] = useState('');
 
-  // Daily Cocktails State
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  // Daily Cocktails State - Default to Bar Day
+  const [selectedDate, setSelectedDate] = useState<string>(getBarDateStr());
   
   // Cycle Generator State (Redesigned)
   const [isCycleModalOpen, setIsCycleModalOpen] = useState(false);
   const [cycleType, setCycleType] = useState<DailyCocktailType>('OF_THE_DAY');
   const [cycleFrequency, setCycleFrequency] = useState<CycleFrequency>('DAILY');
   const [cycleRecipes, setCycleRecipes] = useState<string[]>([]); // Ordered IDs
-  const [cycleStartDate, setCycleStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [cycleStartDate, setCycleStartDate] = useState<string>(getBarDateStr());
   const [cycleIsActive, setCycleIsActive] = useState(false);
   const [recipeToAddId, setRecipeToAddId] = useState<string>(''); // For the dropdown in modal
 
@@ -371,9 +378,10 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       setCycleFrequency(conf.frequency);
       setCycleRecipes(conf.recipeIds);
       
-      // On s'assure d'afficher la date YYYY-MM-DD propre dans l'input
-      const cleanStartDate = conf.startDate.split('T')[0];
-      setCycleStartDate(cleanStartDate);
+      // Si une date de début existe DÉJÀ, on la garde. Sinon, on met la date bar du jour.
+      // Cela évite de réinitialiser le cycle (reset à 0) à chaque ouverture de la modale.
+      const existingDate = conf.startDate ? conf.startDate.split('T')[0] : '';
+      setCycleStartDate(existingDate || getBarDateStr());
       
       setCycleIsActive(conf.isActive);
       setRecipeToAddId('');
@@ -392,6 +400,13 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       };
       saveConfig(`cycle_${cycleType}`, config);
       setIsCycleModalOpen(false);
+  };
+
+  const handleToggleCycleStatus = (type: DailyCocktailType) => {
+      if (currentUser.role !== 'ADMIN') { alert("Seul l'admin peut modifier l'état du cycle."); return; }
+      const conf = getCycleConfig(type);
+      const newConfig = { ...conf, isActive: !conf.isActive };
+      if (saveConfig) saveConfig(`cycle_${type}`, newConfig);
   };
 
   const addRecipeToCycle = () => {
@@ -708,9 +723,24 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                               <div className="flex justify-between items-center mb-4">
                                   <div className="flex items-center gap-2">
                                       <h4 className="font-black text-slate-800 uppercase tracking-tight">{labels[type]}</h4>
-                                      {isAutoCycle && <span title="Cycle Automatique Actif">🔄</span>}
+                                      {isAutoCycle && <span title="Cycle Automatique Actif" className="text-emerald-500">🔄</span>}
                                   </div>
-                                  <button onClick={() => openCycleModal(type)} className="text-[10px] font-black uppercase text-indigo-500 hover:underline">Programmation</button>
+                                  <div className="flex gap-2">
+                                      {type !== 'WELCOME' && (
+                                          <button 
+                                            onClick={() => handleToggleCycleStatus(type)} 
+                                            className={`p-1.5 rounded-lg transition-all ${isAutoCycle ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                                            title={isAutoCycle ? 'Mettre en pause' : 'Activer'}
+                                          >
+                                              {isAutoCycle ? (
+                                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                              ) : (
+                                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                              )}
+                                          </button>
+                                      )}
+                                      <button onClick={() => openCycleModal(type)} className="text-[10px] font-black uppercase text-indigo-500 hover:underline">Programmation</button>
+                                  </div>
                               </div>
                               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-4 flex-1 relative">
                                   {cocktail ? (
@@ -754,7 +784,9 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                         disabled={isAutoCycle}
                                     >
                                         <option value="">-- Sélectionner Recette --</option>
-                                        {getRecipesForType(type).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                        {recipesForCurrentModal.map(r => (
+                                          <option key={r.id} value={r.id} disabled={cycleRecipes.includes(r.id)}>{r.name}</option>
+                                        ))}
                                     </select>
                                 )}
                               </div>

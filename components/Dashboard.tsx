@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware } from '../types';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -22,11 +22,14 @@ interface DashboardProps {
   dailyCocktails?: DailyCocktail[];
   recipes?: Recipe[];
   glassware?: Glassware[];
+  onUpdateDailyCocktail?: (cocktail: DailyCocktail) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail }) => {
   const [newMessageText, setNewMessageText] = useState('');
   const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [welcomeCustomName, setWelcomeCustomName] = useState('');
 
   // 1. KPI Alertes Réappro
   const totalRestockNeeded = useMemo(() => {
@@ -53,6 +56,15 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   }, [dlcHistory, items, dlcProfiles]);
   
   const totalItemsCount = items.length;
+
+  // Helper Bar Day
+  const getBarDateStr = (d: Date = new Date()) => {
+      const shift = new Date(d);
+      if (shift.getHours() < 4) shift.setDate(shift.getDate() - 1);
+      return shift.toISOString().split('T')[0];
+  };
+
+  const currentBarDate = getBarDateStr();
 
   // 3. Chart Data
   const restockHistoryData = useMemo(() => {
@@ -88,9 +100,8 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
 
   // 5. Cocktails Data
   const todayCocktails = useMemo(() => {
-      const todayStr = new Date().toISOString().split('T')[0];
-      return dailyCocktails.filter(c => c.date === todayStr);
-  }, [dailyCocktails]);
+      return dailyCocktails.filter(c => c.date === currentBarDate);
+  }, [dailyCocktails, currentBarDate]);
 
   const getCocktailInfo = (type: string) => {
       const c = todayCocktails.find(c => c.type === type);
@@ -119,12 +130,35 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
 
   const handleCocktailClick = (type: string) => {
       const info = getCocktailInfo(type);
+      
+      if (type === 'WELCOME') {
+          // Open edit modal if welcome
+          const c = todayCocktails.find(c => c.type === 'WELCOME');
+          setWelcomeCustomName(c?.customName || '');
+          setIsWelcomeModalOpen(true);
+          return;
+      }
+
       if (info.recipe) {
           setSelectedCocktailRecipe(info.recipe);
       } else {
           // Si pas de recette, on redirige vers la configuration (Vie Quotidienne)
           onNavigate('daily_life:COCKTAILS');
       }
+  };
+
+  const handleSaveWelcome = () => {
+      if (onUpdateDailyCocktail) {
+          const existing = todayCocktails.find(c => c.type === 'WELCOME');
+          const id = existing ? existing.id : `dc_${currentBarDate}_WELCOME_${Date.now()}`;
+          onUpdateDailyCocktail({
+              id,
+              date: currentBarDate,
+              type: 'WELCOME',
+              customName: welcomeCustomName
+          });
+      }
+      setIsWelcomeModalOpen(false);
   };
 
   return (
@@ -172,6 +206,28 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                               <p>{selectedCocktailRecipe.description}</p>
                           </div>
                       )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* WELCOME EDIT MODAL */}
+      {isWelcomeModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200">
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-4">Cocktail d'Accueil</h3>
+                  <p className="text-xs text-slate-500 mb-4">Saisissez la recette ou les ingrédients du jour.</p>
+                  <input 
+                      type="text" 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 font-bold text-slate-900 outline-none mb-4"
+                      placeholder="Ex: Punch Planteur (Rhum, Jus, Sirop)"
+                      value={welcomeCustomName}
+                      onChange={e => setWelcomeCustomName(e.target.value)}
+                      autoFocus
+                  />
+                  <div className="flex gap-2">
+                      <button onClick={() => setIsWelcomeModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-200">Annuler</button>
+                      <button onClick={handleSaveWelcome} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700">Enregistrer</button>
                   </div>
               </div>
           </div>

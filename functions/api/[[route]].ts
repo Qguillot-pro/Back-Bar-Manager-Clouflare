@@ -71,6 +71,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         appConfig.rows.forEach((row: any) => {
             if (row.key === 'temp_item_duration') configMap.tempItemDuration = row.value;
             if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
+            if (row.key === 'program_mapping') {
+                try {
+                    configMap.programMapping = JSON.parse(row.value);
+                } catch (e) {
+                    console.error("Error parsing program_mapping", e);
+                    configMap.programMapping = {};
+                }
+            }
         });
 
         // Les configurations de cycles (clés dynamiques)
