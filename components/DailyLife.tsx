@@ -433,25 +433,29 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   };
 
   // Fonction générique pour filtrer les recettes selon le type de programme (utilisée pour l'affichage ET la modale)
+  // MODIFIÉ : Respect strict de la configuration (ignore les défauts si config présente)
   const getRecipesForType = (type: DailyCocktailType) => {
-      // Logic with Config Mapping
-      const allowedCategories = appConfig?.programMapping?.[type] || [];
-      
-      if (allowedCategories.length > 0) {
+      // Cas WELCOME : Exception car souvent texte libre ou catégorie "Accueil"
+      if (type === 'WELCOME') {
+          if (appConfig?.programMapping?.['WELCOME']) {
+              return recipes.filter(r => appConfig.programMapping!['WELCOME'].includes(r.category));
+          }
+          return recipes.filter(r => r.category === 'Accueil' || r.category.toLowerCase().includes('accueil'));
+      }
+
+      // Cas Généraux (OF_THE_DAY, MOCKTAIL, THALASSO)
+      // On respecte strictement la configuration si appConfig existe
+      const allowedCategories = appConfig?.programMapping?.[type];
+
+      if (allowedCategories) {
+          // Si une liste est définie (même vide), on l'utilise pour filtrer
           return recipes.filter(r => allowedCategories.includes(r.category));
       }
 
-      // Fallback Legacy Logic
-      return recipes.filter(r => {
-          if (type === 'MOCKTAIL') return r.category === 'Mocktail' || r.category === 'Mocktails du moment';
-          if (type === 'THALASSO') return r.category === 'Thalasso' || r.category === 'Healthy';
-          if (type === 'WELCOME') return r.category === 'Accueil' || r.category.toLowerCase().includes('accueil'); 
-          if (type === 'OF_THE_DAY') {
-              const cat = r.category.toLowerCase();
-              return !cat.includes('mocktail') && !cat.includes('thalasso') && !cat.includes('healthy') && !cat.includes('accueil');
-          }
-          return true;
-      });
+      // Si aucune configuration n'existe pour ce type dans le mapping global,
+      // on retourne une liste vide pour forcer l'utilisateur à configurer via le panneau Admin.
+      // Cela évite les comportements "magiques" ou "par défaut" indésirables.
+      return []; 
   };
 
   // Utilisation dans la modale (dépend du state cycleType)
