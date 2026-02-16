@@ -248,12 +248,7 @@ const App: React.FC = () => {
       setItems(prev => [...prev, newItem]);
       syncData('SAVE_ITEM', newItem);
       
-      // Add transaction OUT for the unfulfilled logic if needed, OR Add stock IN if it's found
-      // Usually temp item creation implies we found something not listed.
-      // If used in "Cave Restock" -> "Produit non prévu", we just create it.
-      
       if (quantity > 0) {
-          // Add default consigne for global storage so it appears
           const consigne: StockConsigne = { itemId: newItem.id, storageId: 's_global', minQuantity: quantity };
           setConsignes(prev => [...prev, consigne]);
           syncData('SAVE_CONSIGNE', consigne);
@@ -262,7 +257,6 @@ const App: React.FC = () => {
 
   // Restock Action Handler
   const handleRestockAction = (itemId: string, storageId: string, qtyNeeded: number, qtyToOrder?: number, isRupture?: boolean) => {
-      // 1. Transaction 'IN' vers le stockage bar (Cave Transfer)
       if (qtyNeeded > 0) {
           const trans: Transaction = {
               id: 't_' + Date.now(),
@@ -277,21 +271,16 @@ const App: React.FC = () => {
           setTransactions(p => [trans, ...p]);
           syncData('SAVE_TRANSACTION', trans);
           
-          // Mise à jour stock bar
           setStockLevels(prev => {
               const exists = prev.find(l => l.itemId === itemId && l.storageId === storageId);
               const newQty = (exists?.currentQuantity || 0) + qtyNeeded;
               if (exists) return prev.map(l => (l.itemId === itemId && l.storageId === storageId) ? { ...l, currentQuantity: newQty } : l);
               return [...prev, { itemId, storageId, currentQuantity: newQty }];
           });
-          // Note: On ne connait pas le stock actuel dans setStockLevels ici facilement sans re-search, 
-          // mais l'UI est optimiste. La sync est importante.
-          // Pour faire simple dans ce gros bloc, on envoie la sync.
           const currentQty = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId)?.currentQuantity || 0;
           syncData('SAVE_STOCK', { itemId, storageId, currentQuantity: currentQty + qtyNeeded });
       }
 
-      // 2. Commande / Rupture
       if ((qtyToOrder && qtyToOrder > 0) || isRupture) {
           const order: PendingOrder = {
               id: 'ord_' + Date.now(),
@@ -321,11 +310,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteOrder = (orderId: string) => {
-      // In database we usually mark archived, but here we filter out
       setOrders(prev => prev.filter(o => o.id !== orderId));
-      // Sync delete not implemented in SQL actions above for Orders? 
-      // Actually SAVE_ORDER handles updates. We might need a status ARCHIVED.
-      // For now let's set status ARCHIVED.
       const o = orders.find(x => x.id === orderId);
       if (o) {
           const updated = { ...o, status: 'ARCHIVED' as const };
@@ -346,7 +331,6 @@ const App: React.FC = () => {
       syncData('SAVE_ORDER', order);
   };
 
-  // --- AUTH ---
   const handlePinInput = useCallback((num: string) => {
     if (loginStatus !== 'idle' || loginInput.length >= 4) return;
     const newPin = loginInput + num;
@@ -380,10 +364,9 @@ const App: React.FC = () => {
             <button onClick={()=>setIsSidebarCollapsed(!isSidebarCollapsed)} className="text-slate-500 hover:text-white"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button>
         </div>
         
-        {/* MENU NAVIGATION */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
             <NavItem collapsed={isSidebarCollapsed} active={view === 'dashboard'} onClick={()=>setView('dashboard')} label="Tableau de Bord" icon="M4 6h16M4 12h16M4 18h16" />
-            <NavItem collapsed={isSidebarCollapsed} active={view === 'daily_life'} onClick={()=>setView('daily_life')} label="Vie Quotidienne" icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <NavItem collapsed={isSidebarCollapsed} active={view.startsWith('daily_life')} onClick={()=>setView('daily_life')} label="Vie Quotidienne" icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'bar_prep'} onClick={()=>setView('bar_prep')} label="Préparation Bar" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'restock'} onClick={()=>setView('restock')} label="Préparation Cave" icon="M19 14l-7 7m0 0l-7-7m7 7V3" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'movements'} onClick={()=>setView('movements')} label="Mouvements" icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
@@ -400,7 +383,6 @@ const App: React.FC = () => {
             {currentUser.role === 'ADMIN' && <NavItem collapsed={isSidebarCollapsed} active={view === 'connection_logs'} onClick={()=>setView('connection_logs')} label="Logs" icon="M9 12l2 2 4-4" />}
         </nav>
 
-        {/* PIED DE PAGE LATERAL */}
         <div className="p-4 border-t border-white/5 bg-slate-900 space-y-3">
             <div className={`flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
                 <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-sm text-white shrink-0">
@@ -454,8 +436,8 @@ const App: React.FC = () => {
       </aside>
 
       <main className="flex-1 p-4 md:p-8 h-screen overflow-y-auto">
-          {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} />}
-          {view === 'daily_life' && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={handleCreateTemporaryItem} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={(k, v) => { setAppConfig(p => ({...p, [k]: v})); syncData('SAVE_CONFIG', {key: k, value: JSON.stringify(v)}); }} />}
+          {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} />}
+          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={handleCreateTemporaryItem} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={(k, v) => { setAppConfig(p => ({...p, [k]: v})); syncData('SAVE_CONFIG', {key: k, value: JSON.stringify(v)}); }} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} />}
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} />}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={handleCreateTemporaryItem} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleReportUnfulfilled} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={handleDlcEntry} onDlcConsumption={handleDlcConsumption} onCreateTemporaryItem={handleCreateTemporaryItem} />}
