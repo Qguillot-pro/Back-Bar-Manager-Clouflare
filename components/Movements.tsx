@@ -23,14 +23,10 @@ const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\
 
 const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [], onUndo, dlcHistory = [], onDlcEntry, onDlcConsumption }) => {
   const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'UNFULFILLED'>('MOVEMENTS');
-  
   const [search, setSearch] = useState('');
   const [qty, setQty] = useState<string>('1');
   const [isServiceTransfer, setIsServiceTransfer] = useState(false);
   
-  const [unfulfilledSearch, setUnfulfilledSearch] = useState('');
-  const [unfulfilledQty, setUnfulfilledQty] = useState(1);
-
   // DLC Modal State
   const [dlcModalOpen, setDlcModalOpen] = useState(false);
   const [pendingDlcItem, setPendingDlcItem] = useState<StockItem | null>(null);
@@ -50,7 +46,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
 
     if (!item) {
-        alert(`Produit "${search}" introuvable.\nVeuillez sélectionner un produit existant dans la liste.`);
+        alert(`Produit "${search}" introuvable.`);
         return;
     }
 
@@ -59,41 +55,26 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     let quantity = parseFloat(normalized);
     if (isNaN(quantity) || quantity <= 0) quantity = 1;
 
-    // --- LOGIQUE DLC AVANCÉE ---
+    // LOGIQUE DLC
     if (item.isDLC && dlcProfiles && onDlcEntry && onDlcConsumption) {
         const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
         if (profile) {
             setPendingDlcItem(item);
             setPendingDlcAction(type);
-
             if (type === 'OUT') {
-                if (profile.type === 'OPENING') {
-                    setDlcStep('LABEL_CHECK');
-                    setDlcModalOpen(true);
-                    return;
-                } 
+                if (profile.type === 'OPENING') { setDlcStep('LABEL_CHECK'); setDlcModalOpen(true); return; } 
                 else if (profile.type === 'PRODUCTION') {
-                    const existingBatches = dlcHistory.filter(h => h.itemId === item.id);
-                    if (existingBatches.length > 0) {
-                        setDlcStep('USE_OLDEST'); 
-                    } else {
-                        setDlcStep('EMPTY');
-                    }
-                    setDlcModalOpen(true);
-                    return;
+                    const existing = dlcHistory.filter(h => h.itemId === item.id);
+                    setDlcStep(existing.length > 0 ? 'USE_OLDEST' : 'EMPTY');
+                    setDlcModalOpen(true); return;
                 }
-            } 
-            
-            if (type === 'IN') {
-                if (profile.type === 'PRODUCTION') {
-                    setDlcStep('LABEL_CHECK');
-                    setDlcModalOpen(true);
-                    return;
-                }
+            } else if (type === 'IN' && profile.type === 'PRODUCTION') {
+                setDlcStep('LABEL_CHECK'); setDlcModalOpen(true); return;
             }
         }
     }
 
+    // LOGIQUE CONSIGNE
     if (type === 'OUT' && item.isConsigne) {
         setPendingConsigneItem(item);
         setConsigneModalOpen(true);
@@ -108,34 +89,24 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
   const finalizeDlcTransaction = () => {
       if (!pendingDlcItem) return;
-      
       let normalized = qty.replace(',', '.');
-      if (normalized === '.') normalized = '0';
       const quantity = parseFloat(normalized) || 1;
-
       const profile = dlcProfiles?.find(p => p.id === pendingDlcItem.dlcProfileId);
       
       onTransaction(pendingDlcItem.id, pendingDlcAction, quantity, isServiceTransfer);
 
       if (pendingDlcAction === 'IN') {
-          if (profile?.type === 'PRODUCTION' && onDlcEntry) {
-              onDlcEntry(pendingDlcItem.id, 's_global', 'PRODUCTION'); 
-          }
+          if (profile?.type === 'PRODUCTION' && onDlcEntry) onDlcEntry(pendingDlcItem.id, 's_global', 'PRODUCTION'); 
       } else { 
-          if (profile?.type === 'OPENING' && onDlcEntry) {
-              onDlcEntry(pendingDlcItem.id, 's_global', 'OPENING');
-          }
-          if (profile?.type === 'PRODUCTION' && onDlcConsumption && dlcStep === 'USE_OLDEST') {
-              onDlcConsumption(pendingDlcItem.id);
-          }
+          if (profile?.type === 'OPENING' && onDlcEntry) onDlcEntry(pendingDlcItem.id, 's_global', 'OPENING');
+          if (profile?.type === 'PRODUCTION' && onDlcConsumption && dlcStep === 'USE_OLDEST') onDlcConsumption(pendingDlcItem.id);
       }
 
+      setDlcModalOpen(false);
       if (pendingDlcAction === 'OUT' && pendingDlcItem.isConsigne) {
-          setDlcModalOpen(false);
           setPendingConsigneItem(pendingDlcItem);
           setConsigneModalOpen(true);
       } else {
-          setDlcModalOpen(false);
           setPendingDlcItem(null);
           setSearch('');
           setQty('1');
@@ -147,195 +118,126 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       if (pendingConsigneItem) {
           if (!pendingDlcItem) { 
              let normalized = qty.replace(',', '.');
-             if (normalized === '.') normalized = '0';
-             const quantity = parseFloat(normalized) || 1;
-             onTransaction(pendingConsigneItem.id, 'OUT', quantity, isServiceTransfer);
-             setSearch('');
-             setQty('1');
-             setIsServiceTransfer(false);
+             onTransaction(pendingConsigneItem.id, 'OUT', parseFloat(normalized) || 1, isServiceTransfer);
           }
           setConsigneModalOpen(false);
           setPendingConsigneItem(null);
           setPendingDlcItem(null);
+          setSearch('');
+          setQty('1');
+          setIsServiceTransfer(false);
       }
-  };
-
-  const getDlcDurationLabel = (item: StockItem) => {
-      const profile = dlcProfiles?.find(p => p.id === item.dlcProfileId);
-      if (!profile) return "Inconnue";
-      if (profile.durationHours >= 24) {
-          return `${Number((profile.durationHours / 24).toFixed(1))} Jour(s)`;
-      }
-      return `${profile.durationHours} Heure(s)`;
-  };
-
-  const handleAddUnfulfilled = () => {
-      const searchNormalized = normalizeText(unfulfilledSearch.trim());
-      const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
-      if (item) {
-          if (window.confirm(`Déclarer une rupture client pour "${item.name}" (Qté: ${unfulfilledQty}) ?`)) {
-              onReportUnfulfilled(item.id, unfulfilledQty);
-              setUnfulfilledSearch('');
-              setUnfulfilledQty(1);
-          }
-      } else {
-          alert(`Produit introuvable.`);
-      }
-  };
-
-  const handleExportUnfulfilled = () => {
-    if (unfulfilledOrders.length === 0) return;
-    let csv = "\uFEFFDate,Heure,Utilisateur,Produit,Format,Quantité\n";
-    unfulfilledOrders.forEach(u => {
-      const it = items.find(i => i.id === u.itemId);
-      const fmt = formats.find(f => f.id === it?.formatId);
-      const d = new Date(u.date);
-      csv += `"${d.toLocaleDateString()}","${d.toLocaleTimeString()}","${u.userName || '-'}","${it?.name || 'Inconnu'}","${fmt?.name || 'N/A'}","${u.quantity || 1}"\n`;
-    });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ruptures_clients_${new Date().toISOString().slice(0,10)}.csv`;
-    link.click();
-  };
-
-  const handleCreateTempItem = () => {
-      if (!tempItemName || !onCreateTemporaryItem) return;
-      onCreateTemporaryItem(tempItemName, tempItemQty);
-      setTempItemName('');
-      setTempItemQty(0);
-      setIsTempItemModalOpen(false);
   };
 
   const groupedTransactions = useMemo(() => {
     const sorted = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    const grouped: (Transaction & { count: number, storageNames: Set<string> })[] = [];
-    
-    sorted.forEach((current) => {
-        const currentQty = Number(current.quantity);
-        const currentStorageName = storages.find(s => s.id === current.storageId)?.name || 'Inconnu';
-
-        if (grouped.length === 0) {
-            grouped.push({ ...current, quantity: currentQty, count: 1, storageNames: new Set([currentStorageName]) });
-            return;
-        }
-
-        const last = grouped[grouped.length - 1];
-        const currentDate = new Date(current.date);
-        const lastDate = new Date(last.date);
-        
-        const isSameTime = Math.abs(currentDate.getTime() - lastDate.getTime()) < 60000;
-        const isSameItem = current.itemId === last.itemId;
-        const isSameType = current.type === last.type;
-        const isSameUser = current.userName === last.userName;
-        const isSameServiceTransfer = current.isServiceTransfer === last.isServiceTransfer;
-
-        if (isSameTime && isSameItem && isSameType && isSameUser && isSameServiceTransfer) {
-            last.quantity = Number(last.quantity) + currentQty;
-            last.count += 1;
-            last.storageNames.add(currentStorageName);
-        } else {
-            grouped.push({ ...current, quantity: currentQty, count: 1, storageNames: new Set([currentStorageName]) });
-        }
-    });
-
-    return grouped.slice(0, 50);
-  }, [transactions, storages]);
+    return sorted.slice(0, 30);
+  }, [transactions]);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto relative">
-      {/* ... (DLC & Consigne Modals - identical to before) ... */}
       
-      {/* HEADER TABS */}
+      {/* DLC MODAL */}
+      {dlcModalOpen && pendingDlcItem && (
+          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500"></div>
+                  <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500 mb-2">
+                      <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{pendingDlcItem.name}</h3>
+                  
+                  {dlcStep === 'LABEL_CHECK' && (
+                      <div className="space-y-4">
+                          <p className="text-sm font-bold text-slate-600">Avez-vous bien collé l'étiquette DLC sur le produit ?</p>
+                          <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 p-2 rounded-lg italic">Rappel : La durée est de {dlcProfiles.find(p => p.id === pendingDlcItem.dlcProfileId)?.durationHours}h</p>
+                          <button onClick={finalizeDlcTransaction} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-slate-800">Oui, Étiquette Collée</button>
+                      </div>
+                  )}
+
+                  {dlcStep === 'USE_OLDEST' && (
+                      <div className="space-y-4">
+                          <p className="text-sm font-bold text-slate-600">Utilisez-vous le lot <span className="text-rose-600">le plus ancien</span> ?</p>
+                          <p className="text-xs text-slate-400">Cette action va sortir un lot de la liste des DLC actives.</p>
+                          <button onClick={finalizeDlcTransaction} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-slate-800">Oui, Sortie du lot ancien</button>
+                      </div>
+                  )}
+
+                  {dlcStep === 'EMPTY' && (
+                      <div className="space-y-4">
+                          <p className="text-sm font-bold text-slate-600">Aucun lot actif trouvé en stock.</p>
+                          <p className="text-xs text-slate-400">Voulez-vous quand même enregistrer le mouvement ?</p>
+                          <button onClick={finalizeDlcTransaction} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-slate-800">Confirmer la sortie</button>
+                      </div>
+                  )}
+
+                  <button onClick={() => setDlcModalOpen(false)} className="text-slate-400 font-bold text-xs uppercase hover:underline">Annuler</button>
+              </div>
+          </div>
+      )}
+
+      {/* CONSIGNE MODAL */}
+      {consigneModalOpen && pendingConsigneItem && (
+          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-500"></div>
+                  <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto text-blue-500 mb-2">
+                      <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Rappel Consigne</h3>
+                  <p className="text-sm font-bold text-slate-600 italic">"Une bouteille pleine sort, une bouteille vide revient !"</p>
+                  <p className="text-xs text-slate-400">Veuillez placer la bouteille vide dans le bac de récupération.</p>
+                  <button onClick={confirmConsigneAction} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-blue-700">J'ai récupéré la vide</button>
+                  <button onClick={() => setConsigneModalOpen(false)} className="text-slate-400 font-bold text-xs uppercase hover:underline">Fermer</button>
+              </div>
+          </div>
+      )}
+
+      {/* TABS & MAIN UI */}
       <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex gap-2">
-          <button onClick={() => setActiveTab('MOVEMENTS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>Mouvements Stock</button>
-          <button onClick={() => setActiveTab('UNFULFILLED')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'UNFULFILLED' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>Ruptures Client</button>
+          <button onClick={() => setActiveTab('MOVEMENTS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>Mouvements</button>
+          <button onClick={() => setActiveTab('UNFULFILLED')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'UNFULFILLED' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-400'}`}>Ruptures Client</button>
       </div>
 
       {activeTab === 'MOVEMENTS' && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 space-y-6">
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col gap-4">
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
                   <div className="flex gap-4">
-                      <div className="flex-1 space-y-1">
+                      <div className="flex-1">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit</label>
-                          <input 
-                            list="movement-items"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
-                            placeholder="Rechercher..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                          />
-                          <datalist id="movement-items">
-                              {items.map(i => <option key={i.id} value={i.name} />)}
-                          </datalist>
+                          <input list="movement-items" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-100" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} />
+                          <datalist id="movement-items">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
                       </div>
-                      <div className="w-24 space-y-1">
+                      <div className="w-24">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Qté</label>
-                          <input 
-                            type="text" 
-                            inputMode="decimal"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-center text-slate-900 outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
-                            value={qty}
-                            onChange={(e) => setQty(e.target.value)}
-                            onFocus={(e) => e.target.select()}
-                          />
+                          <input type="text" inputMode="decimal" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-center text-slate-900 outline-none" value={qty} onChange={(e) => setQty(e.target.value)} />
                       </div>
                   </div>
-                  
-                  <label className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 cursor-pointer">
-                      <input type="checkbox" className="w-5 h-5 rounded text-amber-500 focus:ring-amber-500" checked={isServiceTransfer} onChange={e => setIsServiceTransfer(e.target.checked)} />
-                      <div className="flex flex-col">
-                          <span className="font-bold text-sm text-slate-700 flex items-center gap-2">
-                              Transfert Resto/Cuisine
-                              {isServiceTransfer && <span className="text-amber-500">⚠️</span>}
-                          </span>
-                          <span className="text-[9px] text-slate-400">Marquer ce mouvement comme un transfert inter-service</span>
-                      </div>
-                  </label>
-
                   <div className="grid grid-cols-3 gap-4">
-                      <button onClick={() => handleAction('IN')} className="col-span-1 bg-emerald-500 hover:bg-emerald-600 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-100 active:scale-95 transition-all text-xs">Entrée (+)</button>
-                      <button onClick={() => handleAction('OUT')} className="col-span-2 bg-rose-500 hover:bg-rose-600 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-100 active:scale-95 transition-all text-lg">Sortie (-)</button>
-                  </div>
-
-                  <div className="flex justify-between items-center pt-2">
-                        <button onClick={() => setIsTempItemModalOpen(true)} className="text-[9px] font-black text-amber-500 uppercase tracking-widest hover:text-amber-600 flex items-center gap-1"><span className="w-4 h-4 bg-amber-100 rounded flex items-center justify-center">+</span> Produit non prévu</button>
-                        {onUndo && (
-                            <button onClick={onUndo} className="text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 flex items-center gap-1">
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg> Annuler dernier
-                            </button>
-                        )}
+                      <button onClick={() => handleAction('IN')} className="col-span-1 bg-emerald-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all text-xs">Entrée (+)</button>
+                      <button onClick={() => handleAction('OUT')} className="col-span-2 bg-rose-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all text-lg">Sortie (-)</button>
                   </div>
               </div>
 
-              {/* RECENT LIST */}
               <div className="space-y-3">
-                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 ml-4">Récemment</h3>
+                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 ml-4">Mouvements Récents</h3>
                   {groupedTransactions.map((t, idx) => {
                       const item = items.find(i => i.id === t.itemId);
                       return (
                           <div key={`${t.id}-${idx}`} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
                               <div>
-                                  <p className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                      {item?.name || 'Inconnu'}
-                                      {t.isServiceTransfer && <span title="Transfert Inter-Service" className="text-amber-500 text-xs">⚠️</span>}
-                                  </p>
-                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                                      {new Date(t.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {t.userName} • {Array.from(t.storageNames).join(', ')}
-                                  </p>
+                                  <p className="font-bold text-slate-800 text-sm">{item?.name || 'Inconnu'}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{new Date(t.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {t.userName}</p>
                               </div>
                               <div className={`px-3 py-1.5 rounded-lg font-black text-xs ${t.type === 'IN' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                                  {t.type === 'IN' ? '+' : '-'}{parseFloat(Number(t.quantity).toFixed(2))}
+                                  {t.type === 'IN' ? '+' : '-'}{t.quantity}
                               </div>
                           </div>
                       );
                   })}
-                  {groupedTransactions.length === 0 && <p className="text-center text-slate-400 italic py-4">Aucun mouvement récent.</p>}
               </div>
           </div>
       )}
-      {/* ... Unfulfilled Tab (Unchanged) ... */}
     </div>
   );
 };
