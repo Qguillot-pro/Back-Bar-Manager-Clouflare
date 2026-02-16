@@ -120,8 +120,11 @@ CREATE TABLE IF NOT EXISTS transactions (
     date TIMESTAMP DEFAULT NOW(),
     note TEXT,
     is_cave_transfer BOOLEAN DEFAULT FALSE,
+    is_service_transfer BOOLEAN DEFAULT FALSE,
     user_name TEXT
 );
+
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_service_transfer BOOLEAN DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS orders (
     id TEXT PRIMARY KEY,
@@ -239,8 +242,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TIMESTAMP DEFAULT NOW(),
     is_done BOOLEAN DEFAULT FALSE,
     done_by TEXT,
-    done_at TIMESTAMP
+    done_at TIMESTAMP,
+    recurrence TEXT -- JSON array of day indexes
 );
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
 
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
@@ -251,8 +257,11 @@ CREATE TABLE IF NOT EXISTS events (
     guests_count INTEGER,
     description TEXT,
     products_json TEXT, -- JSON string array of item IDs to plan
+    glassware_json TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+ALTER TABLE events ADD COLUMN IF NOT EXISTS glassware_json TEXT;
 
 CREATE TABLE IF NOT EXISTS event_comments (
     id TEXT PRIMARY KEY,

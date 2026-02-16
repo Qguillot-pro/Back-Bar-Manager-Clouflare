@@ -183,7 +183,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }));
         if (rawData.dailyCocktails) responseBody.dailyCocktails = rawData.dailyCocktails.map((d: any) => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description }));
         if (rawData.events) responseBody.events = rawData.events.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, glasswareJson: e.glassware_json, createdAt: e.created_at }));
-        if (rawData.tasks) responseBody.tasks = rawData.tasks.map((t: any) => ({ id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at }));
+        
+        // MAPPING TASKS updated with recurrence
+        if (rawData.tasks) responseBody.tasks = rawData.tasks.map((t: any) => ({ 
+            id: t.id, 
+            content: t.content, 
+            createdBy: t.created_by, 
+            createdAt: t.created_at, 
+            isDone: t.is_done, 
+            doneBy: t.done_by, 
+            doneAt: t.done_at,
+            recurrence: t.recurrence ? JSON.parse(t.recurrence) : undefined
+        }));
+
         if (rawData.unfulfilledOrders) responseBody.unfulfilledOrders = rawData.unfulfilledOrders.map((u: any) => ({ 
             id: u.id, itemId: u.item_id, date: u.date, userName: u.user_name, quantity: parseFloat(u.quantity || '1') 
         }));
@@ -197,8 +209,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         if (rawData.archivedOrders) responseBody.orders = (responseBody.orders || []).concat(rawData.archivedOrders.map(orderMapper));
 
         // --- HISTORY ---
+        // MAPPING TRANSACTIONS updated with isServiceTransfer
         if (rawData.transactions) responseBody.transactions = rawData.transactions.map((t: any) => ({
-            ...t, itemId: t.item_id, storageId: t.storage_id, quantity: parseFloat(t.quantity || '0'), isCaveTransfer: t.is_cave_transfer, userName: t.user_name
+            ...t, itemId: t.item_id, storageId: t.storage_id, quantity: parseFloat(t.quantity || '0'), isCaveTransfer: t.is_cave_transfer, isServiceTransfer: t.is_service_transfer, userName: t.user_name
         }));
         if (rawData.dlcHistory) responseBody.dlcHistory = rawData.dlcHistory.map((d: any) => ({...d, itemId: d.item_id, storageId: d.storage_id, openedAt: d.opened_at, userName: d.user_name}));
         if (rawData.messages) responseBody.messages = rawData.messages.map((m: any) => {
@@ -226,12 +239,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'SAVE_TASK': {
-            const { id, content, createdBy, isDone, doneBy, doneAt } = payload;
+            const { id, content, createdBy, isDone, doneBy, doneAt, recurrence } = payload;
             await pool.query(`
-                INSERT INTO tasks (id, content, created_by, is_done, done_by, done_at, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                ON CONFLICT (id) DO UPDATE SET is_done = EXCLUDED.is_done, done_by = EXCLUDED.done_by, done_at = EXCLUDED.done_at
-            `, [id, content, createdBy, isDone, doneBy, doneAt]);
+                INSERT INTO tasks (id, content, created_by, is_done, done_by, done_at, recurrence, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                ON CONFLICT (id) DO UPDATE SET is_done = EXCLUDED.is_done, done_by = EXCLUDED.done_by, done_at = EXCLUDED.done_at, recurrence = EXCLUDED.recurrence
+            `, [id, content, createdBy, isDone, doneBy, doneAt, recurrence ? JSON.stringify(recurrence) : null]);
             break;
         }
         case 'DELETE_TASK': {
@@ -286,7 +299,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           break;
         }
         case 'SAVE_TRANSACTION': {
-          await pool.query(`INSERT INTO transactions (id, item_id, storage_id, type, quantity, date, note, is_cave_transfer, user_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [payload.id, payload.itemId, payload.storageId, payload.type, payload.quantity, payload.date, payload.note, payload.isCaveTransfer, payload.userName]);
+          await pool.query(`INSERT INTO transactions (id, item_id, storage_id, type, quantity, date, note, is_cave_transfer, user_name, is_service_transfer) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [payload.id, payload.itemId, payload.storageId, payload.type, payload.quantity, payload.date, payload.note, payload.isCaveTransfer, payload.userName, payload.isServiceTransfer || false]);
           break;
         }
         case 'DELETE_TRANSACTION': {
