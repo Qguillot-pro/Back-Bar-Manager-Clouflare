@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, UnfulfilledOrder, PendingOrder, User, Event, EventProduct } from '../types';
+import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, UnfulfilledOrder, PendingOrder, User, Event, EventProduct, DLCProfile } from '../types';
 
 interface RestockProps {
   items: StockItem[];
@@ -16,6 +16,7 @@ interface RestockProps {
   orders: PendingOrder[];
   currentUser: User | null;
   events?: Event[];
+  dlcProfiles?: DLCProfile[];
 }
 
 interface NeedDetail {
@@ -36,7 +37,7 @@ interface AggregatedNeed {
   isEventRelated?: boolean; 
 }
 
-const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, unfulfilledOrders, onCreateTemporaryItem, orders, currentUser, events = [] }) => {
+const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, unfulfilledOrders, onCreateTemporaryItem, orders, currentUser, events = [], dlcProfiles = [] }) => {
   const [selectedDetail, setSelectedDetail] = useState<{ item: StockItem, detail: NeedDetail } | null>(null);
   const [isTempItemModalOpen, setIsTempItemModalOpen] = useState(false);
   const [partialQty, setPartialQty] = useState<string>('');
@@ -73,33 +74,31 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
   };
 
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
-    // 1. Build Consignes Map
     const effectiveConsignes = new Map<string, Map<string, { minQty: number, isRedirected: boolean, isEvent: boolean }>>();
     
-    // Standard Consignes
     consignes.forEach(c => {
+        // FILTRE PROD FRAIS (Exclus de la remontée cave, gérés dans Prep Bar)
+        const item = items.find(i => i.id === c.itemId);
+        const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+        if (profile?.type === 'PRODUCTION') return;
+
         if (!effectiveConsignes.has(c.itemId)) effectiveConsignes.set(c.itemId, new Map());
         effectiveConsignes.get(c.itemId)!.set(c.storageId, { minQty: c.minQuantity, isRedirected: false, isEvent: false });
     });
 
-    // Event Logic : Add to Surstock (s0)
+    // ... (Reste de la logique de calcul identique à avant) ...
+    // Note: Pour garder le code concis, je reprends la logique existante mais en omettant les parties non modifiées si possible
+    // Mais pour l'XML je dois fournir le fichier complet ou le bloc complet.
+    // Je vais recopier la logique existante.
+
     const now = new Date();
-    // Logic: If event starts > 18:00, restock ON THE DAY.
-    // If event starts < 18:00, restock DAY BEFORE.
-    
+    const currentBarDate = new Date(now);
+    if (currentBarDate.getHours() < 4) currentBarDate.setDate(currentBarDate.getDate() - 1);
+
     events.forEach(evt => {
         const evtStart = new Date(evt.startTime);
         const restockDate = new Date(evtStart);
-        
-        // Time logic
-        if (evtStart.getHours() < 18) {
-            restockDate.setDate(restockDate.getDate() - 1);
-        }
-        
-        // Check if "today" matches "restockDate"
-        // We use "Bar Day" concept (shift starts at 4am)
-        const currentBarDate = new Date(now);
-        if (currentBarDate.getHours() < 4) currentBarDate.setDate(currentBarDate.getDate() - 1);
+        if (evtStart.getHours() < 18) restockDate.setDate(restockDate.getDate() - 1);
         
         const isSameDay = 
             restockDate.getDate() === currentBarDate.getDate() && 
@@ -110,28 +109,29 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
             try {
                 const products: EventProduct[] = JSON.parse(evt.productsJson);
                 products.forEach(p => {
+                    const item = items.find(i => i.id === p.itemId);
+                    const profile = item?.dlcProfileId ? dlcProfiles.find(pro => pro.id === item.dlcProfileId) : null;
+                    if (profile?.type === 'PRODUCTION') return; // Exclude here too
+
                     if (!effectiveConsignes.has(p.itemId)) effectiveConsignes.set(p.itemId, new Map());
                     const itemMap = effectiveConsignes.get(p.itemId)!;
-                    
                     const currentS0 = itemMap.get('s0') || { minQty: 0, isRedirected: false, isEvent: false };
-                    itemMap.set('s0', { 
-                        minQty: currentS0.minQty + p.quantity, 
-                        isRedirected: currentS0.isRedirected,
-                        isEvent: true 
-                    });
+                    itemMap.set('s0', { minQty: currentS0.minQty + p.quantity, isRedirected: currentS0.isRedirected, isEvent: true });
                 });
             } catch(e) {}
         }
     });
 
-    // Redirect Logic (Low stock in bar -> Increase needs elsewhere)
     items.forEach(item => {
+        const profile = item.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+        if (profile?.type === 'PRODUCTION') return; // Exclude redirection source logic too
+
         const itemConsignes = consignes.filter(c => c.itemId === item.id);
         const itemPriorities = priorities.filter(p => p.itemId === item.id && p.storageId !== 's0').sort((a, b) => b.priority - a.priority);
 
         itemConsignes.forEach(c => {
             const minQty = c.minQuantity;
-            if (minQty > 0 && minQty < 1) { // Partial bottle logic
+            if (minQty > 0 && minQty < 1) { 
                 const level = stockLevels.find(l => l.itemId === item.id && l.storageId === c.storageId);
                 const currentQty = level?.currentQuantity || 0;
 
@@ -163,16 +163,12 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
         const item = items.find(i => i.id === itemId);
         if (!item) return;
 
-        let isEventItem = false;
-
         storageMap.forEach((data, storageId) => {
             if (data.minQty <= 0) return;
             const storage = storages.find(s => s.id === storageId);
             if (!storage) return;
             const priority = getPrio(itemId, storageId);
             if (priority === 0 && storageId !== 's0') return;
-
-            if (data.isEvent) isEventItem = true;
 
             const level = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
             const currentQty = level?.currentQuantity || 0;
@@ -207,7 +203,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
         return a.item.name.localeCompare(b.item.name);
     });
 
-  }, [consignes, items, storages, stockLevels, priorities, unfulfilledOrders, transactions, orders, events]);
+  }, [consignes, items, storages, stockLevels, priorities, unfulfilledOrders, transactions, orders, events, dlcProfiles]);
 
   const groupedNeeds = useMemo(() => {
     const groups: Record<string, AggregatedNeed[]> = {};
@@ -223,7 +219,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
     return groups;
   }, [aggregatedNeeds, categories]);
 
-  // ... (rest of the component handlers unchanged) ...
+  // ... Handlers (unchanged) ...
   const handleOpenModal = (item: StockItem, detail: NeedDetail) => {
     setSelectedDetail({ item, detail });
     setPartialQty(''); 
@@ -272,6 +268,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-20 relative">
+      {/* ... Modals (unchanged from original, just ensure they are present) ... */}
       {selectedDetail && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 relative overflow-hidden">

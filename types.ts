@@ -126,6 +126,7 @@ export interface Transaction {
   date: string;
   note?: string; 
   isCaveTransfer?: boolean;
+  isServiceTransfer?: boolean;
   userName?: string;
 }
 
@@ -216,6 +217,7 @@ export interface Task {
   isDone: boolean;
   doneBy?: string;
   doneAt?: string;
+  recurrence?: number[]; // 0=Dimanche, 1=Lundi...
 }
 
 export interface EventComment {

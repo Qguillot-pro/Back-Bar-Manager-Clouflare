@@ -36,13 +36,6 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   // Search State
   const [search, setSearch] = useState('');
 
-  // Initialiser la technique par défaut si disponible
-  useEffect(() => {
-      if (!newTech && techniques.length > 0) {
-          setNewTech(techniques[0].name);
-      }
-  }, [techniques]);
-
   // Initialiser la catégorie par défaut
   useEffect(() => {
       if (!newCat && cocktailCategories.length > 0) {
@@ -324,11 +317,17 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           </select>
                       </div>
                       <div className="space-y-2">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Technique</label>
-                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newTech} onChange={e => setNewTech(e.target.value)}>
-                              {techniques.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                              {!techniques.length && <option value="Shaker">Shaker (Défaut)</option>}
-                          </select>
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Technique (Texte Libre)</label>
+                          <input 
+                            list="technique-list"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm"
+                            value={newTech} 
+                            onChange={e => setNewTech(e.target.value)}
+                            placeholder="Shaker, Verre à mélange..."
+                          />
+                          <datalist id="technique-list">
+                              {techniques.map(t => <option key={t.id} value={t.name} />)}
+                          </datalist>
                       </div>
                       <div className="space-y-2">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Décoration</label>

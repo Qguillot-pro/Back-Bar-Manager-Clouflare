@@ -9,7 +9,7 @@ interface GlobalInventoryProps {
   categories: Category[];
   consignes: StockConsigne[];
   onSync: (action: string, payload: any) => void;
-  onUpdateStock: (itemId: string, storageId: string, qty: number) => void;
+  onUpdateStock: (itemId: string, storageId: string, qty: number, isTransfer?: boolean, isCorrection?: boolean) => void;
   formats: Format[];
 }
 
@@ -19,25 +19,19 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState<Category | ''>('');
   
-  // Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportCategories, setExportCategories] = useState<Set<string>>(new Set(categories));
 
-  // ID technique du stockage "Global/Autre" défini dans le schéma
   const GLOBAL_STORAGE_ID = 's_global';
 
-  // Articles à afficher : Tous les items (Bar + InventoryOnly)
   const displayedItems = useMemo(() => {
       let filtered = items.filter(i => 
           (filterCategory === 'ALL' || i.category === filterCategory) &&
           i.name.toLowerCase().includes(searchTerm.trim().toLowerCase())
       );
-      
-      // Tri par ordre personnalisé
       return filtered.sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
   }, [items, filterCategory, searchTerm]);
 
-  // Calcul du stock total BAR (somme de tous les stockages SAUF s_global)
   const getBarStock = (itemId: string) => {
       return stockLevels
         .filter(l => l.itemId === itemId && l.storageId !== GLOBAL_STORAGE_ID)
@@ -56,15 +50,35 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       onUpdateStock(itemId, GLOBAL_STORAGE_ID, num);
   };
 
+  // NOUVELLE LOGIQUE AJUSTEMENT
   const handleAdjustStock = (itemId: string, adjustment: number) => {
       const current = getGlobalStock(itemId);
-      const newQty = Math.max(0, parseFloat((current + adjustment).toFixed(2))); // Evite flottants bizarres
-      onUpdateStock(itemId, GLOBAL_STORAGE_ID, newQty);
+      
+      if (adjustment < 0) {
+          // Mouvement SORTIE (Régulation)
+          const newQty = Math.max(0, parseFloat((current + adjustment).toFixed(2)));
+          onUpdateStock(itemId, GLOBAL_STORAGE_ID, newQty, false, true); // isCorrection=true
+      } else {
+          // Mouvement AJOUT
+          // Vérifier d'abord s'il y a du stock dans s0
+          const s0Level = stockLevels.find(l => l.itemId === itemId && l.storageId === 's0');
+          const s0Qty = s0Level?.currentQuantity || 0;
+
+          if (s0Qty >= adjustment) {
+              // TRANSFERT DEPUIS S0
+              onUpdateStock(itemId, 's0', s0Qty - adjustment); // Enlève de S0
+              onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment); // Ajoute à Global
+              alert("Transfert effectué depuis le Surstock (S0) !");
+          } else {
+              // PAS DE S0 -> ANNULATION DERNIERE SORTIE (Correction Positive)
+              // On considère ça comme une correction d'inventaire simple ici pour simplifier
+              onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment, false, true);
+          }
+      }
   };
 
   const handleResetColumn = () => {
       if (window.confirm("ATTENTION : Vous êtes sur le point de remettre à ZÉRO toute la colonne 'Stock Autre' (Restaurant/Autre). Confirmer ?")) {
-          // On ne reset que ceux qui ont une valeur > 0 pour éviter des appels inutiles
           const itemsToReset = stockLevels.filter(l => l.storageId === GLOBAL_STORAGE_ID && l.currentQuantity > 0);
           itemsToReset.forEach(l => {
               onUpdateStock(l.itemId, GLOBAL_STORAGE_ID, 0);
@@ -86,7 +100,6 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
           order: items.length,
           isDraft: false
       };
-      // On utilise l'action générique SAVE_ITEM (App.tsx gère l'ajout)
       onSync('SAVE_ITEM', newItem);
       setNewItemName('');
   };
@@ -102,7 +115,6 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
 
       let order1 = currentItem.order ?? index;
       let order2 = targetItem.order ?? targetIndex;
-      
       if (order1 === order2) { order1 = index; order2 = targetIndex; }
 
       onSync('SAVE_ITEM', { ...currentItem, order: order2 });
@@ -123,8 +135,6 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
 
   const handleConfirmExport = () => {
       let csv = "\uFEFFCatégorie,Produit,Format,Stock Bar,Stock Autre/Resto,Total\n";
-      
-      // Items sorted by global order, filtered by selected categories
       const itemsToExport = items
           .filter(i => exportCategories.has(i.category))
           .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
@@ -143,13 +153,12 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       link.href = url;
       link.download = `inventaire_global_${new Date().toISOString().slice(0,10)}.csv`;
       link.click();
-      
       setIsExportModalOpen(false);
   };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-20 relative">
-        
+        {/* ... (Modals & Header - Unchanged) ... */}
         {/* EXPORT MODAL */}
         {isExportModalOpen && (
             <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
@@ -296,6 +305,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                         <button 
                                             onClick={() => handleAdjustStock(item.id, -1)}
                                             className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 font-black text-sm transition-colors active:scale-95"
+                                            title="-1 (Sortie Régulation)"
                                         >
                                             -
                                         </button>
@@ -312,6 +322,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                         <button 
                                             onClick={() => handleAdjustStock(item.id, 1)}
                                             className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 font-black text-sm transition-colors active:scale-95"
+                                            title="+1 (Transfert S0 ou Correction)"
                                         >
                                             +
                                         </button>
@@ -321,9 +332,6 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                             </tr>
                         );
                     })}
-                    {displayedItems.length === 0 && (
-                        <tr><td colSpan={6} className="p-12 text-center text-slate-400 italic">Aucun article trouvé.</td></tr>
-                    )}
                 </tbody>
             </table>
         </div>

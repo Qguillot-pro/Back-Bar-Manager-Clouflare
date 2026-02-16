@@ -6,6 +6,7 @@ import StockTable from './components/StockTable';
 import Movements from './components/Movements';
 import ArticlesList from './components/ArticlesList';
 import CaveRestock from './components/CaveRestock';
+import BarPrep from './components/BarPrep';
 import Configuration from './components/Configuration';
 import Consignes from './components/Consignes';
 import DLCView from './components/DLCView';
@@ -357,13 +358,19 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentUser, handlePinInput]);
 
-  const handleStockUpdate = (itemId: string, storageId: string, newQty: number) => {
+  const handleStockUpdate = (itemId: string, storageId: string, newQty: number, isTransfer: boolean = false, isCorrection: boolean = false) => {
     setStockLevels(prev => {
       const exists = prev.find(l => l.itemId === itemId && l.storageId === storageId);
       if (exists) return prev.map(l => (l.itemId === itemId && l.storageId === storageId) ? { ...l, currentQuantity: newQty } : l);
       return [...prev, { itemId, storageId, currentQuantity: newQty }];
     });
     syncData('SAVE_STOCK', { itemId, storageId, currentQuantity: newQty });
+    
+    if (isCorrection) {
+        const trans: Transaction = { id: Math.random().toString(36).substr(2, 9), itemId, storageId, type: 'IN', quantity: 0, date: new Date().toISOString(), userName: currentUser?.name, note: 'Régulation Stock Global' };
+        setTransactions(prev => [trans, ...prev]);
+        syncData('SAVE_TRANSACTION', trans);
+    }
   };
 
   // --- LOGIQUE DLC AVANCÉE ---
@@ -456,60 +463,57 @@ const App: React.FC = () => {
       syncData('DELETE_DLC_HISTORY', { id });
   };
 
-  // --- REFACTOR LOGIQUE TRANSACTION ---
-  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number) => {
-      // Cette fonction est appelée par Movements.tsx pour les mouvements standards
-      // Les logiques spécifiques DLC sont gérées en amont dans Movements ou via les nouveaux handlers DLC
-      
-      const itemPriorities = priorities.filter(p => p.itemId === itemId).sort((a,b) => b.priority - a.priority);
+  // --- REFACTOR LOGIQUE TRANSACTION CASCADE ---
+  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer?: boolean) => {
+      // Priorities sorted by DESC priority (10 -> 0)
+      const itemPriorities = priorities.filter(p => p.itemId === itemId && p.storageId !== 's0').sort((a,b) => b.priority - a.priority);
       const getStorageQty = (sId: string) => stockLevels.find(l => l.itemId === itemId && l.storageId === sId)?.currentQuantity || 0;
 
       if (type === 'OUT') {
           let remaining = qty;
           
-          // 1. PRIORITÉ SURSTOCK (S0)
-          const s0Qty = getStorageQty('s0');
-          if (s0Qty > 0) {
-              const deduction = Math.min(s0Qty, remaining);
-              handleStockUpdate(itemId, 's0', s0Qty - deduction);
-              const trans: Transaction = { id: Math.random().toString(36).substr(2, 9), itemId, storageId: 's0', type: 'OUT', quantity: deduction, date: new Date().toISOString(), userName: currentUser?.name, note: 'Sortie Prioritaire Surstock' };
-              setTransactions(prev => [trans, ...prev]); syncData('SAVE_TRANSACTION', trans);
-              return; 
-          }
-
-          // 2. SORTIE STANDARD
+          // STRICT CASCADE: Highest Priority -> Lowest -> S0
+          // Iteration on prioritized storages
           for (const prio of itemPriorities) {
               if (remaining <= 0) break;
               const q = getStorageQty(prio.storageId);
               if (q > 0) {
                   const take = Math.min(q, remaining);
                   handleStockUpdate(itemId, prio.storageId, q - take);
-                  const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: prio.storageId, type: 'OUT', quantity: take, date: new Date().toISOString(), userName: currentUser?.name };
+                  const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: prio.storageId, type: 'OUT', quantity: take, date: new Date().toISOString(), userName: currentUser?.name, isServiceTransfer };
                   setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
                   remaining -= take;
               }
           }
+          
+          // Finish with S0 if still remaining
           if (remaining > 0) {
-              // Si pas de stock prioritaire, on tape dans le dernier dispo ou s0
-              const fallbackStorage = itemPriorities.length > 0 ? itemPriorities[0].storageId : 's0';
-              const q = getStorageQty(fallbackStorage);
-              handleStockUpdate(itemId, fallbackStorage, q - remaining); // Allow negative for s0/fallback
-              const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: fallbackStorage, type: 'OUT', quantity: remaining, date: new Date().toISOString(), userName: currentUser?.name };
+              const qS0 = getStorageQty('s0');
+              handleStockUpdate(itemId, 's0', qS0 - remaining); 
+              const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: 's0', type: 'OUT', quantity: remaining, date: new Date().toISOString(), userName: currentUser?.name, note: 'Sortie Surstock', isServiceTransfer };
               setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
           }
       } 
       else { // IN
           let remaining = qty;
+          
+          // STRICT CASCADE IN: Highest Priority -> Lowest -> S0
+          // Fills available space defined by consignes (Max)
           for (const prio of itemPriorities) {
               if (remaining <= 0) break;
-              if (prio.storageId === 's0') continue;
+              
               const current = getStorageQty(prio.storageId);
-              if (current > 0 && current % 1 !== 0) continue; // Pas de remplissage bouteille entamée
               const consigne = consignes.find(c => c.itemId === itemId && c.storageId === prio.storageId);
-              const target = consigne?.maxCapacity ?? consigne?.minQuantity ?? 0;
+              const maxCap = consigne?.maxCapacity ?? 0;
+              const minCap = consigne?.minQuantity ?? 0;
+              
+              // Only fill if there is explicit space (Max defined, or Min defined if Max is 0)
+              const target = maxCap > 0 ? maxCap : minCap;
+              
               if (target > 0 && current < target) {
                   const space = Math.floor(target - current); 
                   const fill = Math.min(space, remaining);
+                  
                   if (fill > 0) {
                       handleStockUpdate(itemId, prio.storageId, current + fill);
                       const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: prio.storageId, type: 'IN', quantity: fill, date: new Date().toISOString(), userName: currentUser?.name };
@@ -518,10 +522,12 @@ const App: React.FC = () => {
                   }
               }
           }
+          
+          // Overflow to S0
           if (remaining > 0) {
               const qS0 = getStorageQty('s0');
               handleStockUpdate(itemId, 's0', qS0 + remaining);
-              const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: 's0', type: 'IN', quantity: remaining, date: new Date().toISOString(), userName: currentUser?.name };
+              const trans: Transaction = { id: Math.random().toString(36).substr(2,9), itemId, storageId: 's0', type: 'IN', quantity: remaining, date: new Date().toISOString(), userName: currentUser?.name, note: 'Entrée Surstock' };
               setTransactions(p=>[trans, ...p]); syncData('SAVE_TRANSACTION', trans);
           }
       }
@@ -610,7 +616,6 @@ const App: React.FC = () => {
       syncData('SAVE_CONFIG', { key, value: typeof value === 'object' ? JSON.stringify(value) : value });
   };
 
-  // Nouvelle fonction centrale pour les cocktails
   const handleSaveDailyCocktail = (cocktail: DailyCocktail) => {
       setDailyCocktails(prev => {
           const idx = prev.findIndex(c => c.id === cocktail.id);
@@ -619,7 +624,6 @@ const App: React.FC = () => {
               copy[idx] = cocktail; 
               return copy; 
           }
-          // On vérifie aussi par date/type pour éviter doublons si ID changeant
           const idx2 = prev.findIndex(c => c.date === cocktail.date && c.type === cocktail.type);
           if (idx2 >= 0) {
               const copy = [...prev]; 
@@ -637,8 +641,8 @@ const App: React.FC = () => {
         {loadingStep && <p className="text-slate-400 text-xs font-bold uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full">{loadingStep}</p>}
   </div>;
   
-  // ... (Login Screen - No changes)
   if (!currentUser) {
+     // ... (Login Screen unchanged) ...
      return (
        <div className="h-screen bg-slate-900 flex items-center justify-center p-4">
          <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden max-w-sm w-full relative">
@@ -677,8 +681,8 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex flex-col md:flex-row bg-slate-50 ${isTestMode ? 'border-4 border-rose-500' : ''}`}>
-      {/* ... Sidebar (unchanged) ... */}
       <aside className={`bg-slate-900 text-white flex flex-col md:sticky top-0 md:h-screen z-50 transition-all duration-300 ${isSidebarCollapsed ? 'w-full md:w-20' : 'w-full md:w-64'}`}>
+        {/* ... Sidebar header ... */}
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-black text-xs shrink-0">B</div>
@@ -691,6 +695,7 @@ const App: React.FC = () => {
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-thin">
           <NavItem collapsed={isSidebarCollapsed} active={view === 'dashboard'} onClick={() => setView('dashboard')} label="Tableau de Bord" icon="M4 6h16M4 12h16M4 18h16" />
+          <NavItem collapsed={isSidebarCollapsed} active={view === 'bar_prep'} onClick={() => setView('bar_prep')} label="Préparation Bar" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'restock'} onClick={() => setView('restock')} label="Préparation Cave" icon="M19 14l-7 7m0 0l-7-7m7 7V3" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'movements'} onClick={() => setView('movements')} label="Mouvements" icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           <NavItem collapsed={isSidebarCollapsed} active={view === 'inventory'} onClick={() => setView('inventory')} label="Stock Global" icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
@@ -739,15 +744,6 @@ const App: React.FC = () => {
                                 {isOffline ? 'Mode Local' : (dataSyncing ? 'Sync...' : 'Connecté')}
                             </span>
                         </div>
-                        {currentUser?.role === 'ADMIN' && (
-                            <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                                <div className={`w-6 h-3 rounded-full relative transition-colors ${isTestMode ? 'bg-rose-500' : 'bg-slate-600'}`}>
-                                    <div className={`absolute top-0.5 w-2 h-2 bg-white rounded-full transition-all ${isTestMode ? 'left-3.5' : 'left-0.5'}`}></div>
-                                </div>
-                                <input type="checkbox" className="hidden" checked={isTestMode} onChange={(e) => setIsTestMode(e.target.checked)} />
-                                <span className="text-[9px] uppercase font-bold text-rose-400">Test Mode</span>
-                            </label>
-                        )}
                     </>
                 )}
             </div>
@@ -783,19 +779,22 @@ const App: React.FC = () => {
                 unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={handleUnfulfilledOrder} 
                 onCreateTemporaryItem={handleCreateTemporaryItem} formats={formats} 
                 dlcProfiles={dlcProfiles} onUndo={handleUndoLastTransaction} 
-                dlcHistory={dlcHistory} // NEW
-                onDlcEntry={handleDlcEntry} // NEW
-                onDlcConsumption={handleDlcConsumption} // NEW
+                dlcHistory={dlcHistory} 
+                onDlcEntry={handleDlcEntry} 
+                onDlcConsumption={handleDlcConsumption} 
             />
         )}
         
-        {view === 'restock' && <CaveRestock items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={handleCreateTemporaryItem} orders={orders} currentUser={currentUser} events={events} />}
+        {view === 'restock' && <CaveRestock items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={handleCreateTemporaryItem} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
+        
+        {view === 'bar_prep' && <BarPrep items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} />}
+
         {view === 'articles' && (
             <ArticlesList 
                 items={sortedItems} setItems={setItems} formats={formats} categories={categories} 
                 userRole={currentUser?.role || 'BARMAN'} onDelete={handleDeleteItem} onSync={syncData} 
                 dlcProfiles={dlcProfiles} filter={articlesFilter} 
-                events={events} recipes={recipes} // AJOUT DES PROPS POUR PROTECTION
+                events={events} recipes={recipes}
             />
         )}
         {view === 'consignes' && <Consignes items={sortedItems} storages={sortedStorages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
@@ -834,7 +833,6 @@ const App: React.FC = () => {
               items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} 
               setEventComments={setEventComments} dailyCocktails={dailyCocktails} 
               setDailyCocktails={(val) => {
-                  // We handle partial updates via generic sync but here we update state
                   if (typeof val === 'function') setDailyCocktails(val);
                   else setDailyCocktails(val);
               }}
@@ -845,7 +843,7 @@ const App: React.FC = () => {
               glassware={glassware}
               appConfig={appConfig}
               saveConfig={handleSaveConfig}
-              initialTab={view.split(':')[1]} // "COCKTAILS" for example
+              initialTab={view.split(':')[1]} 
             />
         )}
 
