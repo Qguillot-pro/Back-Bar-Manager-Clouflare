@@ -284,16 +284,25 @@ export interface EmailTemplate {
 export interface AdminNote {
     id: string;
     content: string;
-    updatedAt: string;
+    createdAt: string; // Historique: date de création
+    userName?: string;
+}
+
+export interface ProductType {
+    id: string;
+    name: string;
+    fields: string[]; // List of custom field names
 }
 
 export interface ProductSheet {
     id: string;
     itemId: string; // Link to StockItem
-    type: 'WINE' | 'SPIRIT' | 'BEER' | 'COCKTAIL' | 'OTHER';
+    fullName?: string; // Nom complet pour recherche
+    type: string; // Correspond à ProductType.name
     region?: string;
     country?: string;
     tastingNotes?: string; // JSON string { nose: '', mouth: '', eye: '' }
+    customFields?: string; // JSON string { 'Cepage': 'Merlot', ... }
     foodPairing?: string;
     servingTemp?: string;
     allergens?: string;

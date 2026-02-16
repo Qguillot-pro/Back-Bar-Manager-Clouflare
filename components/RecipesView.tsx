@@ -20,6 +20,7 @@ const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\
 const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [], cocktailCategories = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   
   // Create/Edit Form State
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -27,7 +28,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   const [newCat, setNewCat] = useState('');
   const [newGlassId, setNewGlassId] = useState('');
   const [newTech, setNewTech] = useState('');
-  const [newTechDetails, setNewTechDetails] = useState(''); // NEW
+  const [newTechDetails, setNewTechDetails] = useState(''); 
   const [newDesc, setNewDesc] = useState('');
   const [newHistory, setNewHistory] = useState('');
   const [newDecoration, setNewDecoration] = useState('');
@@ -48,7 +49,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   const getFormatValue = (itemId?: string) => {
       if (!itemId) return 0;
       const item = items.find(i => i.id === itemId);
-      return 70; // Valeur par défaut simplifiée, à améliorer avec props formats
+      return 70; 
   };
 
   const getIngredientCost = (ing: RecipeIngredient) => {
@@ -59,7 +60,6 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       const formatVal = getFormatValue(item.id); 
       if (formatVal === 0) return 0;
 
-      // Conversion basique
       let qtyInCl = ing.quantity;
       if (ing.unit === 'ml') qtyInCl = ing.quantity / 10;
       if (ing.unit === 'dash') qtyInCl = ing.quantity * 0.1; 
@@ -144,7 +144,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           category: newCat,
           glasswareId: newGlassId,
           technique: newTech,
-          technicalDetails: newTechDetails, // NEW
+          technicalDetails: newTechDetails, 
           description: newDesc,
           history: newHistory,
           decoration: newDecoration,
@@ -165,7 +165,6 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       onSync('SAVE_RECIPE', recipe);
       setViewMode('LIST');
       
-      // Reset
       setEditingId(null);
       setNewName('');
       setNewIngredients([]);
@@ -203,13 +202,21 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       }
   };
 
-  const handlePrint = () => {
-      window.print();
-  };
-
   const filteredRecipes = useMemo(() => {
-      return recipes.filter(r => normalizeText(r.name).includes(normalizeText(search.trim())));
-  }, [recipes, search]);
+      let res = recipes;
+      // Search Overrides Category Selection
+      if (search.trim()) {
+          res = res.filter(r => normalizeText(r.name).includes(normalizeText(search.trim())));
+      } else if (selectedCategory) {
+          res = res.filter(r => r.category === selectedCategory);
+      }
+      return res;
+  }, [recipes, search, selectedCategory]);
+
+  const activeCategories = useMemo(() => {
+      const cats = new Set(recipes.map(r => r.category));
+      return cocktailCategories.filter(c => cats.has(c.name));
+  }, [recipes, cocktailCategories]);
 
   // --- RENDER ---
 
@@ -217,14 +224,21 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       return (
           <div className="space-y-6">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                  <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                      <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
-                      Cartes des Cocktails
-                  </h2>
+                  <div className="flex items-center gap-2">
+                      {selectedCategory && !search && (
+                          <button onClick={() => setSelectedCategory(null)} className="mr-2 p-2 rounded-full bg-slate-100 hover:bg-slate-200">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                          </button>
+                      )}
+                      <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                          <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
+                          {selectedCategory && !search ? selectedCategory : 'Cartes des Cocktails'}
+                      </h2>
+                  </div>
                   <div className="flex gap-4 w-full md:w-auto">
                       <input 
                         type="text" 
-                        placeholder="Rechercher..." 
+                        placeholder="Recherche globale..." 
                         className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 font-bold text-sm outline-none focus:ring-2 focus:ring-pink-100 flex-1"
                         value={search}
                         onChange={e => setSearch(e.target.value)}
@@ -243,38 +257,73 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                   </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredRecipes.map(r => (
-                      <div 
-                        key={r.id} 
-                        onClick={() => { setSelectedRecipe(r); setViewMode('DETAIL'); }}
-                        className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-pink-200 transition-all cursor-pointer group relative overflow-hidden"
-                      >
-                          {r.status === 'VALIDATED' && (
-                              <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-black px-2 py-1 rounded-bl-xl uppercase tracking-widest flex items-center gap-1 shadow-sm">
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                  Vérifié
+              {/* MODE TUILES CATEGORIES (Si pas de recherche et pas de catégorie sélectionnée) */}
+              {!search && !selectedCategory && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-2">
+                      {activeCategories.map(cat => (
+                          <div 
+                            key={cat.id} 
+                            onClick={() => setSelectedCategory(cat.name)}
+                            className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-pink-300 transition-all cursor-pointer group flex flex-col items-center justify-center h-40 text-center gap-3"
+                          >
+                              <div className="w-12 h-12 rounded-full bg-pink-50 text-pink-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <span className="text-xl">🍸</span>
                               </div>
-                          )}
-                          <div className="flex justify-between items-start mb-4">
-                              <div>
-                                  <h3 className="font-black text-lg text-slate-800 group-hover:text-pink-600 transition-colors">{r.name}</h3>
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{r.category}</span>
+                              <h3 className="font-black text-slate-800 text-sm uppercase tracking-wider">{cat.name}</h3>
+                              <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-1 rounded-full">
+                                  {recipes.filter(r => r.category === cat.name).length} Recettes
+                              </span>
+                          </div>
+                      ))}
+                      {recipes.filter(r => !cocktailCategories.some(c => c.name === r.category)).length > 0 && (
+                          <div 
+                            onClick={() => setSelectedCategory('Autre')}
+                            className="bg-slate-50 p-6 rounded-3xl border border-dashed border-slate-300 hover:border-slate-400 transition-all cursor-pointer group flex flex-col items-center justify-center h-40 text-center gap-3"
+                          >
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Non Classé</span>
+                              <span className="text-xs font-bold text-slate-500">{recipes.filter(r => !cocktailCategories.some(c => c.name === r.category)).length}</span>
+                          </div>
+                      )}
+                  </div>
+              )}
+
+              {/* LISTE RECETTES (Si recherche active OU catégorie sélectionnée) */}
+              {(search || selectedCategory) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in">
+                      {filteredRecipes.map(r => (
+                          <div 
+                            key={r.id} 
+                            onClick={() => { setSelectedRecipe(r); setViewMode('DETAIL'); }}
+                            className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-pink-200 transition-all cursor-pointer group relative overflow-hidden"
+                          >
+                              {r.status === 'VALIDATED' && (
+                                  <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-black px-2 py-1 rounded-bl-xl uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                      Vérifié
+                                  </div>
+                              )}
+                              <div className="flex justify-between items-start mb-4">
+                                  <div>
+                                      <h3 className="font-black text-lg text-slate-800 group-hover:text-pink-600 transition-colors">{r.name}</h3>
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{r.category}</span>
+                                  </div>
+                                  {r.status === 'DRAFT' && <span className="bg-amber-100 text-amber-600 text-[9px] font-black px-2 py-1 rounded uppercase">Brouillon</span>}
                               </div>
-                              {r.status === 'DRAFT' && <span className="bg-amber-100 text-amber-600 text-[9px] font-black px-2 py-1 rounded uppercase">Brouillon</span>}
+                              <p className="text-sm text-slate-500 line-clamp-2 mb-4">{r.description}</p>
+                              <div className="flex justify-between items-center border-t border-slate-50 pt-4">
+                                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{r.technique}</span>
+                                  <span className="font-black text-slate-900">{r.sellingPrice?.toFixed(2)} €</span>
+                              </div>
                           </div>
-                          <p className="text-sm text-slate-500 line-clamp-2 mb-4">{r.description}</p>
-                          <div className="flex justify-between items-center border-t border-slate-50 pt-4">
-                              <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{r.technique}</span>
-                              <span className="font-black text-slate-900">{r.sellingPrice?.toFixed(2)} €</span>
-                          </div>
-                      </div>
-                  ))}
-              </div>
+                      ))}
+                      {filteredRecipes.length === 0 && <p className="col-span-full text-center text-slate-400 italic py-10">Aucune recette trouvée.</p>}
+                  </div>
+              )}
           </div>
       );
   }
 
+  // ... (Create & Detail Views remain same as before) ...
   if (viewMode === 'CREATE') {
       const currentCost = calculateTotalCost(newIngredients);
       const currentPrice = calculateSellingPrice(currentCost);
@@ -513,7 +562,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       </div>
                       
                       <div className="flex gap-2">
-                          <button onClick={handlePrint} className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-700 flex items-center gap-2">
+                          <button onClick={() => window.print()} className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-700 flex items-center gap-2">
                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
                               Imprimer
                           </button>

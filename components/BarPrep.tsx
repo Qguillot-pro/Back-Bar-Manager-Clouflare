@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, DLCProfile } from '../types';
+import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, DLCProfile, DLCHistory } from '../types';
 
 interface BarPrepProps {
   items: StockItem[];
@@ -12,6 +12,7 @@ interface BarPrepProps {
   onAction: (itemId: string, storageId: string, qtyNeeded: number, qtyToOrder?: number, isRupture?: boolean) => void;
   categories: Category[];
   dlcProfiles: DLCProfile[];
+  dlcHistory?: DLCHistory[]; // AJOUT
 }
 
 interface NeedDetail {
@@ -25,13 +26,14 @@ interface NeedDetail {
 interface AggregatedNeed {
   item: StockItem;
   totalGap: number;
+  totalStock: number; // Stock théorique global
+  dlcInfo: { count: number, closestExpiry: Date | null, label: string };
   details: NeedDetail[];
 }
 
-const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, dlcProfiles }) => {
+const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, dlcProfiles, dlcHistory = [] }) => {
   const [selectedDetail, setSelectedDetail] = useState<{ item: StockItem, detail: NeedDetail } | null>(null);
   
-  // Logic is similar to Restock but exclusively for PRODUCTION type items (e.g., Juices, Pre-mixes)
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
     const map = new Map<string, AggregatedNeed>();
 
@@ -46,6 +48,20 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
         const level = stockLevels.find(l => l.itemId === c.itemId && l.storageId === c.storageId);
         const currentQty = level?.currentQuantity || 0;
         
+        // Calcul Stock Total (Théorique)
+        const totalStock = stockLevels.filter(l => l.itemId === item.id).reduce((acc, curr) => acc + curr.currentQuantity, 0);
+
+        // Calcul Info DLC
+        const itemDlcs = dlcHistory.filter(h => h.itemId === item.id);
+        let closestExpiry: Date | null = null;
+        if (itemDlcs.length > 0 && profile) {
+            const sorted = itemDlcs.map(h => new Date(new Date(h.openedAt).getTime() + profile.durationHours * 3600000)).sort((a,b) => a.getTime() - b.getTime());
+            closestExpiry = sorted[0];
+        }
+        const dlcLabel = itemDlcs.length > 0 && closestExpiry 
+            ? `${itemDlcs.length} lots (Exp: ${closestExpiry.toLocaleDateString()})` 
+            : "Aucun lot actif";
+
         if (currentQty < c.minQuantity) {
             const gap = c.minQuantity - currentQty;
             const storage = storages.find(s => s.id === c.storageId);
@@ -53,7 +69,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
 
             if (storage) {
                 if (!map.has(item.id)) {
-                    map.set(item.id, { item, totalGap: 0, details: [] });
+                    map.set(item.id, { item, totalGap: 0, totalStock, dlcInfo: { count: itemDlcs.length, closestExpiry, label: dlcLabel }, details: [] });
                 }
                 const entry = map.get(item.id)!;
                 entry.details.push({ storage, currentQty, minQty: c.minQuantity, gap, priority });
@@ -65,11 +81,10 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
     const list = Array.from(map.values());
     list.forEach(agg => agg.details.sort((a,b) => b.priority - a.priority));
     return list.sort((a, b) => a.item.name.localeCompare(b.item.name));
-  }, [consignes, items, stockLevels, storages, priorities, dlcProfiles]);
+  }, [consignes, items, stockLevels, storages, priorities, dlcProfiles, dlcHistory]);
 
   const handleProduce = () => {
       if (selectedDetail) {
-          // Action standard : on ajoute au stock (Production faite)
           onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, selectedDetail.detail.gap);
           setSelectedDetail(null);
       }
@@ -101,7 +116,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
           </div>
       )}
 
-      <header className="bg-purple-900 rounded-[2rem] p-8 text-white shadow-2xl flex justify-between items-center">
+      <header className="bg-purple-900 rounded-[2rem] p-8 text-white shadow-2xl flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
             <h1 className="text-2xl font-black italic uppercase tracking-tighter">Préparation Bar</h1>
             <p className="text-purple-200 text-xs font-bold mt-1">Production Produits Frais (Jus, Sirops, Prémix)</p>
@@ -119,16 +134,22 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
               <div className="divide-y divide-slate-100">
                   {aggregatedNeeds.map(agg => (
                       <div key={agg.item.id} className="p-5 hover:bg-slate-50 transition-colors">
-                          <div className="flex justify-between items-center mb-2">
-                              <h3 className="font-black text-slate-900 text-base">{agg.item.name}</h3>
-                              <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest">Total: +{agg.totalGap}</span>
+                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-3 gap-2">
+                              <div>
+                                  <h3 className="font-black text-slate-900 text-base">{agg.item.name}</h3>
+                                  <div className="flex gap-3 mt-1">
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-0.5 rounded">Stock Global: {agg.totalStock}</span>
+                                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${agg.dlcInfo.count > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>DLC: {agg.dlcInfo.label}</span>
+                                  </div>
+                              </div>
+                              <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-lg">Manque Total: +{agg.totalGap}</span>
                           </div>
                           <div className="space-y-2">
                               {agg.details.map((d, idx) => (
                                   <div key={idx} className="flex items-center justify-between bg-purple-50/50 p-2 rounded-xl border border-purple-100">
                                       <span className="text-xs font-bold text-purple-900 uppercase ml-2">{d.storage.name}</span>
                                       <div className="flex items-center gap-3">
-                                          <span className="text-[10px] text-slate-500 font-bold">Stock: {d.currentQty} / {d.minQty}</span>
+                                          <span className="text-[10px] text-slate-500 font-bold">Stock Local: {d.currentQty} / Min: {d.minQty}</span>
                                           <button onClick={() => setSelectedDetail({ item: agg.item, detail: d })} className="bg-white text-purple-600 border border-purple-200 px-3 py-1 rounded-lg text-[10px] font-black uppercase hover:bg-purple-600 hover:text-white transition-colors">Produire (+{d.gap})</button>
                                       </div>
                                   </div>
