@@ -18,14 +18,15 @@ import DailyLife from './components/DailyLife';
 import ConnectionLogs from './components/ConnectionLogs';
 import GlobalInventory from './components/GlobalInventory';
 import ProductKnowledge from './components/ProductKnowledge';
+import AdminLogbook from './components/AdminLogbook';
 
 const NavItem = ({ collapsed, active, onClick, label, icon, badge }: { collapsed: boolean, active: boolean, onClick: () => void, label: string, icon: string, badge?: number }) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all mb-1 group relative ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
-    <div className="relative">
+    <div className="relative shrink-0">
         <svg className={`w-5 h-5 ${active ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} /></svg>
         {badge !== undefined && badge > 0 && <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full border-2 border-slate-900">{badge}</span>}
     </div>
-    {!collapsed && <span className="font-bold text-xs uppercase tracking-wider">{label}</span>}
+    {!collapsed && <span className="font-bold text-xs uppercase tracking-wider truncate">{label}</span>}
     {collapsed && active && <div className="absolute left-full ml-4 bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap z-50">{label}</div>}
   </button>
 );
@@ -42,6 +43,7 @@ const App: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); 
   const [isTestMode, setIsTestMode] = useState(false);
   const [view, setView] = useState<string>('dashboard');
+  const [showAdminLogbook, setShowAdminLogbook] = useState(false);
 
   // Data States
   const [users, setUsers] = useState<User[]>([]);
@@ -357,14 +359,14 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-slate-50">
-      <aside className={`bg-slate-900 text-white flex flex-col transition-all duration-300 ${isSidebarCollapsed ? 'w-20' : 'w-64'} z-50`}>
-        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+    <div className="h-screen flex bg-slate-50 overflow-hidden">
+      <aside className={`bg-slate-900 text-white flex flex-col transition-all duration-300 ${isSidebarCollapsed ? 'w-20' : 'w-64'} h-full flex-shrink-0 z-50`}>
+        <div className="p-6 border-b border-white/5 flex items-center justify-between shrink-0">
             {!isSidebarCollapsed && <h1 className="font-black text-sm uppercase tracking-widest">BARSTOCK</h1>}
             <button onClick={()=>setIsSidebarCollapsed(!isSidebarCollapsed)} className="text-slate-500 hover:text-white"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button>
         </div>
         
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
             <NavItem collapsed={isSidebarCollapsed} active={view === 'dashboard'} onClick={()=>setView('dashboard')} label="Tableau de Bord" icon="M4 6h16M4 12h16M4 18h16" />
             <NavItem collapsed={isSidebarCollapsed} active={view.startsWith('daily_life')} onClick={()=>setView('daily_life')} label="Vie Quotidienne" icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'bar_prep'} onClick={()=>setView('bar_prep')} label="Préparation Bar" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -383,7 +385,7 @@ const App: React.FC = () => {
             {currentUser.role === 'ADMIN' && <NavItem collapsed={isSidebarCollapsed} active={view === 'connection_logs'} onClick={()=>setView('connection_logs')} label="Logs" icon="M9 12l2 2 4-4" />}
         </nav>
 
-        <div className="p-4 border-t border-white/5 bg-slate-900 space-y-3">
+        <div className="p-4 border-t border-white/5 bg-slate-900 space-y-3 shrink-0">
             <div className={`flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
                 <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-sm text-white shrink-0">
                     {currentUser.name.charAt(0).toUpperCase()}
@@ -416,6 +418,15 @@ const App: React.FC = () => {
                 >
                     <svg className={`w-4 h-4 ${dataSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 </button>
+                {currentUser.role === 'ADMIN' && (
+                    <button 
+                        onClick={() => setShowAdminLogbook(true)}
+                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center gap-2 transition-all"
+                        title="Journal de Bord"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 4.168 6.253v13C4.168 19.477 5.754 20 7.5 20s3.332-.523 3.332-1.247m0-12.5c1.664-1.247 3.332-1.247 5 0m0 12.5C17.5 19.477 15.832 20 14.168 20s-3.332-.523-3.332-1.247" /></svg>
+                    </button>
+                )}
                 <button 
                     onClick={() => setView('configuration')} 
                     className={`flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center gap-2 transition-all ${view === 'configuration' ? 'bg-indigo-600 text-white' : ''}`}
@@ -435,7 +446,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 p-4 md:p-8 h-screen overflow-y-auto">
+      <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 relative">
           {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} />}
           {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={handleCreateTemporaryItem} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={(k, v) => { setAppConfig(p => ({...p, [k]: v})); syncData('SAVE_CONFIG', {key: k, value: JSON.stringify(v)}); }} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} />}
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} />}
@@ -454,6 +465,15 @@ const App: React.FC = () => {
           {view === 'configuration' && <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={storages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} cocktailCategories={cocktailCategories} setCocktailCategories={setCocktailCategories} productTypes={productTypes} setProductTypes={setProductTypes} emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates} fullData={{items, storages, stockLevels}} />}
           {view === 'connection_logs' && <ConnectionLogs logs={userLogs} />}
       </main>
+
+      {/* ADMIN LOGBOOK MODAL */}
+      {showAdminLogbook && currentUser && (
+          <AdminLogbook 
+            currentUser={currentUser} 
+            onSync={syncData} 
+            onClose={() => setShowAdminLogbook(false)} 
+          />
+      )}
     </div>
   );
 };
