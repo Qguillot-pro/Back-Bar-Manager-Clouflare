@@ -55,6 +55,12 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
     onUpdateStock(itemId, storageId, num);
   };
 
+  const handleAdjustStock = (itemId: string, storageId: string, delta: number) => {
+      const currentQty = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId)?.currentQuantity || 0;
+      const newQty = Math.max(0, parseFloat((currentQty + delta).toFixed(2)));
+      onUpdateStock(itemId, storageId, newQty);
+  };
+
   const getDisplayValue = (itemId: string, storageId: string) => {
       const qty = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId)?.currentQuantity || 0;
       const key = `${itemId}-${storageId}`;
@@ -175,7 +181,7 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                     <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                         <tr>
                             <th className="p-4 border-r sticky left-0 bg-slate-100 z-10 w-64 shadow-[1px_0_0_0_#e2e8f0]">Produit</th>
-                            {visibleStorages.map(s => <th key={s.id} className="p-4 text-center border-r min-w-[140px]">{s.name}</th>)}
+                            {visibleStorages.map(s => <th key={s.id} className="p-4 text-center border-r min-w-[160px]">{s.name}</th>)}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -214,17 +220,32 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                     return (
                                         <td key={s.id} className={`p-2 border-r text-center relative ${isZeroPriority ? 'bg-slate-50/30' : ''}`}>
                                             <div className="flex justify-center items-center relative gap-2">
+                                                <button 
+                                                    onClick={() => handleAdjustStock(item.id, s.id, -1)} 
+                                                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-500 hover:bg-rose-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
+                                                    tabIndex={-1}
+                                                >
+                                                    -
+                                                </button>
                                                 <input 
                                                     type="text"
                                                     inputMode="decimal"
-                                                    className={`w-14 border rounded-lg p-2 text-center font-black outline-none transition-all ring-2 ring-transparent focus:bg-white focus:ring-2 ${inputColorClass}`}
+                                                    className={`w-16 border-2 rounded-xl p-2 text-center font-black outline-none transition-all ring-2 ring-transparent focus:bg-white focus:ring-2 ${inputColorClass}`}
                                                     value={getDisplayValue(item.id, s.id)}
                                                     onChange={(e) => handleInputChange(item.id, s.id, e.target.value)}
                                                     onBlur={(e) => handleInputBlur(item.id, s.id, e.target.value)}
                                                     onFocus={(e) => e.target.select()}
                                                 />
+                                                <button 
+                                                    onClick={() => handleAdjustStock(item.id, s.id, 1)} 
+                                                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-emerald-200 text-emerald-500 hover:bg-emerald-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
+                                                    tabIndex={-1}
+                                                >
+                                                    +
+                                                </button>
+                                                
                                                 {consigne > 0 && !isZeroPriority && (
-                                                    <span className="text-[10px] font-bold text-slate-300 w-6 text-left">/ {consigne}</span>
+                                                    <span className="text-[10px] font-bold text-slate-300 w-5 text-left ml-1">/ {consigne}</span>
                                                 )}
                                                 {showWarning && (
                                                     <div className="absolute -top-3 -right-2" title="Attention: Stock présent sur un emplacement à priorité 0">
@@ -315,15 +336,27 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                           {isOverStock && <span className="text-[9px] font-black text-rose-500 uppercase flex items-center gap-1">⚠ Max Dépassé ({maxCap})</span>}
                                       </div>
                                       <div className="flex items-center gap-3">
+                                        <button 
+                                            onClick={() => handleAdjustStock(selectedProduct.id, storage.id, -1)} 
+                                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-500 hover:bg-rose-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
+                                        >
+                                            -
+                                        </button>
                                         <input 
                                             type="text"
                                             inputMode="decimal"
-                                            className={`w-24 rounded-xl p-3 text-center font-black text-lg outline-none border focus:ring-4 transition-all ${inputColorClass}`}
+                                            className={`w-24 rounded-xl p-3 text-center font-black text-lg outline-none border-2 focus:ring-4 transition-all ${inputColorClass}`}
                                             value={getDisplayValue(selectedProduct.id, storage.id)}
                                             onChange={(e) => handleInputChange(selectedProduct.id, storage.id, e.target.value)}
                                             onBlur={(e) => handleInputBlur(selectedProduct.id, storage.id, e.target.value)}
                                             onFocus={(e) => e.target.select()}
                                         />
+                                        <button 
+                                            onClick={() => handleAdjustStock(selectedProduct.id, storage.id, 1)} 
+                                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-emerald-200 text-emerald-500 hover:bg-emerald-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
+                                        >
+                                            +
+                                        </button>
                                         {consigne > 0 && !isZero && <span className="text-xs font-black text-slate-300">/ {consigne}</span>}
                                       </div>
                                   </div>
@@ -383,15 +416,27 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                           {isOverStock && <span className="text-[8px] font-black text-rose-500 uppercase">Surstock (Max: {maxCap})</span>}
                                       </div>
                                       <div className="flex items-center gap-3">
+                                        <button 
+                                            onClick={() => handleAdjustStock(item.id, selectedStorageId, -1)} 
+                                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-500 hover:bg-rose-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
+                                        >
+                                            -
+                                        </button>
                                         <input 
                                             type="text"
                                             inputMode="decimal"
-                                            className={`w-20 border rounded-lg p-2 text-center font-black outline-none focus:ring-2 transition-all ${inputColorClass}`}
+                                            className={`w-20 border-2 rounded-lg p-2 text-center font-black outline-none focus:ring-2 transition-all ${inputColorClass}`}
                                             value={getDisplayValue(item.id, selectedStorageId)}
                                             onChange={(e) => handleInputChange(item.id, selectedStorageId, e.target.value)}
                                             onBlur={(e) => handleInputBlur(item.id, selectedStorageId, e.target.value)}
                                             onFocus={(e) => e.target.select()}
                                         />
+                                        <button 
+                                            onClick={() => handleAdjustStock(item.id, selectedStorageId, 1)} 
+                                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-emerald-200 text-emerald-500 hover:bg-emerald-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
+                                        >
+                                            +
+                                        </button>
                                         {consigne > 0 && !isZero && <span className="text-xs font-black text-slate-300 w-8">/ {consigne}</span>}
                                       </div>
                                   </div>

@@ -196,6 +196,7 @@ export interface Recipe {
   category: string; 
   glasswareId: string;
   technique: string;
+  technicalDetails?: string; // Ajouté
   description: string; 
   history?: string; 
   ingredients: RecipeIngredient[];

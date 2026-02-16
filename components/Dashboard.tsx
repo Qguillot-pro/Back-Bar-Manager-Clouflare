@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType } from '../types';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -23,9 +23,10 @@ interface DashboardProps {
   recipes?: Recipe[];
   glassware?: Glassware[];
   onUpdateDailyCocktail?: (cocktail: DailyCocktail) => void;
+  appConfig: AppConfig; // AJOUT
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig }) => {
   const [newMessageText, setNewMessageText] = useState('');
   const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
@@ -98,13 +99,65 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   const upcomingEvents = useMemo(() => events.filter(e => new Date(e.endTime) >= new Date()).sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()).slice(0, 3), [events]);
   const pendingTasksCount = useMemo(() => tasks.filter(t => !t.isDone).length, [tasks]);
 
-  // 5. Cocktails Data
-  const todayCocktails = useMemo(() => {
-      return dailyCocktails.filter(c => c.date === currentBarDate);
-  }, [dailyCocktails, currentBarDate]);
+  // 5. Cocktails Data - CYCLE CALCULATION LOGIC DUPLICATED HERE FOR AUTONOMY
+  const getCycleConfig = (type: DailyCocktailType): CycleConfig => {
+      if (!appConfig) return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
+      const configStr = appConfig[`cycle_${type}`];
+      if (configStr) { try { return JSON.parse(configStr); } catch(e) { console.error('Parse cycle config error', e); } }
+      return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
+  };
+
+  const getDayDiff = (d1Str: string, d2Str: string) => {
+      const parseDate = (str: string) => {
+          const cleanStr = str.split('T')[0];
+          const [y, m, d] = cleanStr.split('-').map(Number);
+          return Date.UTC(y, m - 1, d);
+      };
+      const t1 = parseDate(d1Str);
+      const t2 = parseDate(d2Str);
+      const msPerDay = 1000 * 60 * 60 * 24;
+      return Math.floor((t1 - t2) / msPerDay);
+  };
+
+  const getCalculatedCocktail = (type: DailyCocktailType): DailyCocktail | undefined => {
+      // 1. Check manual entry first
+      const manualEntry = dailyCocktails.find(c => c.date === currentBarDate && c.type === type);
+      if (manualEntry) return manualEntry;
+
+      // 2. Calculate cycle
+      const config = getCycleConfig(type);
+      if (!config.isActive || config.recipeIds.length === 0) return undefined;
+
+      const diffDays = getDayDiff(currentBarDate, config.startDate);
+      if (diffDays < 0) return undefined;
+
+      let index = 0;
+      const listLen = config.recipeIds.length;
+      
+      const cleanTargetDate = currentBarDate.split('T')[0];
+      const [y, m, d] = cleanTargetDate.split('-').map(Number);
+      const targetDayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+
+      if (config.frequency === 'DAILY') { index = diffDays % listLen; } 
+      else if (config.frequency === '2_DAYS') { index = Math.floor(diffDays / 2) % listLen; } 
+      else if (config.frequency === 'WEEKLY') { index = Math.floor(diffDays / 7) % listLen; } 
+      else if (config.frequency === '2_WEEKS') { index = Math.floor(diffDays / 14) % listLen; } 
+      else if (config.frequency === 'MON_FRI') {
+          const weeksPassed = Math.floor(diffDays / 7);
+          const cleanStartStr = config.startDate.split('T')[0];
+          const [sy, sm, sd] = cleanStartStr.split('-').map(Number);
+          const startDate = new Date(Date.UTC(sy, sm - 1, sd));
+          const isSecondSlot = (targetDayOfWeek === 5 || targetDayOfWeek === 6 || targetDayOfWeek === 0);
+          const totalSlotsPassed = weeksPassed * 2 + (isSecondSlot ? 1 : 0);
+          index = totalSlotsPassed % listLen;
+      }
+      
+      return { id: `calc-${currentBarDate}-${type}`, date: currentBarDate, type, recipeId: config.recipeIds[index] };
+  };
 
   const getCocktailInfo = (type: string) => {
-      const c = todayCocktails.find(c => c.type === type);
+      // Use the calculation logic directly
+      const c = getCalculatedCocktail(type as DailyCocktailType);
       
       let name = 'Non défini';
       let recipe: Recipe | undefined;
@@ -118,7 +171,10 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
           }
       }
       
-      return { name, recipe, hasWarning: !!c };
+      // Determine if manual override (warning) exists
+      const isManual = dailyCocktails.some(dc => dc.date === currentBarDate && dc.type === type);
+      
+      return { name, recipe, hasWarning: isManual };
   };
 
   const handlePostMessage = () => {
@@ -133,7 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       
       if (type === 'WELCOME') {
           // Open edit modal if welcome
-          const c = todayCocktails.find(c => c.type === 'WELCOME');
+          const c = dailyCocktails.find(dc => dc.date === currentBarDate && dc.type === 'WELCOME');
           setWelcomeCustomName(c?.customName || '');
           setIsWelcomeModalOpen(true);
           return;
@@ -149,7 +205,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
 
   const handleSaveWelcome = () => {
       if (onUpdateDailyCocktail) {
-          const existing = todayCocktails.find(c => c.type === 'WELCOME');
+          const existing = dailyCocktails.find(c => c.date === currentBarDate && c.type === 'WELCOME');
           const id = existing ? existing.id : `dc_${currentBarDate}_WELCOME_${Date.now()}`;
           onUpdateDailyCocktail({
               id,
@@ -255,8 +311,8 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                             className={`bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 transition-all relative hover:bg-white/20 cursor-pointer`}
                           >
                               {info.hasWarning && (
-                                  <div className="absolute top-2 right-2 text-amber-400 animate-pulse" title="Changement aujourd'hui">
-                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                  <div className="absolute top-2 right-2 text-amber-400 animate-pulse" title="Saisie Manuelle">
+                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                   </div>
                               )}
                               <div className="flex justify-between items-start">

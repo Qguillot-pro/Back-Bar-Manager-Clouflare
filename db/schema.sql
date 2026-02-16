@@ -214,6 +214,7 @@ CREATE TABLE IF NOT EXISTS recipes (
     category TEXT,
     glassware_id TEXT,
     technique TEXT,
+    technical_details TEXT, -- Ajout
     description TEXT,
     history TEXT,
     decoration TEXT,
@@ -224,6 +225,8 @@ CREATE TABLE IF NOT EXISTS recipes (
     created_at TIMESTAMP DEFAULT NOW(),
     ingredients JSONB -- Stocke la liste des ingrédients en JSON
 );
+
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS technical_details TEXT;
 
 -- 5. MODULE VIE QUOTIDIENNE & LOGS
 

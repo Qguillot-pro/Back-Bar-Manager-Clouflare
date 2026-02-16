@@ -768,6 +768,7 @@ const App: React.FC = () => {
                 onNavigate={(v) => { if (v === 'articles') { setView('articles'); setArticlesFilter('ALL'); } else setView(v as any); }}
                 onSendMessage={handleSendMessage} onArchiveMessage={handleArchiveMessage}
                 onUpdateDailyCocktail={handleSaveDailyCocktail}
+                appConfig={appConfig}
             />
         )}
         {view === 'inventory' && <StockTable items={sortedItems} storages={sortedStorages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleStockUpdate} consignes={consignes} />}

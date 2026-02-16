@@ -68,7 +68,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
               // TRANSFERT DEPUIS S0
               onUpdateStock(itemId, 's0', s0Qty - adjustment); // Enlève de S0
               onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment); // Ajoute à Global
-              alert("Transfert effectué depuis le Surstock (S0) !");
+              // Petit feedback visuel ou toast pourrait être ajouté ici
           } else {
               // PAS DE S0 -> ANNULATION DERNIERE SORTIE (Correction Positive)
               // On considère ça comme une correction d'inventaire simple ici pour simplifier
@@ -301,10 +301,10 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                 <td className="p-4 text-xs font-bold text-slate-400 uppercase">{item.category}</td>
                                 <td className="p-4 text-center font-black text-slate-500 bg-slate-50/50">{parseFloat(barStock.toFixed(2))}</td>
                                 <td className="p-4 text-center bg-amber-50/30">
-                                    <div className="flex justify-center items-center gap-1">
+                                    <div className="flex justify-center items-center gap-3">
                                         <button 
                                             onClick={() => handleAdjustStock(item.id, -1)}
-                                            className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 font-black text-sm transition-colors active:scale-95"
+                                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-500 hover:bg-rose-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
                                             title="-1 (Sortie Régulation)"
                                         >
                                             -
@@ -313,7 +313,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                             <input 
                                                 type="number" 
                                                 inputMode="decimal"
-                                                className={`w-16 border rounded-lg p-2 text-center font-black outline-none focus:ring-2 transition-all text-sm bg-white border-amber-200 text-amber-800 focus:ring-amber-200`}
+                                                className={`w-20 border-2 rounded-xl p-2 text-center font-black outline-none focus:ring-4 transition-all text-lg bg-white border-amber-200 text-slate-800 focus:ring-amber-200 focus:border-amber-400`}
                                                 placeholder="0"
                                                 value={otherStock || ''}
                                                 onChange={(e) => handleGlobalStockChange(item.id, e.target.value)}
@@ -321,7 +321,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                         </div>
                                         <button 
                                             onClick={() => handleAdjustStock(item.id, 1)}
-                                            className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 font-black text-sm transition-colors active:scale-95"
+                                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-emerald-200 text-emerald-500 hover:bg-emerald-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
                                             title="+1 (Transfert S0 ou Correction)"
                                         >
                                             +

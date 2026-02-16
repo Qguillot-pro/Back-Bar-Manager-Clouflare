@@ -27,6 +27,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   const [newCat, setNewCat] = useState('');
   const [newGlassId, setNewGlassId] = useState('');
   const [newTech, setNewTech] = useState('');
+  const [newTechDetails, setNewTechDetails] = useState(''); // NEW
   const [newDesc, setNewDesc] = useState('');
   const [newHistory, setNewHistory] = useState('');
   const [newDecoration, setNewDecoration] = useState('');
@@ -143,13 +144,14 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           category: newCat,
           glasswareId: newGlassId,
           technique: newTech,
+          technicalDetails: newTechDetails, // NEW
           description: newDesc,
           history: newHistory,
           decoration: newDecoration,
           ingredients: newIngredients,
           costPrice: cost,
           sellingPrice: selling,
-          status: editingId ? 'VALIDATED' : 'DRAFT', // Si admin edit, on valide auto ou on garde le status ? Disons VALIDATED si admin save.
+          status: editingId ? 'VALIDATED' : 'DRAFT', 
           createdBy: editingId ? (recipes.find(r => r.id === editingId)?.createdBy || currentUser.name) : currentUser.name,
           createdAt: editingId ? (recipes.find(r => r.id === editingId)?.createdAt || new Date().toISOString()) : new Date().toISOString()
       };
@@ -169,6 +171,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       setNewIngredients([]);
       setNewDesc('');
       setNewHistory('');
+      setNewTechDetails('');
   };
 
   const handleEdit = (recipe: Recipe) => {
@@ -177,6 +180,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       setNewCat(recipe.category);
       setNewGlassId(recipe.glasswareId);
       setNewTech(recipe.technique);
+      setNewTechDetails(recipe.technicalDetails || '');
       setNewDesc(recipe.description);
       setNewHistory(recipe.history || '');
       setNewDecoration(recipe.decoration || '');
@@ -335,6 +339,17 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       </div>
                   </div>
 
+                  {/* DETAILS TECHNIQUES (NEW) */}
+                  <div className="space-y-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Détails Techniques (Méthode précise)</label>
+                      <textarea 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-medium outline-none text-sm h-20 resize-none" 
+                        value={newTechDetails} 
+                        onChange={e => setNewTechDetails(e.target.value)}
+                        placeholder="Ex: Double strain, Dry shake, verser sur glace pilée..." 
+                      />
+                  </div>
+
                   {/* TEXTS */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
@@ -460,6 +475,14 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                               <p className="font-bold text-slate-800">{selectedRecipe.technique}</p>
                           </div>
                       </div>
+
+                      {/* DETAILS TECHNIQUES (READ ONLY) */}
+                      {selectedRecipe.technicalDetails && (
+                          <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                              <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">Détails Techniques</p>
+                              <p className="text-sm font-medium text-indigo-900">{selectedRecipe.technicalDetails}</p>
+                          </div>
+                      )}
 
                       <div>
                           <h3 className="font-black text-sm uppercase text-slate-400 tracking-widest mb-3 border-b pb-2">Recette</h3>
