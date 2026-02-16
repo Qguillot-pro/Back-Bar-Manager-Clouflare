@@ -14,8 +14,7 @@ const AdminLogbook: React.FC<AdminLogbookProps> = ({ currentUser, onSync, onClos
   const [newNote, setNewNote] = useState('');
   const [history, setHistory] = useState<AdminNote[]>([]); // Local history state
   const [lastActivity, setLastActivity] = useState(Date.now());
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
+  
   // Fetch history directly from API when unlocked
   const fetchNotes = async () => {
       try {

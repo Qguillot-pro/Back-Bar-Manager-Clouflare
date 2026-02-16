@@ -12,7 +12,7 @@ interface BarPrepProps {
   onAction: (itemId: string, storageId: string, qtyNeeded: number, qtyToOrder?: number, isRupture?: boolean) => void;
   categories: Category[];
   dlcProfiles: DLCProfile[];
-  dlcHistory?: DLCHistory[]; // AJOUT
+  dlcHistory?: DLCHistory[];
 }
 
 interface NeedDetail {
@@ -27,7 +27,7 @@ interface AggregatedNeed {
   item: StockItem;
   totalGap: number;
   totalStock: number; // Stock théorique global
-  dlcInfo: { count: number, closestExpiry: Date | null, label: string };
+  dlcInfo: { count: number, closestExpiry: Date | null, label: string, status: 'OK' | 'WARNING' | 'NONE' };
   details: NeedDetail[];
 }
 
@@ -54,12 +54,21 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
         // Calcul Info DLC
         const itemDlcs = dlcHistory.filter(h => h.itemId === item.id);
         let closestExpiry: Date | null = null;
+        let dlcStatus: 'OK' | 'WARNING' | 'NONE' = 'NONE';
+        
         if (itemDlcs.length > 0 && profile) {
             const sorted = itemDlcs.map(h => new Date(new Date(h.openedAt).getTime() + profile.durationHours * 3600000)).sort((a,b) => a.getTime() - b.getTime());
             closestExpiry = sorted[0];
+            
+            const now = new Date();
+            const hoursLeft = (closestExpiry.getTime() - now.getTime()) / 3600000;
+            if (hoursLeft < 0) dlcStatus = 'WARNING'; // Expiré
+            else if (hoursLeft < 4) dlcStatus = 'WARNING'; // Bientôt expiré
+            else dlcStatus = 'OK';
         }
+        
         const dlcLabel = itemDlcs.length > 0 && closestExpiry 
-            ? `${itemDlcs.length} lots (Exp: ${closestExpiry.toLocaleDateString()})` 
+            ? `${itemDlcs.length} lots (Exp: ${closestExpiry.toLocaleDateString()} ${closestExpiry.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})})` 
             : "Aucun lot actif";
 
         if (currentQty < c.minQuantity) {
@@ -69,7 +78,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
 
             if (storage) {
                 if (!map.has(item.id)) {
-                    map.set(item.id, { item, totalGap: 0, totalStock, dlcInfo: { count: itemDlcs.length, closestExpiry, label: dlcLabel }, details: [] });
+                    map.set(item.id, { item, totalGap: 0, totalStock, dlcInfo: { count: itemDlcs.length, closestExpiry, label: dlcLabel, status: dlcStatus }, details: [] });
                 }
                 const entry = map.get(item.id)!;
                 entry.details.push({ storage, currentQty, minQty: c.minQuantity, gap, priority });
@@ -91,7 +100,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-20 relative">
+    <div className="max-w-4xl mx-auto space-y-8 pb-20 relative animate-in fade-in slide-in-from-bottom-2">
       {/* MODAL */}
       {selectedDetail && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
@@ -137,9 +146,16 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-3 gap-2">
                               <div>
                                   <h3 className="font-black text-slate-900 text-base">{agg.item.name}</h3>
-                                  <div className="flex gap-3 mt-1">
-                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-0.5 rounded">Stock Global: {agg.totalStock}</span>
-                                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${agg.dlcInfo.count > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>DLC: {agg.dlcInfo.label}</span>
+                                  <div className="flex flex-wrap gap-2 mt-1">
+                                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                          Stock Global: {agg.totalStock}
+                                      </span>
+                                      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${
+                                          agg.dlcInfo.status === 'WARNING' ? 'bg-rose-100 text-rose-600 border-rose-200 animate-pulse' : 
+                                          agg.dlcInfo.status === 'OK' ? 'bg-emerald-100 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'
+                                      }`}>
+                                          DLC: {agg.dlcInfo.label}
+                                      </span>
                                   </div>
                               </div>
                               <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-lg">Manque Total: +{agg.totalGap}</span>
