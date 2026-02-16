@@ -85,3 +85,44 @@ export const generateCocktailWithAI = async (cocktailName: string, availableItem
         return null;
     }
 };
+
+export const generateProductSheetWithAI = async (productName: string, type: string) => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const prompt = `Génère une fiche technique professionnelle pour le produit "${productName}" de type ${type} (Vin, Spiritueux, Bière...).
+        Sois précis et commercial. Pour les vins, indique la région et le cépage probable.
+        Tasting notes : 3 mots clés max par champ.
+        Food pairing : 1 suggestion courte.
+        Temp : en degrés celsius.`;
+
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        description: { type: Type.STRING },
+                        region: { type: Type.STRING },
+                        country: { type: Type.STRING },
+                        eye: { type: Type.STRING },
+                        nose: { type: Type.STRING },
+                        mouth: { type: Type.STRING },
+                        pairing: { type: Type.STRING },
+                        temp: { type: Type.STRING }
+                    },
+                    required: ["description", "region", "country", "eye", "nose", "mouth", "pairing"]
+                }
+            }
+        });
+
+        const responseText = response.text;
+        if (!responseText) return null;
+        return JSON.parse(responseText.trim());
+
+    } catch (error) {
+        console.error("Erreur Gemini Product Sheet:", error);
+        return null;
+    }
+};

@@ -196,7 +196,7 @@ export interface Recipe {
   category: string; 
   glasswareId: string;
   technique: string;
-  technicalDetails?: string; // Ajouté
+  technicalDetails?: string; 
   description: string; 
   history?: string; 
   ingredients: RecipeIngredient[];
@@ -270,4 +270,34 @@ export interface DailyCocktail {
   recipeId?: string; // Link to recipe
   customName?: string; // For Welcome cocktail fallback
   customDescription?: string;
+}
+
+// --- NOUVEAUX MODULES ---
+
+export interface EmailTemplate {
+    id: string;
+    name: string;
+    subject: string;
+    body: string; // HTML/Text with placeholders like {TABLE}
+}
+
+export interface AdminNote {
+    id: string;
+    content: string;
+    updatedAt: string;
+}
+
+export interface ProductSheet {
+    id: string;
+    itemId: string; // Link to StockItem
+    type: 'WINE' | 'SPIRIT' | 'BEER' | 'COCKTAIL' | 'OTHER';
+    region?: string;
+    country?: string;
+    tastingNotes?: string; // JSON string { nose: '', mouth: '', eye: '' }
+    foodPairing?: string;
+    servingTemp?: string;
+    allergens?: string;
+    description: string;
+    status: 'DRAFT' | 'VALIDATED';
+    updatedAt: string;
 }

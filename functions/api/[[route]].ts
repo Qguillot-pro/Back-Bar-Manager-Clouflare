@@ -79,6 +79,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     configMap.programMapping = {};
                 }
             }
+            if (row.key === 'email_sender') configMap.emailSender = row.value; // AJOUT
         });
 
         // Les configurations de cycles (clés dynamiques)
@@ -104,7 +105,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         let query = '';
 
         if (scope === 'static') {
-             // NO LIMIT on items
+             // AJOUT des product_sheets et email_templates
              query = `
                 SELECT json_build_object(
                     'items', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM items ORDER BY sort_order) t),
@@ -116,11 +117,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'techniques', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM techniques ORDER BY name) t),
                     'cocktailCategories', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM cocktail_categories) t),
                     'glassware', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM glassware ORDER BY name) t),
-                    'recipes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM recipes ORDER BY name) t)
+                    'recipes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM recipes ORDER BY name) t),
+                    'productSheets', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM product_sheets ORDER BY updated_at DESC) t),
+                    'emailTemplates', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM email_templates ORDER BY name) t)
                 ) as data;
             `;
         } else if (scope === 'stock') {
-             // Increased limits for operational data
              query = `
                 SELECT json_build_object(
                     'stockLevels', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM stock_levels) t),
@@ -129,11 +131,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'events', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM events WHERE start_time >= NOW() - INTERVAL '60 days') t),
                     'tasks', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200) t),
                     'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500) t),
-                    'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'PENDING' OR status = 'ORDERED') t)
+                    'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'PENDING' OR status = 'ORDERED') t),
+                    'adminNote', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM admin_notes LIMIT 1) t)
                 ) as data;
             `;
         } else if (scope === 'history') {
-             // Increased limits for history
              query = `
                 SELECT json_build_object(
                     'transactions', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM transactions ORDER BY date DESC LIMIT 5000) t),
@@ -175,6 +177,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             history: r.history, decoration: r.decoration, sellingPrice: parseFloat(r.selling_price || '0'), costPrice: parseFloat(r.cost_price || '0'),
             status: r.status, createdBy: r.created_by, createdAt: r.created_at, ingredients: r.ingredients
         }));
+        if (rawData.productSheets) responseBody.productSheets = rawData.productSheets.map((p: any) => ({
+            id: p.id, itemId: p.item_id, type: p.type, region: p.region, country: p.country, tastingNotes: p.tasting_notes,
+            foodPairing: p.food_pairing, servingTemp: p.serving_temp, allergens: p.allergens, description: p.description, status: p.status, updatedAt: p.updated_at
+        }));
+        if (rawData.emailTemplates) responseBody.emailTemplates = rawData.emailTemplates.map((t: any) => ({
+            id: t.id, name: t.name, subject: t.subject, body: t.body
+        }));
 
         // --- STOCK ---
         if (rawData.stockLevels) responseBody.stockLevels = rawData.stockLevels.map((row: any) => ({ itemId: row.item_id, storageId: row.storage_id, currentQuantity: parseFloat(row.quantity || '0') }));
@@ -183,6 +192,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }));
         if (rawData.dailyCocktails) responseBody.dailyCocktails = rawData.dailyCocktails.map((d: any) => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description }));
         if (rawData.events) responseBody.events = rawData.events.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, glasswareJson: e.glassware_json, createdAt: e.created_at }));
+        if (rawData.adminNote && rawData.adminNote.length > 0) responseBody.adminNote = { id: rawData.adminNote[0].id, content: rawData.adminNote[0].content, updatedAt: rawData.adminNote[0].updated_at };
         
         // MAPPING TASKS updated with recurrence
         if (rawData.tasks) responseBody.tasks = rawData.tasks.map((t: any) => ({ 
@@ -412,6 +422,38 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'DELETE_RECIPE': { await pool.query('DELETE FROM recipes WHERE id = $1', [payload.id]); break; }
         case 'VALIDATE_RECIPE': { await pool.query('UPDATE recipes SET status = $2 WHERE id = $1', [payload.id, 'VALIDATED']); break; }
+        
+        // --- NOUVELLES ACTIONS ---
+        case 'SAVE_EMAIL_TEMPLATE': {
+            await pool.query(`INSERT INTO email_templates (id, name, subject, body) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subject = EXCLUDED.subject, body = EXCLUDED.body`, [payload.id, payload.name, payload.subject, payload.body]);
+            break;
+        }
+        case 'DELETE_EMAIL_TEMPLATE': {
+            await pool.query('DELETE FROM email_templates WHERE id = $1', [payload.id]);
+            break;
+        }
+        case 'SAVE_NOTE': {
+            // Note: On ne garde qu'une seule note active avec id fixe ou unique pour simplifier
+            await pool.query(`INSERT INTO admin_notes (id, content, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()`, [payload.id, payload.content]);
+            break;
+        }
+        case 'SAVE_PRODUCT_SHEET': {
+            const { id, itemId, type, region, country, tastingNotes, foodPairing, servingTemp, allergens, description, status } = payload;
+            await pool.query(`
+                INSERT INTO product_sheets (id, item_id, type, region, country, tasting_notes, food_pairing, serving_temp, allergens, description, status, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+                ON CONFLICT (id) DO UPDATE SET
+                type = EXCLUDED.type, region = EXCLUDED.region, country = EXCLUDED.country, tasting_notes = EXCLUDED.tasting_notes,
+                food_pairing = EXCLUDED.food_pairing, serving_temp = EXCLUDED.serving_temp, allergens = EXCLUDED.allergens,
+                description = EXCLUDED.description, status = EXCLUDED.status, updated_at = NOW()
+            `, [id, itemId, type, region, country, tastingNotes, foodPairing, servingTemp, allergens, description, status]);
+            break;
+        }
+        case 'DELETE_PRODUCT_SHEET': {
+            await pool.query('DELETE FROM product_sheets WHERE id = $1', [payload.id]);
+            break;
+        }
+
         default: return new Response(JSON.stringify({ error: 'Action inconnue' }), { status: 400, headers: corsHeaders });
       }
 

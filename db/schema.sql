@@ -283,7 +283,37 @@ CREATE TABLE IF NOT EXISTS daily_cocktails (
     custom_description TEXT
 );
 
--- 6. Données Initiales
+-- 6. NOUVEAUX MODULES (V1.2+ Features)
+
+CREATE TABLE IF NOT EXISTS email_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    subject TEXT,
+    body TEXT
+);
+
+CREATE TABLE IF NOT EXISTS admin_notes (
+    id TEXT PRIMARY KEY,
+    content TEXT,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS product_sheets (
+    id TEXT PRIMARY KEY,
+    item_id TEXT REFERENCES items(id) ON DELETE CASCADE,
+    type TEXT, -- WINE, SPIRIT, BEER...
+    region TEXT,
+    country TEXT,
+    tasting_notes TEXT, -- JSON
+    food_pairing TEXT,
+    serving_temp TEXT,
+    allergens TEXT,
+    description TEXT,
+    status TEXT DEFAULT 'DRAFT',
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 7. Données Initiales (Si nécessaire)
 INSERT INTO storage_spaces (id, name, sort_order) VALUES 
 ('s1', 'Frigo Soft', 1), ('s2', 'Frigo Vin', 2), ('s3', 'Speed Rack', 3),
 ('s4', 'Etg Sirops', 4), ('s5', 'Etg Liqueurs', 5), ('s6', 'Pyramide', 6),

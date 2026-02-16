@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { PendingOrder, StockItem, StorageSpace, Format, Event, EventProduct } from '../types';
+import { PendingOrder, StockItem, StorageSpace, Format, Event, EventProduct, EmailTemplate } from '../types';
 
 interface OrderProps {
   orders: PendingOrder[];
@@ -11,15 +11,20 @@ interface OrderProps {
   onAddManualOrder: (itemId: string, qty: number) => void;
   formats: Format[];
   events?: Event[];
+  emailTemplates?: EmailTemplate[]; // Ajout
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, onDeleteOrder, onAddManualOrder, formats, events = [] }) => {
+const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, onDeleteOrder, onAddManualOrder, formats, events = [], emailTemplates = [] }) => {
   const [activeTab, setActiveTab] = useState<'PENDING' | 'ORDERED'>('PENDING');
   const [manualSearch, setManualSearch] = useState('');
   const [manualQty, setManualQty] = useState(1);
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  
+  // Email Modal
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
 
   // Filtres
   const pendingOrders = useMemo(() => orders.filter(o => o.status === 'PENDING'), [orders]);
@@ -87,6 +92,47 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
       else setSelectedOrders(new Set(pendingOrders.map(o => o.id)));
   };
 
+  const generateEmailContent = () => {
+      const tpl = emailTemplates.find(t => t.id === selectedTemplateId);
+      if (!tpl) return { subject: '', body: '' };
+
+      const ordersToInclude = selectedOrders.size > 0 
+          ? pendingOrders.filter(o => selectedOrders.has(o.id)) 
+          : pendingOrders;
+
+      let table = "Produit | Format | Quantité\n----------------------------\n";
+      ordersToInclude.forEach(o => {
+          const item = items.find(i => i.id === o.itemId);
+          const fmt = formats.find(f => f.id === item?.formatId)?.name || '';
+          table += `${item?.name} | ${fmt} | ${o.quantity}\n`;
+      });
+
+      const body = tpl.body.replace('{TABLEAU_COMMANDE}', table);
+      return { subject: tpl.subject, body };
+  };
+
+  const handleSendEmail = () => {
+      const content = generateEmailContent();
+      const mailtoLink = `mailto:?subject=${encodeURIComponent(content.subject)}&body=${encodeURIComponent(content.body)}`;
+      window.open(mailtoLink, '_blank');
+      
+      if (window.confirm("Avez-vous envoyé le mail ? Si oui, valider les commandes comme 'Commandé' ?")) {
+          const ordersToUpdate = selectedOrders.size > 0 
+            ? pendingOrders.filter(o => selectedOrders.has(o.id)) 
+            : pendingOrders;
+          
+          ordersToUpdate.forEach(o => onUpdateOrder(o.id, o.quantity, 'ORDERED'));
+          setIsEmailModalOpen(false);
+      }
+  };
+
+  const handleCopyToClipboard = () => {
+      const content = generateEmailContent();
+      navigator.clipboard.writeText(`Sujet: ${content.subject}\n\n${content.body}`).then(() => {
+          alert("Contenu copié ! Vous pouvez le coller dans votre messagerie.");
+      });
+  };
+
   const handleExportSelected = () => {
       if (selectedOrders.size === 0) return;
       
@@ -111,8 +157,37 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
   const getFormatName = (formatId?: string) => formats.find(f => f.id === formatId)?.name || '-';
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-20">
+    <div className="space-y-6 max-w-5xl mx-auto pb-20 relative">
       
+      {/* EMAIL MODAL */}
+      {isEmailModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-slate-200 text-center space-y-6">
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Préparer E-mail</h3>
+                  <div className="space-y-2 text-left">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Modèle</label>
+                      <select 
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none cursor-pointer"
+                          value={selectedTemplateId}
+                          onChange={e => setSelectedTemplateId(e.target.value)}
+                      >
+                          <option value="">Choisir un modèle...</option>
+                          {emailTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3">
+                      <button onClick={handleSendEmail} disabled={!selectedTemplateId} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50">
+                          Ouvrir Client Mail
+                      </button>
+                      <button onClick={handleCopyToClipboard} disabled={!selectedTemplateId} className="w-full py-3 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl font-bold uppercase text-xs tracking-widest transition-all disabled:opacity-50">
+                          Copier Texte
+                      </button>
+                      <button onClick={() => setIsEmailModalOpen(false)} className="mt-2 text-slate-400 font-bold text-xs uppercase">Annuler</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* HEADER & TABS */}
       <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex gap-2">
           <button 
@@ -204,6 +279,13 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
                   <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                       <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest">Panier Commande</h3>
                       <div className="flex gap-2">
+                          <button 
+                            onClick={() => setIsEmailModalOpen(true)}
+                            className="bg-purple-500 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-purple-600 shadow-lg active:scale-95 transition-all flex items-center gap-2"
+                          >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                              Mail
+                          </button>
                           {selectedOrders.size > 0 && (
                               <button 
                                 onClick={handleExportSelected}
@@ -277,6 +359,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
           </div>
       )}
 
+      {/* ... Ordered Tab (unchanged) ... */}
       {activeTab === 'ORDERED' && (
           <div className="bg-white rounded-3xl border shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4">
                <div className="p-4 border-b bg-amber-50 flex items-center gap-3">
@@ -321,7 +404,6 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
                </table>
           </div>
       )}
-
     </div>
   );
 };
