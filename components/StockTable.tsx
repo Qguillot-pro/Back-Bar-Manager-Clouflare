@@ -20,11 +20,23 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
   const [columnFilters, setColumnFilters] = useState<string[]>(['all', 'none', 'none']);
   
   // States pour les vues spécifiques
-  const [selectedProductId, setSelectedProductId] = useState<string>(items[0]?.id || '');
-  const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [selectedStorageId, setSelectedStorageId] = useState<string>(storages.find(s => s.id !== 's_global')?.id || storages[0]?.id || '');
 
   const getConsigneValue = (itemId: string, storageId: string) => consignes.find(c => c.itemId === itemId && c.storageId === storageId)?.minQuantity || 0;
+
+  const handleManualEdit = (itemId: string, storageId: string, val: string) => {
+    let normalized = val.replace(',', '.');
+    if (normalized === '' || normalized === '.') {
+        onUpdateStock(itemId, storageId, 0);
+        return;
+    }
+    const num = parseFloat(normalized);
+    if (!isNaN(num)) {
+        onUpdateStock(itemId, storageId, num);
+    }
+  };
 
   const visibleStorages = useMemo(() => {
       const showAll = columnFilters.includes('all');
@@ -35,18 +47,12 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
 
   const filteredItemsGlobal = items.filter(i => normalizeText(i.name).includes(normalizeText(searchTerm)));
 
-  // Liste de produits filtrée pour le sélecteur dans l'onglet Produit
-  const productSearchResults = useMemo(() => {
-    if (!productSearchTerm.trim()) return items.slice(0, 10);
-    return items.filter(i => normalizeText(i.name).includes(normalizeText(productSearchTerm))).slice(0, 10);
-  }, [items, productSearchTerm]);
-
-  // Espaces autorisés pour le produit sélectionné
-  const authorizedStoragesForProduct = useMemo(() => {
+  // Vue Par Produit : Espaces Autorisés
+  const authorizedStorages = useMemo(() => {
       if (!selectedProductId) return [];
       return storages.filter(s => {
           if (s.id === 's_global') return false;
-          if (s.id === 's0') return true; // Le surstock est toujours autorisé
+          if (s.id === 's0') return true; // Surstock toujours autorisé
           const prio = priorities.find(p => p.itemId === selectedProductId && p.storageId === s.id)?.priority || 0;
           return prio > 0;
       });
@@ -110,18 +116,20 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                 {visibleStorages.map(s => {
                                     const qty = stockLevels.find(l => l.itemId === item.id && l.storageId === s.id)?.currentQuantity || 0;
                                     const consigne = getConsigneValue(item.id, s.id);
-                                    const isCritical = consigne > 0 && qty <= 0;
                                     const isLow = consigne > 0 && qty < consigne;
 
                                     return (
                                         <td key={s.id} className="p-4 border-r text-center">
                                             <div className="flex justify-center items-center gap-2">
-                                                <button onClick={() => onAdjustTransaction?.(item.id, s.id, -1)} className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white font-black transition-all">-</button>
-                                                <div className={`min-w-[60px] p-2 rounded-xl font-black text-sm border-2 transition-all ${isCritical ? 'bg-rose-100 border-rose-200 text-rose-700 animate-pulse' : isLow ? 'bg-amber-100 border-amber-200 text-amber-700' : 'bg-slate-50 border-slate-100 text-slate-700'}`}>
-                                                    {qty}
-                                                </div>
-                                                <button onClick={() => onAdjustTransaction?.(item.id, s.id, 1)} className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white font-black transition-all">+</button>
-                                                {consigne > 0 && <span className="text-[9px] font-black text-slate-300 ml-1">/ {consigne}</span>}
+                                                <button onClick={() => onAdjustTransaction?.(item.id, s.id, -1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white font-black transition-all">-</button>
+                                                <input 
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    value={qty}
+                                                    onChange={(e) => handleManualEdit(item.id, s.id, e.target.value)}
+                                                    className={`w-14 text-center p-1 rounded-lg font-black text-sm border-2 transition-all ${isLow ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-100 text-slate-700'}`}
+                                                />
+                                                <button onClick={() => onAdjustTransaction?.(item.id, s.id, 1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-emerald-500 hover:text-white font-black transition-all">+</button>
                                             </div>
                                         </td>
                                     );
@@ -136,98 +144,71 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
 
       {/* VUE PAR PRODUIT */}
       {activeTab === 'PRODUCT' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 max-w-3xl mx-auto">
-              <div className="bg-white p-6 rounded-3xl border shadow-sm space-y-4">
-                  <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Rechercher un produit</label>
-                      <input 
-                        type="text"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
-                        placeholder="Tapez le nom d'un article..."
-                        value={productSearchTerm}
-                        onChange={e => setProductSearchTerm(e.target.value)}
-                      />
-                  </div>
-
-                  {productSearchTerm.trim() && (
-                      <div className="flex flex-wrap gap-2">
-                          {productSearchResults.map(i => (
-                              <button 
-                                key={i.id} 
-                                onClick={() => { setSelectedProductId(i.id); setProductSearchTerm(''); }}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedProductId === i.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                              >
-                                  {i.name}
-                              </button>
-                          ))}
-                      </div>
-                  )}
-
-                  {!productSearchTerm.trim() && selectedProductId && (
-                      <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex items-center justify-between">
-                          <span className="font-black text-indigo-900 text-sm uppercase tracking-tight">Article sélectionné : {items.find(i => i.id === selectedProductId)?.name}</span>
-                          <button onClick={() => setSelectedProductId('')} className="text-indigo-400 hover:text-indigo-600 text-[10px] font-bold uppercase underline">Changer</button>
-                      </div>
-                  )}
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+              <div className="bg-white p-6 rounded-3xl border shadow-sm">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Rechercher un produit</label>
+                  <input 
+                    list="product-search-list"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                    placeholder="Tapez le nom d'un produit..."
+                    value={productSearch}
+                    onChange={e => {
+                        setProductSearch(e.target.value);
+                        const found = items.find(i => normalizeText(i.name) === normalizeText(e.target.value));
+                        if (found) setSelectedProductId(found.id);
+                    }}
+                  />
+                  <datalist id="product-search-list">
+                      {items.map(i => <option key={i.id} value={i.name} />)}
+                  </datalist>
               </div>
 
               {selectedProductId ? (
                   <div className="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
-                      <div className="p-4 bg-slate-50 border-b">
-                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Espaces de Stockage Autorisés</h4>
+                      <div className="p-4 bg-slate-50 border-b text-center">
+                          <h4 className="font-black text-indigo-600 uppercase text-xs tracking-widest">Espaces Autorisés pour : {items.find(i => i.id === selectedProductId)?.name}</h4>
                       </div>
                       <table className="w-full text-left">
-                          <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                          <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                               <tr>
-                                  <th className="p-6">Emplacement</th>
-                                  <th className="p-6 text-center">Quantité</th>
-                                  <th className="p-6 text-center">Min / Max</th>
+                                  <th className="p-6">Espace</th>
+                                  <th className="p-6 text-center">Stock Actuel</th>
+                                  <th className="p-6 text-center">Consigne</th>
                                   <th className="p-6 text-center">Action</th>
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                              {authorizedStoragesForProduct.map(s => {
-                                  const level = stockLevels.find(l => l.itemId === selectedProductId && l.storageId === s.id);
-                                  const qty = level?.currentQuantity || 0;
-                                  const consigne = consignes.find(c => c.itemId === selectedProductId && c.storageId === s.id);
-                                  const min = consigne?.minQuantity || 0;
-                                  const max = consigne?.maxCapacity || 0;
-                                  
-                                  const isLow = min > 0 && qty < min;
-                                  const isFull = max > 0 && qty >= max;
-
+                              {authorizedStorages.map(s => {
+                                  const qty = stockLevels.find(l => l.itemId === selectedProductId && l.storageId === s.id)?.currentQuantity || 0;
+                                  const consigne = getConsigneValue(selectedProductId, s.id);
                                   return (
                                       <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-6">
-                                              <p className="font-bold text-slate-700">{s.name}</p>
-                                              {s.id === 's0' && <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Cave Principale</span>}
-                                          </td>
+                                          <td className="p-6 font-bold text-slate-700">{s.name}</td>
                                           <td className="p-6 text-center">
-                                              <span className={`px-4 py-2 rounded-xl font-black text-sm ${isLow ? 'bg-rose-100 text-rose-600 border border-rose-200' : isFull ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-600'}`}>
-                                                  {qty}
-                                              </span>
+                                              <input 
+                                                type="text"
+                                                inputMode="decimal"
+                                                value={qty}
+                                                onChange={(e) => handleManualEdit(selectedProductId, s.id, e.target.value)}
+                                                className={`w-16 text-center p-2 rounded-xl font-black text-sm border-2 ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+                                              />
                                           </td>
-                                          <td className="p-6 text-center">
-                                              <span className="text-[10px] font-black text-slate-400 uppercase">{min || '-'} / {max || '-'}</span>
-                                          </td>
+                                          <td className="p-6 text-center text-slate-400 font-bold">{consigne || '-'}</td>
                                           <td className="p-6 text-center">
                                               <div className="flex justify-center gap-2">
-                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm active:scale-90">-</button>
-                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm active:scale-90">+</button>
+                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all">-</button>
+                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all">+</button>
                                               </div>
                                           </td>
                                       </tr>
                                   );
                               })}
-                              {authorizedStoragesForProduct.length === 0 && (
-                                  <tr><td colSpan={4} className="p-12 text-center text-slate-400 italic">Aucun espace de stockage autorisé configuré pour cet article.</td></tr>
-                              )}
                           </tbody>
                       </table>
                   </div>
               ) : (
-                  <div className="text-center py-20 bg-white rounded-3xl border border-dashed text-slate-400">
-                      <p className="font-bold">Sélectionnez un produit ci-dessus pour voir ses détails de stock.</p>
+                  <div className="p-20 text-center bg-white rounded-3xl border border-dashed text-slate-400 italic">
+                      Sélectionnez un produit pour voir ses stocks.
                   </div>
               )}
           </div>
@@ -267,7 +248,13 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                                       <td className="p-6 font-bold text-slate-700">{item.name}</td>
                                       <td className="p-6 text-center">
-                                          <span className={`px-4 py-2 rounded-xl font-black text-sm ${consigne > 0 && qty < consigne ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'}`}>{qty}</span>
+                                          <input 
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={qty}
+                                            onChange={(e) => handleManualEdit(item.id, selectedStorageId, e.target.value)}
+                                            className={`w-16 text-center p-2 rounded-xl font-black text-sm border-2 ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+                                          />
                                       </td>
                                       <td className="p-6 text-center text-slate-400 font-bold">{consigne || '-'}</td>
                                       <td className="p-6 text-center">
