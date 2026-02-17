@@ -21,6 +21,7 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
   
   // States pour les vues spécifiques
   const [selectedProductId, setSelectedProductId] = useState<string>(items[0]?.id || '');
+  const [productSearchTerm, setProductSearchTerm] = useState('');
   const [selectedStorageId, setSelectedStorageId] = useState<string>(storages.find(s => s.id !== 's_global')?.id || storages[0]?.id || '');
 
   const getConsigneValue = (itemId: string, storageId: string) => consignes.find(c => c.itemId === itemId && c.storageId === storageId)?.minQuantity || 0;
@@ -32,7 +33,24 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
       return storages.filter(s => activeIds.includes(s.id));
   }, [storages, columnFilters]);
 
-  const filteredItems = items.filter(i => normalizeText(i.name).includes(normalizeText(searchTerm)));
+  const filteredItemsGlobal = items.filter(i => normalizeText(i.name).includes(normalizeText(searchTerm)));
+
+  // Liste de produits filtrée pour le sélecteur dans l'onglet Produit
+  const productSearchResults = useMemo(() => {
+    if (!productSearchTerm.trim()) return items.slice(0, 10);
+    return items.filter(i => normalizeText(i.name).includes(normalizeText(productSearchTerm))).slice(0, 10);
+  }, [items, productSearchTerm]);
+
+  // Espaces autorisés pour le produit sélectionné
+  const authorizedStoragesForProduct = useMemo(() => {
+      if (!selectedProductId) return [];
+      return storages.filter(s => {
+          if (s.id === 's_global') return false;
+          if (s.id === 's0') return true; // Le surstock est toujours autorisé
+          const prio = priorities.find(p => p.itemId === selectedProductId && p.storageId === s.id)?.priority || 0;
+          return prio > 0;
+      });
+  }, [selectedProductId, storages, priorities]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -79,14 +97,14 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <thead className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest">
                         <tr>
                             <th className="p-6 sticky left-0 bg-slate-50 z-10 border-r shadow-[1px_0_0_0_#e2e8f0]">Produit</th>
                             {visibleStorages.map(s => <th key={s.id} className="p-6 text-center border-r font-black text-slate-500">{s.name}</th>)}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {filteredItems.map(item => (
+                        {filteredItemsGlobal.map(item => (
                             <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
                                 <td className="p-6 sticky left-0 bg-white z-10 border-r font-bold text-sm text-slate-900 shadow-[1px_0_0_0_#e2e8f0] group-hover:bg-slate-50 transition-colors">{item.name}</td>
                                 {visibleStorages.map(s => {
@@ -118,51 +136,100 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
 
       {/* VUE PAR PRODUIT */}
       {activeTab === 'PRODUCT' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-              <div className="bg-white p-6 rounded-3xl border shadow-sm">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Sélectionner un produit</label>
-                  <select 
-                    value={selectedProductId} 
-                    onChange={e => setSelectedProductId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer"
-                  >
-                      {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                  </select>
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 max-w-3xl mx-auto">
+              <div className="bg-white p-6 rounded-3xl border shadow-sm space-y-4">
+                  <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Rechercher un produit</label>
+                      <input 
+                        type="text"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-800 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                        placeholder="Tapez le nom d'un article..."
+                        value={productSearchTerm}
+                        onChange={e => setProductSearchTerm(e.target.value)}
+                      />
+                  </div>
+
+                  {productSearchTerm.trim() && (
+                      <div className="flex flex-wrap gap-2">
+                          {productSearchResults.map(i => (
+                              <button 
+                                key={i.id} 
+                                onClick={() => { setSelectedProductId(i.id); setProductSearchTerm(''); }}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedProductId === i.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                              >
+                                  {i.name}
+                              </button>
+                          ))}
+                      </div>
+                  )}
+
+                  {!productSearchTerm.trim() && selectedProductId && (
+                      <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex items-center justify-between">
+                          <span className="font-black text-indigo-900 text-sm uppercase tracking-tight">Article sélectionné : {items.find(i => i.id === selectedProductId)?.name}</span>
+                          <button onClick={() => setSelectedProductId('')} className="text-indigo-400 hover:text-indigo-600 text-[10px] font-bold uppercase underline">Changer</button>
+                      </div>
+                  )}
               </div>
 
-              <div className="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
-                  <table className="w-full text-left">
-                      <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          <tr>
-                              <th className="p-6">Espace de Stockage</th>
-                              <th className="p-6 text-center">Quantité Actuelle</th>
-                              <th className="p-6 text-center">Consigne</th>
-                              <th className="p-6 text-center">Action</th>
-                          </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                          {storages.filter(s => s.id !== 's_global').map(s => {
-                              const qty = stockLevels.find(l => l.itemId === selectedProductId && l.storageId === s.id)?.currentQuantity || 0;
-                              const consigne = getConsigneValue(selectedProductId, s.id);
-                              return (
-                                  <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                                      <td className="p-6 font-bold text-slate-700">{s.name}</td>
-                                      <td className="p-6 text-center">
-                                          <span className={`px-4 py-2 rounded-xl font-black text-sm ${qty < consigne ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'}`}>{qty}</span>
-                                      </td>
-                                      <td className="p-6 text-center text-slate-400 font-bold">{consigne || '-'}</td>
-                                      <td className="p-6 text-center">
-                                          <div className="flex justify-center gap-2">
-                                              <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all">-</button>
-                                              <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all">+</button>
-                                          </div>
-                                      </td>
-                                  </tr>
-                              );
-                          })}
-                      </tbody>
-                  </table>
-              </div>
+              {selectedProductId ? (
+                  <div className="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
+                      <div className="p-4 bg-slate-50 border-b">
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Espaces de Stockage Autorisés</h4>
+                      </div>
+                      <table className="w-full text-left">
+                          <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                              <tr>
+                                  <th className="p-6">Emplacement</th>
+                                  <th className="p-6 text-center">Quantité</th>
+                                  <th className="p-6 text-center">Min / Max</th>
+                                  <th className="p-6 text-center">Action</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                              {authorizedStoragesForProduct.map(s => {
+                                  const level = stockLevels.find(l => l.itemId === selectedProductId && l.storageId === s.id);
+                                  const qty = level?.currentQuantity || 0;
+                                  const consigne = consignes.find(c => c.itemId === selectedProductId && c.storageId === s.id);
+                                  const min = consigne?.minQuantity || 0;
+                                  const max = consigne?.maxCapacity || 0;
+                                  
+                                  const isLow = min > 0 && qty < min;
+                                  const isFull = max > 0 && qty >= max;
+
+                                  return (
+                                      <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                                          <td className="p-6">
+                                              <p className="font-bold text-slate-700">{s.name}</p>
+                                              {s.id === 's0' && <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Cave Principale</span>}
+                                          </td>
+                                          <td className="p-6 text-center">
+                                              <span className={`px-4 py-2 rounded-xl font-black text-sm ${isLow ? 'bg-rose-100 text-rose-600 border border-rose-200' : isFull ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-600'}`}>
+                                                  {qty}
+                                              </span>
+                                          </td>
+                                          <td className="p-6 text-center">
+                                              <span className="text-[10px] font-black text-slate-400 uppercase">{min || '-'} / {max || '-'}</span>
+                                          </td>
+                                          <td className="p-6 text-center">
+                                              <div className="flex justify-center gap-2">
+                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm active:scale-90">-</button>
+                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm active:scale-90">+</button>
+                                              </div>
+                                          </td>
+                                      </tr>
+                                  );
+                              })}
+                              {authorizedStoragesForProduct.length === 0 && (
+                                  <tr><td colSpan={4} className="p-12 text-center text-slate-400 italic">Aucun espace de stockage autorisé configuré pour cet article.</td></tr>
+                              )}
+                          </tbody>
+                      </table>
+                  </div>
+              ) : (
+                  <div className="text-center py-20 bg-white rounded-3xl border border-dashed text-slate-400">
+                      <p className="font-bold">Sélectionnez un produit ci-dessus pour voir ses détails de stock.</p>
+                  </div>
+              )}
           </div>
       )}
 
@@ -182,7 +249,7 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
 
               <div className="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
                   <table className="w-full text-left">
-                      <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
                           <tr>
                               <th className="p-6">Produit</th>
                               <th className="p-6 text-center">Stock</th>
