@@ -243,6 +243,7 @@ const App: React.FC = () => {
             <NavItem collapsed={isSidebarCollapsed} active={view === 'dlc_tracking'} onClick={()=>setView('dlc_tracking')} label="Suivi DLC" icon="M12 8v4l3 3" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'articles'} onClick={()=>setView('articles')} label="Base Articles" icon="M4 6h16M4 10h16M4 14h16M4 18h16" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'recipes'} onClick={()=>setView('recipes')} label="Fiches Techniques" icon="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" />
+            <NavItem collapsed={isSidebarCollapsed} active={view === 'product_knowledge'} onClick={()=>setView('product_knowledge')} label="Savoir Produit" icon="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" />
             {currentUser.role === 'ADMIN' && <NavItem collapsed={isSidebarCollapsed} active={view === 'connection_logs'} onClick={()=>setView('connection_logs')} label="Logs" icon="M9 12l2 2 4-4" />}
         </nav>
 
@@ -270,6 +271,7 @@ const App: React.FC = () => {
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
           {view === 'articles' && <ArticlesList items={items} setItems={setItems} formats={formats} categories={categories} onDelete={(id) => { setItems(p => p.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); }} userRole={currentUser.role} dlcProfiles={dlcProfiles} onSync={syncData} events={events} recipes={recipes} />}
           {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} />}
+          {view === 'product_knowledge' && <ProductKnowledge sheets={productSheets} items={items} currentUserRole={currentUser.role} onSync={syncData} productTypes={productTypes} />}
           {view === 'configuration' && <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={storages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} cocktailCategories={cocktailCategories} setCocktailCategories={setCocktailCategories} productTypes={productTypes} setProductTypes={setProductTypes} emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates} fullData={{items, storages, stockLevels}} />}
           {view === 'connection_logs' && <ConnectionLogs logs={userLogs} />}
       </main>
