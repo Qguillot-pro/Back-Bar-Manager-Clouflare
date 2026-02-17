@@ -10,24 +10,27 @@ interface DLCViewProps {
   onDelete: (id: string, qtyLostPercent?: number) => void;
 }
 
-const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, storages, onDelete }) => {
+const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete }) => {
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [selectedDlcId, setSelectedDlcId] = useState<string | null>(null);
   const [percentLost, setPercentLost] = useState<number>(0);
 
   const activeDlcs = useMemo(() => {
-    if (!dlcHistory) return [];
+    if (!dlcHistory || !items) return [];
+    
     return dlcHistory.map(entry => {
       const item = items.find(i => i.id === entry.itemId);
-      const storage = storages.find(s => s.id === entry.storageId);
-      const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
-      
-      if (!item) return null;
+      if (!item) return null; // Sécurité si l'article n'existe plus
 
-      // Durée par défaut 24h si pas de profil trouvé
+      const storage = storages.find(s => s.id === entry.storageId);
+      const profile = item.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+      
       const durationHours = profile?.durationHours || 24;
-      const openedDate = new Date(entry.openedAt);
-      const expirationDate = new Date(openedDate.getTime() + durationHours * 3600000);
+      const openedDate = entry.openedAt ? new Date(entry.openedAt) : new Date();
+      
+      // Si la date d'ouverture est invalide, on utilise maintenant
+      const validOpenedDate = isNaN(openedDate.getTime()) ? new Date() : openedDate;
+      const expirationDate = new Date(validOpenedDate.getTime() + durationHours * 3600000);
       const now = new Date();
       const timeLeft = expirationDate.getTime() - now.getTime();
       const isExpired = timeLeft < 0;
@@ -36,7 +39,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
         id: entry.id,
         itemName: item.name,
         storageName: storage?.name || 'Stock Global',
-        openedDate,
+        openedDate: validOpenedDate,
         expirationDate,
         timeLeft,
         isExpired,
@@ -50,10 +53,14 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
 
   const formatDuration = (ms: number) => {
     if (ms < 0) return "EXPIRÉ";
-    const hours = Math.floor(ms / 3600000);
+    const totalMinutes = Math.floor(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
     const days = Math.floor(hours / 24);
+    
     if (days > 0) return `${days}j ${hours % 24}h`;
-    return `${hours}h ${Math.floor((ms % 3600000) / 60000)}min`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}min`;
   };
 
   const handleConfirmLoss = () => {
@@ -65,36 +72,40 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden relative min-h-[400px]">
+    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden relative min-h-[400px] animate-in fade-in duration-500">
       
       {lossModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl text-center space-y-6">
                   <h3 className="text-xl font-black text-slate-900 uppercase">Jeter le produit</h3>
+                  <p className="text-xs text-slate-500 font-bold">Quelle part du produit a été perdue ?</p>
                   <div className="grid grid-cols-3 gap-2">
                       {[0, 50, 100].map(p => (
-                          <button key={p} onClick={() => setPercentLost(p)} className={`py-3 rounded-xl font-black ${percentLost === p ? 'bg-rose-500 text-white' : 'bg-slate-100'}`}>{p === 0 ? 'Vide' : p+'%'}</button>
+                          <button key={p} onClick={() => setPercentLost(p)} className={`py-3 rounded-xl font-black transition-all ${percentLost === p ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{p === 0 ? 'Vide' : p+'%'}</button>
                       ))}
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => setLossModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px]">Annuler</button>
-                      <button onClick={handleConfirmLoss} className="py-3 bg-rose-500 text-white rounded-xl font-black uppercase text-[10px]">Valider</button>
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                      <button onClick={() => setLossModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Annuler</button>
+                      <button onClick={handleConfirmLoss} className="py-3 bg-rose-500 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-rose-200">Valider</button>
                   </div>
               </div>
           </div>
       )}
 
-      <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
+      <div className="p-6 border-b bg-slate-50 flex flex-col md:flex-row justify-between items-center gap-4">
         <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
             <span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>
             Suivi des DLC en cours
         </h2>
-        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeDlcs.length} lots sous surveillance</span>
+        <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeDlcs.length} lots actifs</span>
+            <div className="w-3 h-3 bg-rose-500 rounded-full animate-pulse"></div>
+        </div>
       </div>
       
       <div className="overflow-x-auto">
         <table className="w-full text-left">
-          <thead className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+          <thead className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b">
             <tr>
               <th className="p-6">Produit</th>
               <th className="p-6 text-center">Ouverture</th>
@@ -105,7 +116,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
           </thead>
           <tbody className="divide-y divide-slate-100">
             {activeDlcs.map(dlc => (
-              <tr key={dlc.id} className={dlc.isExpired ? 'bg-rose-50' : 'hover:bg-slate-50'}>
+              <tr key={dlc.id} className={`${dlc.isExpired ? 'bg-rose-50/50' : 'hover:bg-slate-50'} transition-colors`}>
                 <td className="p-6">
                   <span className="font-black text-slate-900 text-sm">{dlc.itemName}</span>
                   <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">Lieu: {dlc.storageName} • Par: {dlc.userName}</div>
@@ -113,17 +124,32 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory, dlcProfiles, stora
                 <td className="p-6 text-xs text-center font-bold text-slate-500">{dlc.openedDate.toLocaleDateString()} {dlc.openedDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
                 <td className="p-6 text-xs text-center font-black text-slate-700">{dlc.expirationDate.toLocaleDateString()} {dlc.expirationDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
                 <td className="p-6 text-center">
-                   <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${dlc.isExpired ? 'bg-rose-500 text-white animate-pulse' : 'bg-emerald-100 text-emerald-600'}`}>
+                   <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dlc.isExpired ? 'bg-rose-500 text-white border-rose-600 animate-pulse' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                        {formatDuration(dlc.timeLeft)}
                    </span>
                 </td>
                 <td className="p-6 text-center">
-                    <button onClick={() => { setSelectedDlcId(dlc.id); setLossModalOpen(true); }} className="text-slate-300 hover:text-rose-500 p-2"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                    <button 
+                        onClick={() => { setSelectedDlcId(dlc.id); setLossModalOpen(true); }} 
+                        className="p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all active:scale-90"
+                        title="Signaler la perte ou fin de vie"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
                 </td>
               </tr>
             ))}
             {activeDlcs.length === 0 && (
-                <tr><td colSpan={5} className="p-20 text-center text-slate-400 italic font-medium">Aucun lot actif à surveiller.</td></tr>
+                <tr>
+                    <td colSpan={5} className="p-32 text-center">
+                        <div className="flex flex-col items-center gap-4 text-slate-400">
+                            <svg className="w-16 h-16 opacity-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <p className="font-bold italic">Aucun lot actif sous surveillance DLC.</p>
+                        </div>
+                    </td>
+                </tr>
             )}
           </tbody>
         </table>
