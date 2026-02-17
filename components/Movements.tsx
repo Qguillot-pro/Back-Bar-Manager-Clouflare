@@ -30,14 +30,9 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [dlcModalOpen, setDlcModalOpen] = useState(false);
   const [pendingDlcItem, setPendingDlcItem] = useState<StockItem | null>(null);
   const [pendingDlcAction, setPendingDlcAction] = useState<'IN' | 'OUT'>('OUT');
-  const [dlcStep, setDlcStep] = useState<'LABEL_CHECK' | 'USE_OLDEST' | 'EMPTY' | 'NONE'>('NONE');
-
-  const [consigneModalOpen, setConsigneModalOpen] = useState(false);
-  const [pendingConsigneItem, setPendingConsigneItem] = useState<StockItem | null>(null);
 
   const [isTempItemModalOpen, setIsTempItemModalOpen] = useState(false);
   const [tempItemName, setTempItemName] = useState('');
-  const [tempItemQty, setTempItemQty] = useState<number>(0);
 
   const handleAction = (type: 'IN' | 'OUT') => {
     const searchNormalized = normalizeText(search.trim());
@@ -45,10 +40,8 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
     if (!item) {
         if (type === 'IN' && onCreateTemporaryItem) {
-            if (window.confirm(`Produit "${search}" introuvable. Voulez-vous créer un produit provisoire ?`)) {
-                setTempItemName(search);
-                setIsTempItemModalOpen(true);
-            }
+            setTempItemName(search);
+            setIsTempItemModalOpen(true);
         } else {
             alert(`Produit "${search}" introuvable.`);
         }
@@ -56,31 +49,13 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     }
 
     let normalized = qty.replace(',', '.');
-    if (normalized === '.') normalized = '0';
-    let quantity = parseFloat(normalized);
-    if (isNaN(quantity) || quantity <= 0) quantity = 1;
+    let quantity = parseFloat(normalized) || 1;
 
-    if (item.isDLC && dlcProfiles && onDlcEntry && onDlcConsumption) {
-        const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
-        if (profile) {
-            setPendingDlcItem(item);
-            setPendingDlcAction(type);
-            if (type === 'OUT') {
-                if (profile.type === 'OPENING') { setDlcStep('LABEL_CHECK'); setDlcModalOpen(true); return; } 
-                else if (profile.type === 'PRODUCTION') {
-                    const existing = dlcHistory.filter(h => h.itemId === item.id);
-                    setDlcStep(existing.length > 0 ? 'USE_OLDEST' : 'EMPTY');
-                    setDlcModalOpen(true); return;
-                }
-            } else if (type === 'IN' && profile.type === 'PRODUCTION') {
-                setDlcStep('LABEL_CHECK'); setDlcModalOpen(true); return;
-            }
-        }
-    }
-
-    if (type === 'OUT' && item.isConsigne) {
-        setPendingConsigneItem(item);
-        setConsigneModalOpen(true);
+    // Logique DLC
+    if (item.isDLC && dlcProfiles && onDlcEntry) {
+        setPendingDlcItem(item);
+        setPendingDlcAction(type);
+        setDlcModalOpen(true);
         return;
     }
 
@@ -92,62 +67,46 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const finalizeDlcTransaction = () => {
       if (!pendingDlcItem) return;
       let quantity = parseFloat(qty.replace(',', '.')) || 1;
-      const profile = dlcProfiles?.find(p => p.id === pendingDlcItem.dlcProfileId);
       onTransaction(pendingDlcItem.id, pendingDlcAction, quantity, isServiceTransfer);
-      if (pendingDlcAction === 'IN') {
-          if (profile?.type === 'PRODUCTION' && onDlcEntry) onDlcEntry(pendingDlcItem.id, 's_global', 'PRODUCTION'); 
-      } else { 
-          if (profile?.type === 'OPENING' && onDlcEntry) onDlcEntry(pendingDlcItem.id, 's_global', 'OPENING');
-          if (profile?.type === 'PRODUCTION' && onDlcConsumption && dlcStep === 'USE_OLDEST') onDlcConsumption(pendingDlcItem.id);
-      }
+      if (onDlcEntry && pendingDlcAction === 'IN') onDlcEntry(pendingDlcItem.id, 's_global', 'OPENING');
       setDlcModalOpen(false);
       setPendingDlcItem(null);
       setSearch('');
       setQty('1');
   };
 
-  const confirmConsigneAction = () => {
-      if (pendingConsigneItem) {
-          onTransaction(pendingConsigneItem.id, 'OUT', parseFloat(qty.replace(',', '.')) || 1, isServiceTransfer);
-          setConsigneModalOpen(false);
-          setPendingConsigneItem(null);
-          setSearch('');
-          setQty('1');
-      }
-  };
-
   return (
     <div className="space-y-6 max-w-4xl mx-auto relative">
-      
-      {/* MODALS (Simplified for space) */}
+      {/* MODALE PRODUIT PROVISOIRE */}
       {isTempItemModalOpen && (
-          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl">
-              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center space-y-6">
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in">
+              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6">
                   <h3 className="text-xl font-black text-slate-900 uppercase">Produit Provisoire</h3>
-                  <input type="text" className="w-full bg-slate-50 border rounded-xl p-3 font-bold" value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} placeholder="Nom..." />
+                  <p className="text-xs text-slate-500 font-bold">Produit inconnu. Voulez-vous le créer pour enregistrer l'entrée ?</p>
+                  <input type="text" className="w-full bg-slate-50 border rounded-xl p-3 font-bold text-slate-900" value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} />
                   <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => setIsTempItemModalOpen(false)} className="py-3 bg-slate-100 rounded-xl font-black uppercase text-[10px]">Annuler</button>
-                      <button onClick={() => { onCreateTemporaryItem?.(tempItemName, tempItemQty); setIsTempItemModalOpen(false); }} className="py-3 bg-amber-500 text-white rounded-xl font-black uppercase text-[10px]">Créer</button>
+                      <button onClick={() => setIsTempItemModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px]">Annuler</button>
+                      <button onClick={() => { onCreateTemporaryItem?.(tempItemName, 0); setIsTempItemModalOpen(false); }} className="py-3 bg-amber-500 text-white rounded-xl font-black uppercase text-[10px]">Créer</button>
                   </div>
               </div>
           </div>
       )}
 
       {dlcModalOpen && (
-          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-              <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full text-center space-y-6">
+          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full text-center space-y-6 shadow-2xl">
                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{pendingDlcItem?.name}</h3>
-                  <p className="text-sm font-bold text-slate-600">Avez-vous bien collé l'étiquette DLC sur le produit ?</p>
-                  <button onClick={finalizeDlcTransaction} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs">Oui, Étiquette Collée</button>
+                  <p className="text-sm font-bold text-slate-600 italic">Rappel : Avez-vous collé l'étiquette DLC ?</p>
+                  <button onClick={finalizeDlcTransaction} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl">Oui, Continuer</button>
                   <button onClick={() => setDlcModalOpen(false)} className="text-slate-400 font-bold text-xs uppercase underline">Annuler</button>
               </div>
           </div>
       )}
 
-      {/* HEADER & TABS */}
+      {/* TABS */}
       <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex gap-2">
-          <button onClick={() => setActiveTab('MOVEMENTS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>Mouvements</button>
-          <button onClick={() => setActiveTab('UNFULFILLED')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest ${activeTab === 'UNFULFILLED' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-400'}`}>Ruptures Client</button>
+          <button onClick={() => setActiveTab('MOVEMENTS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>Mouvements</button>
+          <button onClick={() => setActiveTab('UNFULFILLED')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'UNFULFILLED' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-400'}`}>Ruptures Client</button>
       </div>
 
       {activeTab === 'MOVEMENTS' && (
@@ -173,21 +132,21 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
               <div className="space-y-3">
                   <div className="flex justify-between items-center mx-4">
-                      <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Mouvements Récents</h3>
+                      <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Derniers Mouvements</h3>
                       {onUndo && (
-                          <button onClick={onUndo} className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-rose-100 transition-all border border-rose-200">
+                          <button onClick={onUndo} className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-rose-100 transition-all border border-rose-200 shadow-sm">
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
-                              Annuler dernier mouvement
+                              Annuler le dernier
                           </button>
                       )}
                   </div>
-                  {transactions.slice(0, 30).map((t, idx) => {
+                  {transactions.slice(0, 20).map((t, idx) => {
                       const item = items.find(i => i.id === t.itemId);
                       return (
-                          <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
+                          <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm animate-in slide-in-from-right duration-300" style={{animationDelay: `${idx*50}ms`}}>
                               <div>
                                   <p className="font-bold text-slate-800 text-sm">{item?.name || 'Inconnu'}</p>
-                                  <p className="text-[9px] font-bold text-slate-400 uppercase">{new Date(t.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {t.userName}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{new Date(t.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {t.userName}</p>
                               </div>
                               <div className={`px-3 py-1.5 rounded-lg font-black text-xs ${t.type === 'IN' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
                                   {t.type === 'IN' ? '+' : '-'}{t.quantity}
