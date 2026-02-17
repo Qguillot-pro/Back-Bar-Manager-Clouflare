@@ -37,6 +37,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [consigneModalOpen, setConsigneModalOpen] = useState(false);
   const [pendingConsigneItem, setPendingConsigneItem] = useState<StockItem | null>(null);
 
+  // Temp Item State
   const [isTempItemModalOpen, setIsTempItemModalOpen] = useState(false);
   const [tempItemName, setTempItemName] = useState('');
   const [tempItemQty, setTempItemQty] = useState<number>(0);
@@ -46,7 +47,15 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
 
     if (!item) {
-        alert(`Produit "${search}" introuvable.`);
+        // Si produit non trouvé, proposer de le créer si c'est une entrée
+        if (type === 'IN' && onCreateTemporaryItem) {
+            if (window.confirm(`Produit "${search}" introuvable. Voulez-vous créer un produit provisoire ?`)) {
+                setTempItemName(search);
+                setIsTempItemModalOpen(true);
+            }
+        } else {
+            alert(`Produit "${search}" introuvable.`);
+        }
         return;
     }
 
@@ -129,6 +138,15 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       }
   };
 
+  const handleCreateTempItem = () => {
+      if (!tempItemName || !onCreateTemporaryItem) return;
+      onCreateTemporaryItem(tempItemName, tempItemQty);
+      setTempItemName('');
+      setTempItemQty(0);
+      setIsTempItemModalOpen(false);
+      // On ne reset pas search pour enchainer
+  };
+
   const groupedTransactions = useMemo(() => {
     const sorted = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return sorted.slice(0, 30);
@@ -137,6 +155,30 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   return (
     <div className="space-y-6 max-w-4xl mx-auto relative">
       
+      {/* TEMP ITEM MODAL */}
+      {isTempItemModalOpen && (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500"></div>
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Produit Provisoire</h3>
+                  <div className="space-y-4">
+                      <div className="text-left space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du produit</label>
+                          <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none" value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} autoFocus />
+                      </div>
+                      <div className="text-left space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Consigne Surstock (Optionnel)</label>
+                          <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900 outline-none text-center" value={tempItemQty} onChange={(e) => setTempItemQty(parseInt(e.target.value) || 0)} />
+                      </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                      <button onClick={() => setIsTempItemModalOpen(false)} className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all">Annuler</button>
+                      <button onClick={handleCreateTempItem} disabled={!tempItemName} className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-amber-200 active:scale-95 transition-all">Créer</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* DLC MODAL */}
       {dlcModalOpen && pendingDlcItem && (
           <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
@@ -213,6 +255,16 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                           <input type="text" inputMode="decimal" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-center text-slate-900 outline-none" value={qty} onChange={(e) => setQty(e.target.value)} />
                       </div>
                   </div>
+                  
+                  {onCreateTemporaryItem && (
+                      <div className="flex justify-end -mt-2">
+                          <button onClick={() => setIsTempItemModalOpen(true)} className="text-[10px] font-black text-amber-500 hover:text-amber-700 uppercase tracking-widest flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
+                              Créer produit provisoire
+                          </button>
+                      </div>
+                  )}
+
                   <div className="grid grid-cols-3 gap-4">
                       <button onClick={() => handleAction('IN')} className="col-span-1 bg-emerald-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all text-xs">Entrée (+)</button>
                       <button onClick={() => handleAction('OUT')} className="col-span-2 bg-rose-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all text-lg">Sortie (-)</button>
@@ -220,7 +272,15 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
               </div>
 
               <div className="space-y-3">
-                  <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 ml-4">Mouvements Récents</h3>
+                  <div className="flex justify-between items-center ml-4 mr-4">
+                      <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Mouvements Récents</h3>
+                      {onUndo && (
+                          <button onClick={onUndo} className="text-[10px] font-black text-rose-400 hover:text-rose-600 uppercase tracking-widest flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+                              Annuler dernier
+                          </button>
+                      )}
+                  </div>
                   {groupedTransactions.map((t, idx) => {
                       const item = items.find(i => i.id === t.itemId);
                       return (
