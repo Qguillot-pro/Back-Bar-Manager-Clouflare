@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Category, StockItem, StorageSpace, Format, StockPriority, StockConsigne, User, DLCProfile, UserRole, AppConfig, Glassware, Technique, CocktailCategory, EmailTemplate, ProductType } from '../types';
 import PriorityConfig from './PriorityConfig';
 import GlasswareConfig from './GlasswareConfig';
@@ -68,9 +68,11 @@ const Configuration: React.FC<ConfigProps> = ({
   const [newCatName, setNewCatName] = useState('');
   
   // User Management State
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [newUserName, setNewUserName] = useState('');
   const [newUserPin, setNewUserPin] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('BARMAN');
+  const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
 
   // DLC Profile State
   const [newDlcName, setNewDlcName] = useState('');
@@ -112,22 +114,56 @@ const Configuration: React.FC<ConfigProps> = ({
   const addStorage = () => { if (!storageName) return; const newStorage = { id: 's' + Date.now(), name: storageName }; setStorages(prev => [...prev, newStorage]); onSync('SAVE_STORAGE', newStorage); setStorageName(''); };
   const deleteStorage = (id: string) => { setStorages(prev => prev.filter(st => st.id !== id)); onSync('DELETE_STORAGE', { id }); };
   
-  const addUser = () => { 
+  const handleSaveUser = () => { 
       if (!newUserName || !newUserPin) return; 
-      const newUser: User = { id: 'u' + Date.now(), name: newUserName, role: newUserRole, pin: newUserPin }; 
-      setUsers(prev => [...prev, newUser]); 
-      onSync('SAVE_USER', newUser); 
-      setNewUserName(''); setNewUserPin(''); 
+      const userToSave: User = { 
+          id: editingUserId || 'u' + Date.now(), 
+          name: newUserName, 
+          role: newUserRole, 
+          pin: newUserPin 
+      }; 
+      
+      if (editingUserId) {
+          setUsers(prev => prev.map(u => u.id === editingUserId ? userToSave : u));
+      } else {
+          setUsers(prev => [...prev, userToSave]); 
+      }
+      
+      onSync('SAVE_USER', userToSave); 
+      setNewUserName(''); setNewUserPin(''); setEditingUserId(null); setNewUserRole('BARMAN');
+  };
+
+  const startEditUser = (u: User) => {
+      setEditingUserId(u.id);
+      setNewUserName(u.name);
+      setNewUserPin(u.pin);
+      setNewUserRole(u.role);
+  };
+
+  const cancelEditUser = () => {
+      setEditingUserId(null);
+      setNewUserName('');
+      setNewUserPin('');
+      setNewUserRole('BARMAN');
   };
   
   const deleteUser = (id: string) => {
       if (id === currentUser.id) { alert("Vous ne pouvez pas vous supprimer vous-même."); return; }
       if (window.confirm("Supprimer cet utilisateur ?")) {
           setUsers(prev => prev.filter(u => u.id !== id));
-          // Note: Delete user sync might need specific implementation if not handled by SAVE_USER conflict logic
-          // For now purely UI local as per original scope or add DELETE_USER action.
-          // Assuming existing infrastructure handles updates, explicit delete not shown in schema but safe to add logic if API supports.
+          // Note: Delete user requires logic usually, assuming simple remove for now as per schema
       }
+  };
+
+  const revealPin = (userId: string) => {
+      setVisiblePins(prev => new Set(prev).add(userId));
+      setTimeout(() => {
+          setVisiblePins(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(userId);
+              return newSet;
+          });
+      }, 60000); // 1 minute
   };
 
   const handleAddDlcProfile = () => {
@@ -310,7 +346,7 @@ const Configuration: React.FC<ConfigProps> = ({
       
       {/* USERS CONFIGURATION */}
       {activeSubTab === 'users' && (
-          <div className="max-w-2xl mx-auto space-y-8">
+          <div className="max-w-3xl mx-auto space-y-8">
               {!authorizedSubTabs.has('users') ? (
                   <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm text-center space-y-6">
                       <h3 className="font-black text-lg uppercase tracking-tight">Accès Sécurisé</h3>
@@ -328,33 +364,49 @@ const Configuration: React.FC<ConfigProps> = ({
                   <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
                       <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>Gestion Utilisateurs</h3>
                       
-                      <div className="flex gap-2">
-                          <input className="flex-1 bg-slate-50 p-3 border rounded-xl font-bold outline-none text-sm" placeholder="Nom..." value={newUserName} onChange={e => setNewUserName(e.target.value)} />
-                          <input className="w-24 bg-slate-50 p-3 border rounded-xl font-bold outline-none text-center text-sm" placeholder="PIN" maxLength={4} value={newUserPin} onChange={e => setNewUserPin(e.target.value)} />
-                          <select className="bg-slate-50 p-3 border rounded-xl font-bold outline-none text-sm" value={newUserRole} onChange={e => setNewUserRole(e.target.value as UserRole)}>
+                      <div className="flex gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <input className="flex-1 bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" placeholder="Nom..." value={newUserName} onChange={e => setNewUserName(e.target.value)} />
+                          <input className="w-24 bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-center text-sm" placeholder="PIN" maxLength={4} value={newUserPin} onChange={e => setNewUserPin(e.target.value)} />
+                          <select className="bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newUserRole} onChange={e => setNewUserRole(e.target.value as UserRole)}>
                               <option value="BARMAN">Barman</option>
                               <option value="ADMIN">Admin</option>
                           </select>
-                          <button onClick={addUser} className="bg-indigo-600 text-white px-4 rounded-xl font-black uppercase text-xs">Ajouter</button>
+                          <div className="flex flex-col gap-1">
+                              <button onClick={handleSaveUser} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black uppercase text-xs hover:bg-indigo-700 shadow-lg">{editingUserId ? 'Modifier' : 'Ajouter'}</button>
+                              {editingUserId && <button onClick={cancelEditUser} className="text-[10px] text-slate-400 font-bold uppercase hover:text-slate-600">Annuler</button>}
+                          </div>
                       </div>
 
                       <div className="space-y-3">
                           {users.map(u => (
-                              <div key={u.id} className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-100">
+                              <div key={u.id} className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
                                   <div className="flex items-center gap-3">
-                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs ${u.role === 'ADMIN' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm ${u.role === 'ADMIN' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
                                           {u.name.charAt(0)}
                                       </div>
                                       <div>
-                                          <p className="font-bold text-slate-800 text-sm">{u.name}</p>
-                                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{u.role} • PIN: {currentUser.role === 'ADMIN' ? u.pin : '****'}</p>
+                                          <p className="font-bold text-slate-900 text-sm">{u.name}</p>
+                                          <div className="flex items-center gap-2">
+                                              <span className="text-[10px] font-black bg-slate-50 text-slate-400 px-2 py-0.5 rounded uppercase tracking-widest">{u.role}</span>
+                                              <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded">
+                                                  <span className="text-[10px] font-mono font-bold text-slate-500">PIN: {visiblePins.has(u.id) ? u.pin : '••••'}</span>
+                                                  <button onClick={() => revealPin(u.id)} className="text-slate-300 hover:text-indigo-500">
+                                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                                  </button>
+                                              </div>
+                                          </div>
                                       </div>
                                   </div>
-                                  {u.id !== currentUser.id && (
-                                      <button onClick={() => deleteUser(u.id)} className="text-rose-300 hover:text-rose-500">
-                                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  <div className="flex gap-2">
+                                      <button onClick={() => startEditUser(u)} className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                       </button>
-                                  )}
+                                      {u.id !== currentUser.id && (
+                                          <button onClick={() => deleteUser(u.id)} className="p-2 text-rose-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
+                                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                          </button>
+                                      )}
+                                  </div>
                               </div>
                           ))}
                       </div>
@@ -437,8 +489,8 @@ const Configuration: React.FC<ConfigProps> = ({
                       Cette application permet la gestion des stocks, le suivi des DLC, la création de fiches techniques et la communication d'équipe.
                   </p>
                   <div className="inline-block bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <p className="text-xs font-bold text-slate-500 mb-1">Stack Technique</p>
-                      <p className="text-sm font-black text-slate-800">React • TypeScript • Tailwind • Neon DB • Google Gemini</p>
+                      <p className="text-xs font-bold text-slate-500 mb-1">Développeur</p>
+                      <p className="text-sm font-black text-slate-800 uppercase tracking-widest">M. GUILLOT Quentin</p>
                   </div>
               </div>
 

@@ -37,16 +37,13 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
     const map = new Map<string, AggregatedNeed>();
 
-    consignes.forEach(c => {
-        const item = items.find(i => i.id === c.itemId);
-        if (!item) return;
-        
-        // FILTER: Only keep PRODUCTION items
+    // Itérer sur TOUS les items qui ont un profil DLC type 'PRODUCTION'
+    items.forEach(item => {
         const profile = item.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
         if (profile?.type !== 'PRODUCTION') return;
 
-        const level = stockLevels.find(l => l.itemId === c.itemId && l.storageId === c.storageId);
-        const currentQty = level?.currentQuantity || 0;
+        // Récupérer les consignes pour cet item
+        const itemConsignes = consignes.filter(c => c.itemId === item.id);
         
         // Calcul Stock Total (Théorique)
         const totalStock = stockLevels.filter(l => l.itemId === item.id).reduce((acc, curr) => acc + curr.currentQuantity, 0);
@@ -71,8 +68,19 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
             ? `${itemDlcs.length} lots (Exp: ${closestExpiry.toLocaleDateString()} ${closestExpiry.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})})` 
             : "Aucun lot actif";
 
-        if (currentQty < c.minQuantity) {
-            const gap = c.minQuantity - currentQty;
+        // Pour chaque lieu de stockage (défini par une consigne), calculer le gap
+        // Si pas de consigne définie, on peut imaginer un stockage par défaut 'Bar' mais ici on se base sur les consignes existantes
+        if (itemConsignes.length === 0) {
+             // Cas rare: item de prod sans consigne de stockage. On l'affiche quand même si on veut, mais sans bouton de prod précis ?
+             // Pour simplifier, on ne traite que si une consigne existe (lieu de stockage défini).
+        }
+
+        itemConsignes.forEach(c => {
+            const level = stockLevels.find(l => l.itemId === c.itemId && l.storageId === c.storageId);
+            const currentQty = level?.currentQuantity || 0;
+            const minQty = c.minQuantity;
+            const gap = Math.max(0, minQty - currentQty); // Gap peut être 0
+            
             const storage = storages.find(s => s.id === c.storageId);
             const priority = priorities.find(p => p.itemId === item.id && p.storageId === c.storageId)?.priority || 0;
 
@@ -81,10 +89,10 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                     map.set(item.id, { item, totalGap: 0, totalStock, dlcInfo: { count: itemDlcs.length, closestExpiry, label: dlcLabel, status: dlcStatus }, details: [] });
                 }
                 const entry = map.get(item.id)!;
-                entry.details.push({ storage, currentQty, minQty: c.minQuantity, gap, priority });
+                entry.details.push({ storage, currentQty, minQty, gap, priority });
                 entry.totalGap += gap;
             }
-        }
+        });
     });
 
     const list = Array.from(map.values());
@@ -114,12 +122,14 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
 
                   <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
                       <p className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-1">Production requise</p>
-                      <p className="text-4xl font-black text-purple-600">{selectedDetail.detail.gap.toFixed(2)}</p>
+                      <p className="text-4xl font-black text-purple-600">{selectedDetail.detail.gap > 0 ? selectedDetail.detail.gap.toFixed(2) : 'Stock OK'}</p>
                   </div>
 
-                  <button onClick={handleProduce} className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all">
-                      Confirmer Production (+{selectedDetail.detail.gap})
+                  <button onClick={handleProduce} disabled={selectedDetail.detail.gap <= 0} className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50">
+                      Confirmer Production (+{selectedDetail.detail.gap > 0 ? selectedDetail.detail.gap : 1})
                   </button>
+                  <p className="text-[10px] text-slate-400">Si le stock est OK, vous pouvez forcer une production de 1 unité.</p>
+                  
                   <button onClick={() => setSelectedDetail(null)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-500 p-2">✕</button>
               </div>
           </div>
@@ -132,13 +142,13 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
         </div>
         <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
             <span className="block text-2xl font-black">{aggregatedNeeds.length}</span>
-            <span className="text-[9px] font-bold uppercase tracking-widest text-purple-200">À Produire</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-purple-200">Produits suivis</span>
         </div>
       </header>
 
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
           {aggregatedNeeds.length === 0 ? (
-              <div className="p-12 text-center text-slate-400 italic">Aucune production nécessaire.</div>
+              <div className="p-12 text-center text-slate-400 italic">Aucun produit configuré en Production.</div>
           ) : (
               <div className="divide-y divide-slate-100">
                   {aggregatedNeeds.map(agg => (
@@ -158,15 +168,24 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                                       </span>
                                   </div>
                               </div>
-                              <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-lg">Manque Total: +{agg.totalGap}</span>
+                              {agg.totalGap > 0 ? (
+                                  <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-lg">Manque Total: +{agg.totalGap}</span>
+                              ) : (
+                                  <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-lg">Stock OK</span>
+                              )}
                           </div>
                           <div className="space-y-2">
                               {agg.details.map((d, idx) => (
                                   <div key={idx} className="flex items-center justify-between bg-purple-50/50 p-2 rounded-xl border border-purple-100">
                                       <span className="text-xs font-bold text-purple-900 uppercase ml-2">{d.storage.name}</span>
                                       <div className="flex items-center gap-3">
-                                          <span className="text-[10px] text-slate-500 font-bold">Stock Local: {d.currentQty} / Min: {d.minQty}</span>
-                                          <button onClick={() => setSelectedDetail({ item: agg.item, detail: d })} className="bg-white text-purple-600 border border-purple-200 px-3 py-1 rounded-lg text-[10px] font-black uppercase hover:bg-purple-600 hover:text-white transition-colors">Produire (+{d.gap})</button>
+                                          <span className={`text-[10px] font-bold ${d.currentQty < d.minQty ? 'text-rose-500' : 'text-emerald-500'}`}>Stock Local: {d.currentQty} / Min: {d.minQty}</span>
+                                          <button 
+                                            onClick={() => setSelectedDetail({ item: agg.item, detail: d })} 
+                                            className={`bg-white border px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-colors ${d.gap > 0 ? 'text-purple-600 border-purple-200 hover:bg-purple-600 hover:text-white' : 'text-slate-400 border-slate-200 hover:bg-slate-100'}`}
+                                          >
+                                              Produire {d.gap > 0 ? `(+${d.gap})` : ''}
+                                          </button>
                                       </div>
                                   </div>
                               ))}

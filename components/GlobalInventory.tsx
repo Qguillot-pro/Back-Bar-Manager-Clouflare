@@ -42,6 +42,10 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       return stockLevels.find(l => l.itemId === itemId && l.storageId === GLOBAL_STORAGE_ID)?.currentQuantity || 0;
   };
 
+  const getSurstockLevel = (itemId: string) => {
+      return stockLevels.find(l => l.itemId === itemId && l.storageId === 's0')?.currentQuantity || 0;
+  };
+
   const handleGlobalStockChange = (itemId: string, val: string) => {
       if (!/^\d*([.,]\d*)?$/.test(val)) return;
       let normalized = val.replace(',', '.');
@@ -50,28 +54,31 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       onUpdateStock(itemId, GLOBAL_STORAGE_ID, num);
   };
 
-  // NOUVELLE LOGIQUE AJUSTEMENT
   const handleAdjustStock = (itemId: string, adjustment: number) => {
       const current = getGlobalStock(itemId);
+      const s0Qty = getSurstockLevel(itemId);
       
       if (adjustment < 0) {
-          // Mouvement SORTIE (Régulation)
+          // Cas (-) : On veut sortir du stock global (ex: vente restaurant)
+          if (s0Qty >= 1) {
+              if (window.confirm("Stock disponible en Surstock (Cave). Voulez-vous transférer 1 unité du Surstock vers ici (Réappro) ?\n\nOK = Transférer (S0 -> Ici)\nAnnuler = Corriger/Sortir d'ici")) {
+                  // Transfert S0 -> Global
+                  onUpdateStock(itemId, 's0', s0Qty - 1);
+                  onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + 1);
+                  return;
+              }
+          }
+          // Si pas de stock S0 ou refus du transfert -> Correction standard (Sortie)
           const newQty = Math.max(0, parseFloat((current + adjustment).toFixed(2)));
-          onUpdateStock(itemId, GLOBAL_STORAGE_ID, newQty, false, true); // isCorrection=true
+          onUpdateStock(itemId, GLOBAL_STORAGE_ID, newQty, false, true); 
       } else {
-          // Mouvement AJOUT
-          // Vérifier d'abord s'il y a du stock dans s0
-          const s0Level = stockLevels.find(l => l.itemId === itemId && l.storageId === 's0');
-          const s0Qty = s0Level?.currentQuantity || 0;
-
+          // Cas (+) : Entrée stock
+          // Logique existante: on propose de prendre depuis S0 si dispo, sinon ajout manuel
           if (s0Qty >= adjustment) {
-              // TRANSFERT DEPUIS S0
-              onUpdateStock(itemId, 's0', s0Qty - adjustment); // Enlève de S0
-              onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment); // Ajoute à Global
-              // Petit feedback visuel ou toast pourrait être ajouté ici
+              // TRANSFERT DEPUIS S0 (Optionnel, mais logique pour un réappro interne)
+              // Pour simplifier l'UX ici, on fait un ajout simple sauf si on veut complexifier
+              onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment, false, true);
           } else {
-              // PAS DE S0 -> ANNULATION DERNIERE SORTIE (Correction Positive)
-              // On considère ça comme une correction d'inventaire simple ici pour simplifier
               onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment, false, true);
           }
       }
