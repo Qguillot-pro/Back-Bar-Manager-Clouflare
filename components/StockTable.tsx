@@ -27,14 +27,21 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
   const getConsigneValue = (itemId: string, storageId: string) => consignes.find(c => c.itemId === itemId && c.storageId === storageId)?.minQuantity || 0;
 
   const handleManualEdit = (itemId: string, storageId: string, val: string) => {
+    // On n'autorise que les chiffres, le point et la virgule
+    if (!/^[0-9]*([.,][0-9]*)?$/.test(val)) return;
+
     let normalized = val.replace(',', '.');
+    
+    // Si l'utilisateur tape juste un point/virgule ou vide, on n'update pas encore pour éviter le saut à 0
     if (normalized === '' || normalized === '.') {
         onUpdateStock(itemId, storageId, 0);
         return;
     }
+    
     const num = parseFloat(normalized);
     if (!isNaN(num)) {
-        onUpdateStock(itemId, storageId, num);
+        // Limitation à 3 décimales pour la précision bar
+        onUpdateStock(itemId, storageId, Math.round(num * 1000) / 1000);
     }
   };
 
@@ -144,11 +151,11 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
 
       {/* VUE PAR PRODUIT */}
       {activeTab === 'PRODUCT' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 max-w-4xl mx-auto">
               <div className="bg-white p-6 rounded-3xl border shadow-sm">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Rechercher un produit</label>
                   <input 
-                    list="product-search-list"
+                    list="product-search-list-inv"
                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
                     placeholder="Tapez le nom d'un produit..."
                     value={productSearch}
@@ -158,21 +165,22 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                         if (found) setSelectedProductId(found.id);
                     }}
                   />
-                  <datalist id="product-search-list">
+                  <datalist id="product-search-list-inv">
                       {items.map(i => <option key={i.id} value={i.name} />)}
                   </datalist>
               </div>
 
               {selectedProductId ? (
-                  <div className="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
-                      <div className="p-4 bg-slate-50 border-b text-center">
-                          <h4 className="font-black text-indigo-600 uppercase text-xs tracking-widest">Espaces Autorisés pour : {items.find(i => i.id === selectedProductId)?.name}</h4>
+                  <div className="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden animate-in zoom-in-95 duration-300">
+                      <div className="p-6 bg-indigo-600 text-white text-center">
+                          <h4 className="font-black uppercase text-sm tracking-widest">{items.find(i => i.id === selectedProductId)?.name}</h4>
+                          <p className="text-[10px] opacity-75 font-bold uppercase mt-1">Inventaire par emplacement</p>
                       </div>
                       <table className="w-full text-left">
                           <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                               <tr>
-                                  <th className="p-6">Espace</th>
-                                  <th className="p-6 text-center">Stock Actuel</th>
+                                  <th className="p-6">Espace de Stockage</th>
+                                  <th className="p-6 text-center">Quantité (Décimale OK)</th>
                                   <th className="p-6 text-center">Consigne</th>
                                   <th className="p-6 text-center">Action</th>
                               </tr>
@@ -183,21 +191,24 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                   const consigne = getConsigneValue(selectedProductId, s.id);
                                   return (
                                       <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-6 font-bold text-slate-700">{s.name}</td>
+                                          <td className="p-6 font-bold text-slate-700">
+                                              {s.name}
+                                              {s.id === 's0' && <span className="ml-2 bg-amber-100 text-amber-600 text-[8px] px-2 py-0.5 rounded-full font-black uppercase">Surstock</span>}
+                                          </td>
                                           <td className="p-6 text-center">
                                               <input 
                                                 type="text"
                                                 inputMode="decimal"
                                                 value={qty}
                                                 onChange={(e) => handleManualEdit(selectedProductId, s.id, e.target.value)}
-                                                className={`w-16 text-center p-2 rounded-xl font-black text-sm border-2 ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+                                                className={`w-20 text-center p-3 rounded-xl font-black text-base border-2 transition-all ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
                                               />
                                           </td>
                                           <td className="p-6 text-center text-slate-400 font-bold">{consigne || '-'}</td>
                                           <td className="p-6 text-center">
                                               <div className="flex justify-center gap-2">
-                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all">-</button>
-                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all">+</button>
+                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>
+                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>
                                               </div>
                                           </td>
                                       </tr>
@@ -207,8 +218,9 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                       </table>
                   </div>
               ) : (
-                  <div className="p-20 text-center bg-white rounded-3xl border border-dashed text-slate-400 italic">
-                      Sélectionnez un produit pour voir ses stocks.
+                  <div className="p-32 text-center bg-white rounded-[3rem] border border-dashed border-slate-300 text-slate-400 flex flex-col items-center gap-4">
+                      <svg className="w-12 h-12 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                      <p className="font-bold text-sm">Sélectionnez un produit pour gérer son inventaire détaillé.</p>
                   </div>
               )}
           </div>
@@ -233,7 +245,7 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                       <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
                           <tr>
                               <th className="p-6">Produit</th>
-                              <th className="p-6 text-center">Stock</th>
+                              <th className="p-6 text-center">Quantité (Décimale OK)</th>
                               <th className="p-6 text-center">Consigne</th>
                               <th className="p-6 text-center">Action</th>
                           </tr>
@@ -253,14 +265,14 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                             inputMode="decimal"
                                             value={qty}
                                             onChange={(e) => handleManualEdit(item.id, selectedStorageId, e.target.value)}
-                                            className={`w-16 text-center p-2 rounded-xl font-black text-sm border-2 ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+                                            className={`w-20 text-center p-2 rounded-xl font-black text-sm border-2 ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
                                           />
                                       </td>
                                       <td className="p-6 text-center text-slate-400 font-bold">{consigne || '-'}</td>
                                       <td className="p-6 text-center">
                                           <div className="flex justify-center gap-2">
-                                              <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all">-</button>
-                                              <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all">+</button>
+                                              <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>
+                                              <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>
                                           </div>
                                       </td>
                                   </tr>
