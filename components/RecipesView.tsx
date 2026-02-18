@@ -20,9 +20,7 @@ const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\
 const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [], cocktailCategories = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   
-  // Create/Edit Form State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newCat, setNewCat] = useState('');
@@ -35,111 +33,70 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   const [newIngredients, setNewIngredients] = useState<RecipeIngredient[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Search State
-  const [search, setSearch] = useState('');
-
-  // Initialiser la catégorie par défaut
   useEffect(() => {
-      if (!newCat && cocktailCategories.length > 0) {
-          setNewCat(cocktailCategories[0].name);
-      }
+      if (!newCat && cocktailCategories.length > 0) setNewCat(cocktailCategories[0].name);
   }, [cocktailCategories]);
 
-  // --- HELPERS & COST CALCULATION (Keep existing logic) ---
-  const getFormatValue = (itemId?: string) => {
-      if (!itemId) return 0;
-      const item = items.find(i => i.id === itemId);
-      return 70; 
-  };
-
+  // Calcul du coût et prix suggéré
   const getIngredientCost = (ing: RecipeIngredient) => {
       if (!ing.itemId) return 0;
       const item = items.find(i => i.id === ing.itemId);
       if (!item || !item.pricePerUnit) return 0;
       
-      const formatVal = getFormatValue(item.id); 
-      if (formatVal === 0) return 0;
+      let divider = 70; // Défaut Spiritueux
+      if (item.category === 'Vins') divider = 75;
+      else if (item.category === 'Softs') divider = 20;
 
       let qtyInCl = ing.quantity;
       if (ing.unit === 'ml') qtyInCl = ing.quantity / 10;
-      if (ing.unit === 'dash') qtyInCl = ing.quantity * 0.1; 
-      if (ing.unit === 'piece') qtyInCl = 0; 
+      if (ing.unit === 'dash') qtyInCl = ing.quantity * 0.1;
 
-      return (item.pricePerUnit / formatVal) * qtyInCl;
+      return (item.pricePerUnit / divider) * qtyInCl;
   };
 
-  const calculateTotalCost = (ingredients: RecipeIngredient[]) => {
-      return ingredients.reduce((acc, curr) => acc + getIngredientCost(curr), 0);
-  };
-
+  const totalCost = useMemo(() => newIngredients.reduce((acc, curr) => acc + getIngredientCost(curr), 0), [newIngredients, items]);
   const margin = appConfig.defaultMargin || 82;
-  const calculateSellingPrice = (cost: number) => {
-      if (cost === 0) return 0;
-      return cost / (1 - (margin / 100));
-  };
-
-  // --- HANDLERS ---
+  const suggestedPrice = totalCost / (1 - (margin / 100));
 
   const handleAI = async () => {
-      if (!newName) return;
-      setIsGenerating(true);
-      const availableNames = items.map(i => i.name);
-      const result = await generateCocktailWithAI(newName, availableNames);
-      setIsGenerating(false);
+    if (!newName) {
+        alert("Entrez un nom de cocktail pour que l'IA puisse travailler.");
+        return;
+    }
+    setIsGenerating(true);
+    const availableItems = items.map(i => i.name);
+    const result = await generateCocktailWithAI(newName, availableItems);
+    setIsGenerating(false);
 
-      if (result) {
-          setNewDesc(result.description?.slice(0, 150) || '');
-          setNewHistory(result.history?.slice(0, 150) || '');
-          setNewDecoration(result.decoration || '');
-          
-          if (result.technique) {
-              setNewTech(result.technique);
-          }
-          
-          const mappedIngs: RecipeIngredient[] = [];
-          result.ingredients?.forEach((apiIng: any) => {
-              const foundItem = items.find(i => i.name.toLowerCase().includes(apiIng.name.toLowerCase()));
-              mappedIngs.push({
-                  itemId: foundItem?.id,
-                  tempName: foundItem ? undefined : apiIng.name,
-                  quantity: apiIng.quantity,
-                  unit: ['cl', 'ml', 'dash', 'piece'].includes(apiIng.unit) ? apiIng.unit : 'cl'
-              });
-          });
-          setNewIngredients(mappedIngs);
-      }
-  };
+    if (result) {
+        setNewDesc(result.description || '');
+        setNewHistory(result.history || '');
+        setNewDecoration(result.decoration || '');
+        
+        // Tentative de mapping technique
+        const foundTech = techniques.find(t => normalizeText(t.name) === normalizeText(result.technique || ''));
+        if (foundTech) setNewTech(foundTech.name);
 
-  const handleAddIngredient = () => {
-      setNewIngredients([...newIngredients, { quantity: 0, unit: 'cl' }]);
-  };
-
-  const handleRemoveIngredient = (idx: number) => {
-      const copy = [...newIngredients];
-      copy.splice(idx, 1);
-      setNewIngredients(copy);
-  };
-
-  const handleIngredientChange = (idx: number, field: keyof RecipeIngredient, value: any) => {
-      const copy = [...newIngredients];
-      copy[idx] = { ...copy[idx], [field]: value };
-      
-      if (field === 'itemId' && value) {
-          delete copy[idx].tempName;
-      }
-      setNewIngredients(copy);
+        // Mapping ingrédients IA -> Items Stock
+        if (result.ingredients && Array.isArray(result.ingredients)) {
+            const mappedIngs: RecipeIngredient[] = result.ingredients.map((iaIng: any) => {
+                const foundItem = items.find(i => normalizeText(i.name).includes(normalizeText(iaIng.name)));
+                return {
+                    itemId: foundItem?.id,
+                    tempName: !foundItem ? iaIng.name : undefined,
+                    quantity: iaIng.quantity || 0,
+                    unit: iaIng.unit || 'cl'
+                };
+            });
+            setNewIngredients(mappedIngs);
+        }
+    }
   };
 
   const handleSaveRecipe = () => {
       if (!newName || newIngredients.length === 0) return;
-      
-      const cost = calculateTotalCost(newIngredients);
-      const selling = calculateSellingPrice(cost);
-
-      const recipeId = editingId || 'r' + Date.now();
-
       const recipe: Recipe = {
-          id: recipeId,
+          id: editingId || 'r' + Date.now(),
           name: newName,
           category: newCat,
           glasswareId: newGlassId,
@@ -149,28 +106,16 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           history: newHistory,
           decoration: newDecoration,
           ingredients: newIngredients,
-          costPrice: cost,
-          sellingPrice: selling,
-          status: editingId ? 'VALIDATED' : 'DRAFT', 
-          createdBy: editingId ? (recipes.find(r => r.id === editingId)?.createdBy || currentUser.name) : currentUser.name,
-          createdAt: editingId ? (recipes.find(r => r.id === editingId)?.createdAt || new Date().toISOString()) : new Date().toISOString()
+          costPrice: totalCost,
+          sellingPrice: suggestedPrice,
+          status: 'VALIDATED',
+          createdBy: currentUser.name,
+          createdAt: new Date().toISOString()
       };
-
-      if (editingId) {
-          setRecipes(prev => prev.map(r => r.id === editingId ? recipe : r));
-      } else {
-          setRecipes(prev => [...prev, recipe]);
-      }
-      
+      if (editingId) setRecipes(prev => prev.map(r => r.id === editingId ? recipe : r));
+      else setRecipes(prev => [...prev, recipe]);
       onSync('SAVE_RECIPE', recipe);
       setViewMode('LIST');
-      
-      setEditingId(null);
-      setNewName('');
-      setNewIngredients([]);
-      setNewDesc('');
-      setNewHistory('');
-      setNewTechDetails('');
   };
 
   const handleEdit = (recipe: Recipe) => {
@@ -187,233 +132,223 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       setViewMode('CREATE');
   };
 
-  const handleValidate = (recipe: Recipe) => {
-      const updated = { ...recipe, status: 'VALIDATED' as const };
-      setRecipes(prev => prev.map(r => r.id === recipe.id ? updated : r));
-      onSync('VALIDATE_RECIPE', { id: recipe.id });
-      if (selectedRecipe?.id === recipe.id) setSelectedRecipe(updated);
-  };
-
-  const handleDelete = (id: string) => {
-      if (window.confirm("Supprimer cette recette ?")) {
-          setRecipes(prev => prev.filter(r => r.id !== id));
-          onSync('DELETE_RECIPE', { id });
-          setViewMode('LIST');
-      }
-  };
-
-  const filteredRecipes = useMemo(() => {
-      let res = recipes;
-      // Search Overrides Category Selection
-      if (search.trim()) {
-          res = res.filter(r => normalizeText(r.name).includes(normalizeText(search.trim())));
-      } else if (selectedCategory) {
-          res = res.filter(r => r.category === selectedCategory);
-      }
-      return res;
-  }, [recipes, search, selectedCategory]);
-
-  const activeCategories = useMemo(() => {
-      const cats = new Set(recipes.map(r => r.category));
-      return cocktailCategories.filter(c => cats.has(c.name));
-  }, [recipes, cocktailCategories]);
-
-  // --- RENDER ---
-
   if (viewMode === 'LIST') {
       return (
           <div className="space-y-6">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                  <div className="flex items-center gap-2">
-                      {selectedCategory && !search && (
-                          <button onClick={() => setSelectedCategory(null)} className="mr-2 p-2 rounded-full bg-slate-100 hover:bg-slate-200">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                          </button>
-                      )}
-                      <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                          <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
-                          {selectedCategory && !search ? selectedCategory : 'Cartes des Cocktails'}
-                      </h2>
-                  </div>
-                  <div className="flex gap-4 w-full md:w-auto">
-                      <input 
-                        type="text" 
-                        placeholder="Recherche globale..." 
-                        className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 font-bold text-sm outline-none focus:ring-2 focus:ring-pink-100 flex-1"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                      />
-                      <button 
-                        onClick={() => {
-                            setEditingId(null);
-                            setNewName('');
-                            setNewIngredients([]);
-                            setViewMode('CREATE');
-                        }}
-                        className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 shadow-lg"
-                      >
-                          + Créer
-                      </button>
-                  </div>
+              <div className="flex justify-between items-center bg-white p-6 rounded-3xl border shadow-sm">
+                  <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                      <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
+                      Fiches Cocktails
+                  </h2>
+                  <button onClick={() => { setEditingId(null); setNewName(''); setNewIngredients([]); setViewMode('CREATE'); }} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-all">+ Créer une fiche</button>
               </div>
-
-              {/* MODE TUILES CATEGORIES (Si pas de recherche et pas de catégorie sélectionnée) */}
-              {!search && !selectedCategory && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-2">
-                      {activeCategories.map(cat => (
-                          <div 
-                            key={cat.id} 
-                            onClick={() => setSelectedCategory(cat.name)}
-                            className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-pink-300 transition-all cursor-pointer group flex flex-col items-center justify-center h-40 text-center gap-3"
-                          >
-                              <div className="w-12 h-12 rounded-full bg-pink-50 text-pink-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                  <span className="text-xl">🍸</span>
-                              </div>
-                              <h3 className="font-black text-slate-800 text-sm uppercase tracking-wider">{cat.name}</h3>
-                              <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-1 rounded-full">
-                                  {recipes.filter(r => r.category === cat.name).length} Recettes
-                              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {recipes.map(r => (
+                      <div key={r.id} onClick={() => { setSelectedRecipe(r); setViewMode('DETAIL'); }} className="bg-white p-6 rounded-3xl border border-slate-100 hover:border-pink-300 hover:shadow-xl cursor-pointer transition-all animate-in fade-in slide-in-from-bottom-2 group">
+                          <div className="flex justify-between items-start mb-2">
+                              <h3 className="font-black text-lg text-slate-800 group-hover:text-pink-600 transition-colors">{r.name}</h3>
+                              <span className="text-[8px] font-black text-pink-500 bg-pink-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{r.category}</span>
                           </div>
-                      ))}
-                      {recipes.filter(r => !cocktailCategories.some(c => c.name === r.category)).length > 0 && (
-                          <div 
-                            onClick={() => setSelectedCategory('Autre')}
-                            className="bg-slate-50 p-6 rounded-3xl border border-dashed border-slate-300 hover:border-slate-400 transition-all cursor-pointer group flex flex-col items-center justify-center h-40 text-center gap-3"
-                          >
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Non Classé</span>
-                              <span className="text-xs font-bold text-slate-500">{recipes.filter(r => !cocktailCategories.some(c => c.name === r.category)).length}</span>
+                          <p className="text-xs text-slate-500 mt-2 line-clamp-2 italic font-medium leading-relaxed">"{r.description}"</p>
+                          <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                              <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{r.technique}</span>
+                              <span className="font-black text-slate-900 text-sm">{r.sellingPrice?.toFixed(2)} €</span>
                           </div>
-                      )}
-                  </div>
-              )}
-
-              {/* LISTE RECETTES (Si recherche active OU catégorie sélectionnée) */}
-              {(search || selectedCategory) && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in">
-                      {filteredRecipes.map(r => (
-                          <div 
-                            key={r.id} 
-                            onClick={() => { setSelectedRecipe(r); setViewMode('DETAIL'); }}
-                            className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-pink-200 transition-all cursor-pointer group relative overflow-hidden"
-                          >
-                              {r.status === 'VALIDATED' && (
-                                  <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-black px-2 py-1 rounded-bl-xl uppercase tracking-widest flex items-center gap-1 shadow-sm">
-                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                      Vérifié
-                                  </div>
-                              )}
-                              <div className="flex justify-between items-start mb-4">
-                                  <div>
-                                      <h3 className="font-black text-lg text-slate-800 group-hover:text-pink-600 transition-colors">{r.name}</h3>
-                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{r.category}</span>
-                                  </div>
-                                  {r.status === 'DRAFT' && <span className="bg-amber-100 text-amber-600 text-[9px] font-black px-2 py-1 rounded uppercase">Brouillon</span>}
-                              </div>
-                              <p className="text-sm text-slate-500 line-clamp-2 mb-4">{r.description}</p>
-                              <div className="flex justify-between items-center border-t border-slate-50 pt-4">
-                                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{r.technique}</span>
-                                  <span className="font-black text-slate-900">{r.sellingPrice?.toFixed(2)} €</span>
-                              </div>
-                          </div>
-                      ))}
-                      {filteredRecipes.length === 0 && <p className="col-span-full text-center text-slate-400 italic py-10">Aucune recette trouvée.</p>}
-                  </div>
-              )}
+                      </div>
+                  ))}
+                  {recipes.length === 0 && <p className="col-span-full text-center py-20 text-slate-400 italic">Aucune fiche technique enregistrée.</p>}
+              </div>
           </div>
       );
   }
 
-  // ... (Create & Detail Views remain same as before, simplified for this block) ...
   if (viewMode === 'CREATE') {
-      const currentCost = calculateTotalCost(newIngredients);
-      const currentPrice = calculateSellingPrice(currentCost);
-
       return (
-          <div className="max-w-4xl mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="max-w-4xl mx-auto bg-white rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
               <div className="p-8 border-b bg-slate-50 flex justify-between items-center">
-                  <h2 className="font-black text-xl text-slate-800 uppercase tracking-tight">{editingId ? 'Modifier le Cocktail' : 'Créer un Cocktail'}</h2>
-                  <button onClick={() => setViewMode('LIST')} className="text-slate-400 hover:text-slate-600 font-bold text-xs uppercase">Annuler</button>
+                  <div className="flex items-center gap-4">
+                      <h2 className="font-black text-xl uppercase tracking-tight text-slate-900">{editingId ? 'Modifier' : 'Nouveau'} Cocktail</h2>
+                      {!editingId && (
+                          <button 
+                            onClick={handleAI} 
+                            disabled={isGenerating} 
+                            className="bg-gradient-to-r from-pink-500 to-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            {isGenerating ? 'Génération...' : '✨ Générer par IA'}
+                          </button>
+                      )}
+                  </div>
+                  <button onClick={() => setViewMode('LIST')} className="text-slate-400 font-black text-xs uppercase hover:text-slate-600">Annuler</button>
               </div>
-              
-              <div className="p-8 space-y-8">
-                  {/* ... (Form Content) ... */}
-                  {/* Simplification: Juste le contenu principal pour ne pas dépasser les limites de réponse */}
+              <div className="p-8 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du Cocktail</label>
-                          <div className="flex gap-2">
-                              <input className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Ex: Mojito Royal" />
-                              <button onClick={handleAI} disabled={!newName || isGenerating} className="bg-pink-100 text-pink-600 px-4 rounded-xl font-black text-xs uppercase hover:bg-pink-200 disabled:opacity-50 flex items-center gap-1">{isGenerating ? '...' : '✨ IA'}</button>
-                          </div>
+                          <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 outline-none focus:ring-4 focus:ring-pink-500/10 transition-all" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Ex: Espresso Martini..." />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Catégorie</label>
-                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newCat} onChange={e => setNewCat(e.target.value)}>
+                          <select className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 outline-none cursor-pointer" value={newCat} onChange={e => setNewCat(e.target.value)}>
                               {cocktailCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                              {!cocktailCategories.length && <option>Signature</option>}
                           </select>
                       </div>
                   </div>
-                  {/* ... Ingredients & Rest of form ... */}
-                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                      <div className="flex justify-between items-center mb-4"><h3 className="font-black text-sm uppercase text-slate-700">Ingrédients</h3><button onClick={handleAddIngredient} disabled={newIngredients.length >= 8} className="text-indigo-600 font-black text-[10px] uppercase hover:underline">+ Ajouter</button></div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Verrerie</label>
+                          <select className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-800 outline-none" value={newGlassId} onChange={e => setNewGlassId(e.target.value)}>
+                              <option value="">Choisir...</option>
+                              {glassware.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                          </select>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Technique Principale</label>
+                          <select className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-800 outline-none" value={newTech} onChange={e => setNewTech(e.target.value)}>
+                              <option value="">Choisir...</option>
+                              {techniques.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                          </select>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Précisions de méthode</label>
+                          <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-800 outline-none" value={newTechDetails} onChange={e => setNewTechDetails(e.target.value)} placeholder="Ex: Double-filtration..." />
+                      </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200 space-y-6">
+                      <div className="flex justify-between items-center">
+                          <h3 className="font-black text-xs uppercase text-slate-500 tracking-widest">Ingrédients de la Recette</h3>
+                          <button onClick={() => setNewIngredients([...newIngredients, { quantity: 0, unit: 'cl' }])} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest bg-white border border-indigo-100 px-4 py-2 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm">+ Ajouter</button>
+                      </div>
                       <div className="space-y-3">
                           {newIngredients.map((ing, idx) => (
-                              <div key={idx} className="flex gap-2 items-center">
-                                  <input className="flex-1 bg-white border border-slate-200 rounded-lg p-2 text-sm font-bold outline-none" placeholder="Ingrédient..." value={ing.itemId ? items.find(i => i.id === ing.itemId)?.name : (ing.tempName || '')} onChange={e => handleIngredientChange(idx, 'tempName', e.target.value)} />
-                                  <input type="number" className="w-16 bg-white border border-slate-200 rounded-lg p-2 text-sm font-bold text-center outline-none" value={ing.quantity} onChange={e => handleIngredientChange(idx, 'quantity', parseFloat(e.target.value))} />
-                                  <select className="w-20 bg-white border border-slate-200 rounded-lg p-2 text-sm font-bold outline-none" value={ing.unit} onChange={e => handleIngredientChange(idx, 'unit', e.target.value)}><option value="cl">cl</option><option value="ml">ml</option><option value="dash">dash</option><option value="piece">pce</option></select>
-                                  <button onClick={() => handleRemoveIngredient(idx)} className="text-rose-400 hover:text-rose-600 font-bold px-2">X</button>
+                              <div key={idx} className="flex gap-3 items-center bg-white p-3 rounded-2xl border border-slate-100 shadow-sm animate-in zoom-in-95">
+                                  <select className="flex-1 bg-slate-50 border-none rounded-xl p-3 text-sm font-bold outline-none" value={ing.itemId || ''} onChange={e => {
+                                      const copy = [...newIngredients];
+                                      copy[idx].itemId = e.target.value;
+                                      setNewIngredients(copy);
+                                  }}>
+                                      <option value="">Article Stock...</option>
+                                      {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                  </select>
+                                  <input type="number" step="0.1" className="w-20 bg-slate-50 border-none rounded-xl p-3 text-sm font-black text-center outline-none" value={ing.quantity} onChange={e => {
+                                      const copy = [...newIngredients];
+                                      copy[idx].quantity = parseFloat(e.target.value) || 0;
+                                      setNewIngredients(copy);
+                                  }} />
+                                  <select className="w-24 bg-slate-50 border-none rounded-xl p-3 text-sm font-bold outline-none" value={ing.unit} onChange={e => {
+                                      const copy = [...newIngredients];
+                                      copy[idx].unit = e.target.value as any;
+                                      setNewIngredients(copy);
+                                  }}>
+                                      <option value="cl">cl</option><option value="ml">ml</option><option value="dash">dash</option><option value="piece">pce</option>
+                                  </select>
+                                  <div className="w-16 text-right font-black text-slate-400 text-[10px]">{getIngredientCost(ing).toFixed(2)}€</div>
+                                  <button onClick={() => { const c = [...newIngredients]; c.splice(idx,1); setNewIngredients(c); }} className="text-rose-400 p-2 hover:bg-rose-50 rounded-lg transition-all">✕</button>
                               </div>
                           ))}
                       </div>
+                      <div className="pt-6 border-t border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6">
+                          <div className="flex gap-8">
+                            <div className="text-center md:text-left">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Coût Matière Théorique</p>
+                                <p className="text-2xl font-black text-slate-900">{totalCost.toFixed(2)} €</p>
+                            </div>
+                            <div className="text-center md:text-left">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Coût / Prix (%)</p>
+                                <p className="text-2xl font-black text-slate-400">{suggestedPrice > 0 ? ((totalCost / suggestedPrice)*100).toFixed(1) : 0}%</p>
+                            </div>
+                          </div>
+                          <div className="text-center md:text-right bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
+                              <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1">Prix de Vente Min. Conseillé ({margin}% marge)</p>
+                              <p className="text-3xl font-black text-indigo-700">{suggestedPrice.toFixed(2)} € <span className="text-xs opacity-50 uppercase tracking-tighter">TTC</span></p>
+                          </div>
+                      </div>
                   </div>
-                  <div className="flex justify-between pt-4 border-t border-slate-100">
-                      <div><p className="text-[9px] font-black text-slate-400 uppercase">Coût</p><p className="text-xl font-black text-slate-700">{currentCost.toFixed(2)} €</p></div>
-                      <button onClick={handleSaveRecipe} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800">Enregistrer</button>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-4">
+                          <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Histoire & Anecdotes</label>
+                              <textarea className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-medium text-sm outline-none h-32 focus:ring-4 focus:ring-indigo-500/10 transition-all resize-none" value={newHistory} onChange={e => setNewHistory(e.target.value)} placeholder="Racontez l'origine du cocktail pour aider le staff à le vendre..." />
+                          </div>
+                          <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Décoration / Garniture</label>
+                              <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold text-slate-800 outline-none" value={newDecoration} onChange={e => setNewDecoration(e.target.value)} placeholder="Ex: Zeste d'orange & Cerise griotte..." />
+                          </div>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Méthode de Préparation (Étape par étape)</label>
+                          <textarea className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-medium text-sm outline-none h-[220px] focus:ring-4 focus:ring-indigo-500/10 transition-all resize-none" value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="1. Refroidir le verre... 2. Shaker vigoureusement... 3. Passer dans le verre..." />
+                      </div>
                   </div>
+
+                  <button onClick={handleSaveRecipe} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black uppercase tracking-[0.2em] hover:bg-indigo-600 shadow-2xl transition-all active:scale-95 mb-8">Enregistrer la fiche technique</button>
               </div>
           </div>
       );
   }
 
-  // --- DETAIL POPUP (Simplified for brevity but functional) ---
   if (viewMode === 'DETAIL' && selectedRecipe) {
       const glass = glassware.find(g => g.id === selectedRecipe.glasswareId);
       return (
-          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-                  <div className="relative h-32 bg-slate-900 flex items-center justify-center p-6 shrink-0">
-                      <div className="text-center">
-                          <h2 className="text-3xl font-black text-white uppercase tracking-tighter">{selectedRecipe.name}</h2>
-                          <p className="text-indigo-300 font-bold uppercase tracking-widest text-xs mt-1">{selectedRecipe.category}</p>
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
+              <div className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+                  <div className="bg-slate-900 text-white p-10 relative shrink-0">
+                      <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-[10px] font-black text-pink-400 bg-pink-500/10 px-3 py-1 rounded-full uppercase tracking-widest mb-3 inline-block border border-pink-500/20">{selectedRecipe.category}</span>
+                            <h2 className="text-4xl font-black uppercase tracking-tighter leading-none">{selectedRecipe.name}</h2>
+                          </div>
+                          <button onClick={() => setViewMode('LIST')} className="text-white/30 hover:text-white bg-white/5 hover:bg-white/10 p-3 rounded-full transition-all">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
                       </div>
-                      <button onClick={() => { setViewMode('LIST'); setSelectedRecipe(null); }} className="absolute top-6 right-6 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all">✕</button>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                      <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-slate-50 p-4 rounded-2xl"><p className="text-[9px] font-black text-slate-400 uppercase">Verrerie</p><p className="font-bold text-slate-800">{glass?.name || 'Standard'}</p></div>
-                          <div className="bg-slate-50 p-4 rounded-2xl"><p className="text-[9px] font-black text-slate-400 uppercase">Technique</p><p className="font-bold text-slate-800">{selectedRecipe.technique}</p></div>
+                  <div className="flex-1 overflow-y-auto p-10 space-y-10 scrollbar-thin">
+                      <div className="grid grid-cols-3 gap-6">
+                          <div className="bg-slate-50 p-4 rounded-3xl text-center border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase mb-2">Verre</p><p className="font-bold text-slate-800 text-xs">{glass?.name || 'Standard'}</p></div>
+                          <div className="bg-slate-50 p-4 rounded-3xl text-center border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase mb-2">Méthode</p><p className="font-bold text-slate-800 text-xs">{selectedRecipe.technique}</p></div>
+                          <div className="bg-pink-50 p-4 rounded-3xl text-center border border-pink-100"><p className="text-[9px] font-black text-pink-400 uppercase mb-2">Prix Vente</p><p className="font-black text-pink-600 text-base">{selectedRecipe.sellingPrice?.toFixed(2)} €</p></div>
                       </div>
-                      <div>
-                          <h3 className="font-black text-sm uppercase text-slate-400 tracking-widest mb-3 border-b pb-2">Recette</h3>
-                          <ul className="space-y-2">
+                      
+                      <div className="space-y-6">
+                          <h3 className="font-black text-xs uppercase text-slate-400 tracking-widest border-b border-slate-100 pb-2">Construction du cocktail</h3>
+                          <ul className="space-y-3">
                               {selectedRecipe.ingredients.map((ing, i) => (
-                                  <li key={i} className="flex justify-between items-center text-sm font-bold text-slate-700">
-                                      <span>{ing.itemId ? items.find(it => it.id === ing.itemId)?.name : ing.tempName}</span>
-                                      <span className="bg-slate-100 px-2 py-1 rounded text-slate-900">{ing.quantity} {ing.unit}</span>
+                                  <li key={i} className="flex justify-between items-center text-sm font-bold text-slate-700 bg-slate-50/50 px-4 py-3 rounded-2xl group hover:bg-slate-50 transition-colors">
+                                      <span className="flex items-center gap-3">
+                                          <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                                          {items.find(it => it.id === ing.itemId)?.name || ing.tempName}
+                                      </span>
+                                      <span className="bg-white px-3 py-1 rounded-xl text-slate-900 border border-slate-200 font-black">{ing.quantity} {ing.unit}</span>
                                   </li>
                               ))}
                           </ul>
+                          {selectedRecipe.decoration && (
+                            <div className="flex items-center gap-3 bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                                <span className="text-xl">🍋</span>
+                                <p className="text-xs italic font-bold text-amber-800 uppercase tracking-tighter">Garnish : {selectedRecipe.decoration}</p>
+                            </div>
+                          )}
                       </div>
-                      <div className="bg-indigo-50 p-6 rounded-2xl text-indigo-900 text-sm leading-relaxed"><p>{selectedRecipe.description}</p></div>
+
+                      {selectedRecipe.history && (
+                          <div className="bg-indigo-50 p-8 rounded-[2rem] border border-indigo-100 relative">
+                              <span className="absolute -top-3 left-8 bg-indigo-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase">Histoire & Origine</span>
+                              <p className="text-sm text-indigo-900 font-medium italic leading-relaxed">"{selectedRecipe.history}"</p>
+                          </div>
+                      )}
+
+                      <div className="space-y-4">
+                        <h3 className="font-black text-xs uppercase text-slate-400 tracking-widest">Préparation détaillée</h3>
+                        <div className="bg-slate-50 p-8 rounded-[2rem] text-slate-700 text-sm leading-relaxed whitespace-pre-wrap font-medium">
+                            {selectedRecipe.description}
+                        </div>
+                      </div>
                   </div>
-                  <div className="p-6 border-t bg-slate-50 flex justify-between items-center shrink-0">
-                      <div><span className="text-[10px] font-black text-slate-400 uppercase">Prix Vente</span><span className="text-2xl font-black text-slate-900 ml-2">{selectedRecipe.sellingPrice?.toFixed(2)} €</span></div>
-                      <div className="flex gap-2">
-                          {currentUser.role === 'ADMIN' && <button onClick={() => handleDelete(selectedRecipe.id)} className="px-4 py-2 bg-white border border-rose-200 text-rose-600 rounded-xl font-bold text-xs uppercase">Supprimer</button>}
-                          {currentUser.role === 'ADMIN' && <button onClick={() => handleEdit(selectedRecipe)} className="px-4 py-2 bg-white border border-indigo-200 text-indigo-600 rounded-xl font-bold text-xs uppercase">Modifier</button>}
-                      </div>
+                  <div className="p-8 bg-slate-50 border-t flex justify-end gap-3">
+                      <button onClick={() => handleEdit(selectedRecipe)} className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-indigo-600 transition-all shadow-lg active:scale-95">Modifier la fiche</button>
                   </div>
               </div>
           </div>
