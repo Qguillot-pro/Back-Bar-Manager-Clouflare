@@ -15,7 +15,7 @@ interface HistoryProps {
 
 type PeriodFilter = 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
 
-const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages, unfulfilledOrders, onUpdateOrderQuantity, formats, losses = [] }) => {
+const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, formats = [], losses = [] }) => {
   const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'CLIENT_RUPTURE' | 'STOCK_RUPTURE' | 'RECEIVED' | 'LOSSES'>('MOVEMENTS');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('DAY');
   
@@ -79,6 +79,7 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
   };
 
   const checkDateInFilter = (dateStr: string) => {
+      if (!dateStr) return false;
       const date = new Date(dateStr);
       const barDate = new Date(date);
       if (barDate.getHours() < 4) {
@@ -170,7 +171,7 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
         const isSameItem = current.itemId === last.itemId;
         const isSameType = current.type === last.type;
         const isSameUser = current.userName === last.userName;
-        if (isSameTime && isSameItem && isSameType && isSameUser) {
+        if (isSameTime && isSameItem && isSameType && isSameUser && !current.note) {
             last.quantity = Number(last.quantity) + currentQty;
         } else {
             grouped.push({ ...current, quantity: currentQty });
@@ -238,12 +239,12 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
 
     if (activeTab === 'MOVEMENTS') {
         filename = `mouvements_${periodFilter}_${new Date().toISOString().slice(0,10)}.csv`;
-        csvContent += "Date,Heure,Utilisateur,Produit,Format,Type,Quantité\n";
+        csvContent += "Date,Heure,Utilisateur,Produit,Format,Type,Quantité,Note\n";
         displayTransactions.forEach(t => {
             const item = items.find(i => i.id === t.itemId);
             const d = new Date(t.date);
             const fmt = getFormatName(item?.formatId);
-            csvContent += `"${d.toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})}","${d.toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris'})}","${t.userName || '-'}","${item?.name || 'Inconnu'}","${fmt}","${t.type}","${t.quantity}"\n`;
+            csvContent += `"${d.toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})}","${d.toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris'})}","${t.userName || '-'}","${item?.name || 'Inconnu'}","${fmt}","${t.type}","${t.quantity}","${t.note || ''}"\n`;
         });
     } else if (activeTab === 'CLIENT_RUPTURE') {
         filename = `ruptures_clients_${periodFilter}_${new Date().toISOString().slice(0,10)}.csv`;
@@ -398,14 +399,17 @@ const History: React.FC<HistoryProps> = ({ transactions, orders, items, storages
                                         {new Date(t.date).toLocaleDateString('fr-FR', {timeZone: 'Europe/Paris'})} <span className="text-slate-400 text-[10px]">{new Date(t.date).toLocaleTimeString('fr-FR', {timeZone: 'Europe/Paris', hour:'2-digit', minute:'2-digit'})}</span>
                                     </td>
                                     <td className="p-4 text-xs font-bold text-slate-800">{t.userName || '-'}</td>
-                                    <td className="p-4 font-black text-slate-900">{item?.name || 'Inconnu'}</td>
+                                    <td className="p-4 font-black text-slate-900">
+                                        {item?.name || 'Inconnu'}
+                                        {t.note && <span className="block text-[9px] text-slate-400 font-normal italic mt-0.5">{t.note}</span>}
+                                    </td>
                                     <td className="p-4">
                                         <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider ${t.type === 'IN' ? (t.isCaveTransfer ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600') : 'bg-rose-100 text-rose-600'}`}>
                                             {t.type === 'IN' ? (t.isCaveTransfer ? 'Cave' : 'Entrée') : 'Sortie'}
                                         </span>
                                     </td>
                                     <td className={`p-4 text-right font-black ${t.type === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        {t.type === 'IN' ? '+' : '-'}{parseFloat(Number(t.quantity).toFixed(2))}
+                                        {t.type === 'IN' ? '+' : '-'}{parseFloat(Number(t.quantity).toFixed(3))}
                                     </td>
                                 </tr>
                             );

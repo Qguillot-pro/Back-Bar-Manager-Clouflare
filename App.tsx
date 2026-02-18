@@ -162,11 +162,14 @@ const App: React.FC = () => {
   };
 
   const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false) => {
-    const storageId = 's_global';
+    const storageId = 's_global'; // Default for quick movements
     const trans: Transaction = { id: 't_' + Date.now(), itemId, storageId, type, quantity: qty, date: new Date().toISOString(), userName: currentUser?.name, isServiceTransfer };
     setTransactions(p => [trans, ...p]);
+    
+    // Simplistic generic update: looks for s_global
     const currentQty = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId)?.currentQuantity || 0;
     const newQty = type === 'IN' ? currentQty + qty : Math.max(0, currentQty - qty);
+    
     setStockLevels(prev => {
       const exists = prev.find(l => l.itemId === itemId && l.storageId === storageId);
       if (exists) return prev.map(l => (l.itemId === itemId && l.storageId === storageId) ? { ...l, currentQuantity: newQty } : l);
@@ -174,6 +177,42 @@ const App: React.FC = () => {
     });
     syncData('SAVE_TRANSACTION', trans);
     syncData('SAVE_STOCK', { itemId, storageId, currentQuantity: newQty });
+  };
+
+  // NOUVEAU: Gestion unifiée de mise à jour de stock avec création de transaction optionnelle (Régulation)
+  const handleUpdateStock = (itemId: string, storageId: string, newQuantity: number, note?: string) => {
+      // 1. Mise à jour du stock
+      syncData('SAVE_STOCK', {itemId, storageId, currentQuantity: newQuantity});
+      
+      const previousLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
+      const previousQty = previousLevel?.currentQuantity || 0;
+      
+      setStockLevels(prev => {
+          const exists = prev.find(l => l.itemId === itemId && l.storageId === storageId);
+          if (exists) return prev.map(l => l.itemId === itemId && l.storageId === storageId ? { ...l, currentQuantity: newQuantity } : l);
+          return [...prev, { itemId, storageId, currentQuantity: newQuantity }];
+      });
+
+      // 2. Création automatique de la transaction si c'est une régulation (via boutons +/-, ou saisie)
+      if (note && newQuantity !== previousQty) {
+          const diff = newQuantity - previousQty;
+          const type = diff > 0 ? 'IN' : 'OUT';
+          const qty = Math.abs(diff);
+          
+          const trans: Transaction = { 
+              id: 'reg_' + Date.now(), 
+              itemId, 
+              storageId, 
+              type, 
+              quantity: parseFloat(qty.toFixed(3)), 
+              date: new Date().toISOString(), 
+              userName: currentUser?.name, 
+              note: note 
+          };
+          
+          setTransactions(p => [trans, ...p]);
+          syncData('SAVE_TRANSACTION', trans);
+      }
   };
 
   const handleRestockAction = (itemId: string, storageId: string, qtyNeeded: number, qtyToOrder?: number, isRupture?: boolean) => {
@@ -267,7 +306,7 @@ const App: React.FC = () => {
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} />}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); }} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={(id, s, t) => { const d = { id:'dlc_'+Date.now(), itemId:id, storageId:s, openedAt:new Date().toISOString(), userName:currentUser.name }; setDlcHistory(p=>[d, ...p]); syncData('SAVE_DLC_HISTORY', d); }} onDlcConsumption={(id) => { const old = dlcHistory.filter(h=>h.itemId===id).sort((a,b)=>new Date(a.openedAt).getTime()-new Date(b.openedAt).getTime())[0]; if(old){ setDlcHistory(p=>p.filter(h=>h.id!==old.id)); syncData('DELETE_DLC_HISTORY', {id: old.id}); } }} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); }} onUndo={handleUndoLastTransaction} />}
-          {view === 'inventory' && <StockTable items={items} storages={storages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={(id, s, q) => { syncData('SAVE_STOCK', {itemId: id, storageId: s, currentQuantity: q}); setStockLevels(p => { const exists = p.find(l => l.itemId === id && l.storageId === s); if(exists) return p.map(l => l.itemId === id && l.storageId === s ? {...l, currentQuantity: q} : l); return [...p, {itemId: id, storageId: s, currentQuantity: q}]; }); }} onAdjustTransaction={(id, s, d) => { const cur = stockLevels.find(l=>l.itemId===id && l.storageId===s)?.currentQuantity || 0; const nq = Math.max(0, cur + d); syncData('SAVE_STOCK', {itemId: id, storageId: s, currentQuantity: nq}); setStockLevels(p => p.map(l => (l.itemId === id && l.storageId === s) ? {...l, currentQuantity: nq} : l)); }} consignes={consignes} />}
+          {view === 'inventory' && <GlobalInventory items={items} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} />}
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
           {view === 'articles' && <ArticlesList items={items} setItems={setItems} formats={formats} categories={categories} onDelete={(id) => { setItems(p => p.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); }} userRole={currentUser.role} dlcProfiles={dlcProfiles} onSync={syncData} events={events} recipes={recipes} />}
           {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} />}

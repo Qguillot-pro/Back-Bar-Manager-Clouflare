@@ -9,7 +9,7 @@ interface GlobalInventoryProps {
   categories: Category[];
   consignes: StockConsigne[];
   onSync: (action: string, payload: any) => void;
-  onUpdateStock: (itemId: string, storageId: string, qty: number, isTransfer?: boolean, isCorrection?: boolean) => void;
+  onUpdateStock: (itemId: string, storageId: string, qty: number, note?: string) => void;
   formats: Format[];
 }
 
@@ -47,11 +47,13 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
   };
 
   const handleGlobalStockChange = (itemId: string, val: string) => {
+      // Autoriser les décimales
       if (!/^\d*([.,]\d*)?$/.test(val)) return;
       let normalized = val.replace(',', '.');
       if (normalized === '.') normalized = '0';
       const num = parseFloat(normalized) || 0;
-      onUpdateStock(itemId, GLOBAL_STORAGE_ID, num);
+      // Passer la note "Inventaire/Régulation" pour marquer le changement manuel
+      onUpdateStock(itemId, GLOBAL_STORAGE_ID, num, "Inventaire/Régulation");
   };
 
   const handleAdjustStock = (itemId: string, adjustment: number) => {
@@ -59,28 +61,18 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       const s0Qty = getSurstockLevel(itemId);
       
       if (adjustment < 0) {
-          // Cas (-) : On veut sortir du stock global (ex: vente restaurant)
           if (s0Qty >= 1) {
               if (window.confirm("Stock disponible en Surstock (Cave). Voulez-vous transférer 1 unité du Surstock vers ici (Réappro) ?\n\nOK = Transférer (S0 -> Ici)\nAnnuler = Corriger/Sortir d'ici")) {
-                  // Transfert S0 -> Global
                   onUpdateStock(itemId, 's0', s0Qty - 1);
                   onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + 1);
                   return;
               }
           }
-          // Si pas de stock S0 ou refus du transfert -> Correction standard (Sortie)
-          const newQty = Math.max(0, parseFloat((current + adjustment).toFixed(2)));
-          onUpdateStock(itemId, GLOBAL_STORAGE_ID, newQty, false, true); 
+          const newQty = Math.max(0, parseFloat((current + adjustment).toFixed(3))); // 3 décimales
+          onUpdateStock(itemId, GLOBAL_STORAGE_ID, newQty, "Régulation"); 
       } else {
-          // Cas (+) : Entrée stock
-          // Logique existante: on propose de prendre depuis S0 si dispo, sinon ajout manuel
-          if (s0Qty >= adjustment) {
-              // TRANSFERT DEPUIS S0 (Optionnel, mais logique pour un réappro interne)
-              // Pour simplifier l'UX ici, on fait un ajout simple sauf si on veut complexifier
-              onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment, false, true);
-          } else {
-              onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment, false, true);
-          }
+          // Ajout manuel avec note Régulation
+          onUpdateStock(itemId, GLOBAL_STORAGE_ID, current + adjustment, "Régulation");
       }
   };
 
@@ -88,7 +80,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
       if (window.confirm("ATTENTION : Vous êtes sur le point de remettre à ZÉRO toute la colonne 'Stock Autre' (Restaurant/Autre). Confirmer ?")) {
           const itemsToReset = stockLevels.filter(l => l.storageId === GLOBAL_STORAGE_ID && l.currentQuantity > 0);
           itemsToReset.forEach(l => {
-              onUpdateStock(l.itemId, GLOBAL_STORAGE_ID, 0);
+              onUpdateStock(l.itemId, GLOBAL_STORAGE_ID, 0, "Reset Colonne");
           });
       }
   };
@@ -165,7 +157,6 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-20 relative">
-        {/* ... (Modals & Header - Unchanged) ... */}
         {/* EXPORT MODAL */}
         {isExportModalOpen && (
             <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
@@ -306,7 +297,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                     {item.isInventoryOnly && <span className="ml-2 bg-indigo-100 text-indigo-600 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-wider font-black">Hors Bar</span>}
                                 </td>
                                 <td className="p-4 text-xs font-bold text-slate-400 uppercase">{item.category}</td>
-                                <td className="p-4 text-center font-black text-slate-500 bg-slate-50/50">{parseFloat(barStock.toFixed(2))}</td>
+                                <td className="p-4 text-center font-black text-slate-500 bg-slate-50/50">{parseFloat(barStock.toFixed(3))}</td>
                                 <td className="p-4 text-center bg-amber-50/30">
                                     <div className="flex justify-center items-center gap-3">
                                         <button 
@@ -318,7 +309,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                         </button>
                                         <div className="relative">
                                             <input 
-                                                type="number" 
+                                                type="text" 
                                                 inputMode="decimal"
                                                 className={`w-20 border-2 rounded-xl p-2 text-center font-black outline-none focus:ring-4 transition-all text-lg bg-white border-amber-200 text-slate-800 focus:ring-amber-200 focus:border-amber-400`}
                                                 placeholder="0"
@@ -335,7 +326,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                                         </button>
                                     </div>
                                 </td>
-                                <td className="p-4 text-center font-black text-lg text-slate-900">{parseFloat((barStock + otherStock).toFixed(2))}</td>
+                                <td className="p-4 text-center font-black text-lg text-slate-900">{parseFloat((barStock + otherStock).toFixed(3))}</td>
                             </tr>
                         );
                     })}

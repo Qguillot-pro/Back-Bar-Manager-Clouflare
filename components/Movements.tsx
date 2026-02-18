@@ -35,6 +35,12 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [tempItemName, setTempItemName] = useState('');
 
   const handleAction = (type: 'IN' | 'OUT') => {
+    // Validation: Pas de décimales ici
+    if (qty.includes('.') || qty.includes(',')) {
+        alert("Les décimales ne sont pas autorisées sur cet écran. Veuillez saisir un nombre entier.");
+        return;
+    }
+
     const searchNormalized = normalizeText(search.trim());
     const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
 
@@ -49,7 +55,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     }
 
     let normalized = qty.replace(',', '.');
-    let quantity = parseFloat(normalized) || 1;
+    let quantity = parseInt(normalized) || 1; // Force Integer
 
     // Logique DLC
     if (item.isDLC && dlcProfiles && onDlcEntry) {
@@ -66,7 +72,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
   const finalizeDlcTransaction = () => {
       if (!pendingDlcItem) return;
-      let quantity = parseFloat(qty.replace(',', '.')) || 1;
+      let quantity = parseInt(qty.replace(',', '.')) || 1; // Force Integer
       onTransaction(pendingDlcItem.id, pendingDlcAction, quantity, isServiceTransfer);
       if (onDlcEntry && pendingDlcAction === 'IN') onDlcEntry(pendingDlcItem.id, 's_global', 'OPENING');
       setDlcModalOpen(false);
@@ -119,8 +125,19 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                           <datalist id="movement-items">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
                       </div>
                       <div className="w-24">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Qté</label>
-                          <input type="text" inputMode="decimal" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-center outline-none" value={qty} onChange={(e) => setQty(e.target.value)} />
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Qté (Entier)</label>
+                          <input 
+                            type="number" 
+                            inputMode="numeric" 
+                            pattern="[0-9]*"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-center outline-none" 
+                            value={qty} 
+                            onChange={(e) => {
+                                // Simple validation visuelle
+                                const val = e.target.value;
+                                if (/^\d*$/.test(val)) setQty(val);
+                            }} 
+                          />
                       </div>
                   </div>
                   
