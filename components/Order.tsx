@@ -11,12 +11,12 @@ interface OrderProps {
   onAddManualOrder: (itemId: string, qty: number) => void;
   formats: Format[];
   events?: Event[];
-  emailTemplates?: EmailTemplate[]; // Ajout
+  emailTemplates?: EmailTemplate[]; 
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, onDeleteOrder, onAddManualOrder, formats, events = [], emailTemplates = [] }) => {
+const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], onUpdateOrder, onDeleteOrder, onAddManualOrder, formats = [], events = [], emailTemplates = [] }) => {
   const [activeTab, setActiveTab] = useState<'PENDING' | 'ORDERED'>('PENDING');
   const [manualSearch, setManualSearch] = useState('');
   const [manualQty, setManualQty] = useState(1);
@@ -27,8 +27,8 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
 
   // Filtres
-  const pendingOrders = useMemo(() => orders.filter(o => o.status === 'PENDING'), [orders]);
-  const orderedOrders = useMemo(() => orders.filter(o => o.status === 'ORDERED'), [orders]);
+  const pendingOrders = useMemo(() => (orders || []).filter(o => o.status === 'PENDING'), [orders]);
+  const orderedOrders = useMemo(() => (orders || []).filter(o => o.status === 'ORDERED'), [orders]);
 
   // Upcoming Event Suggestions (10 days)
   const eventSuggestions = useMemo(() => {
@@ -38,7 +38,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
 
       const suggestions: { event: Event, products: EventProduct[] }[] = [];
 
-      events.forEach(evt => {
+      (events || []).forEach(evt => {
           const start = new Date(evt.startTime);
           if (start >= now && start <= limit && evt.productsJson) {
               try {
@@ -103,7 +103,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
       let table = "Produit | Format | Quantité\n----------------------------\n";
       ordersToInclude.forEach(o => {
           const item = items.find(i => i.id === o.itemId);
-          const fmt = formats.find(f => f.id === item?.formatId)?.name || '';
+          const fmt = (formats || []).find(f => f.id === item?.formatId)?.name || '';
           table += `${item?.name} | ${fmt} | ${o.quantity}\n`;
       });
 
@@ -141,7 +141,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
       
       ordersToExport.forEach(o => {
           const item = items.find(i => i.id === o.itemId);
-          const fmt = formats.find(f => f.id === item?.formatId)?.name || '';
+          const fmt = (formats || []).find(f => f.id === item?.formatId)?.name || '';
           const note = o.ruptureDate ? 'Rupture' : '';
           csv += `"${item?.name}","${fmt}","${o.quantity}","${note}"\n`;
       });
@@ -154,7 +154,16 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
       link.click();
   };
 
-  const getFormatName = (formatId?: string) => formats.find(f => f.id === formatId)?.name || '-';
+  const getFormatName = (formatId?: string) => (formats || []).find(f => f.id === formatId)?.name || '-';
+
+  // Helper date sécurisé
+  const safeDateString = (dateStr?: string) => {
+      if (!dateStr) return '-';
+      const d = new Date(dateStr);
+      return !isNaN(d.getTime()) ? d.toLocaleDateString() : '-';
+  };
+
+  if (!items) return <div className="p-10 text-center">Chargement des données...</div>;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-20 relative">
@@ -220,7 +229,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
                               <div key={i} className="bg-white p-4 rounded-2xl border border-purple-100 shadow-sm">
                                   <div className="mb-2">
                                       <p className="font-bold text-slate-800">{sug.event.title}</p>
-                                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(sug.event.startTime).toLocaleDateString()}</p>
+                                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{safeDateString(sug.event.startTime)}</p>
                                   </div>
                                   <div className="space-y-2">
                                       {sug.products.map(p => {
@@ -359,7 +368,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
           </div>
       )}
 
-      {/* ... Ordered Tab (unchanged) ... */}
+      {/* ORDERED TAB */}
       {activeTab === 'ORDERED' && (
           <div className="bg-white rounded-3xl border shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4">
                <div className="p-4 border-b bg-amber-50 flex items-center gap-3">
@@ -382,7 +391,7 @@ const Order: React.FC<OrderProps> = ({ orders, items, storages, onUpdateOrder, o
                           return (
                               <tr key={o.id} className="hover:bg-slate-50">
                                   <td className="p-4 text-xs font-bold text-slate-500">
-                                      {o.orderedAt ? new Date(o.orderedAt).toLocaleDateString() : '-'}
+                                      {safeDateString(o.orderedAt)}
                                   </td>
                                   <td className="p-4 font-black text-slate-800">{item.name}</td>
                                   <td className="p-4 text-center font-bold text-slate-900">{o.quantity}</td>

@@ -41,7 +41,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   
   useEffect(() => {
       if (initialTab && (initialTab === 'TASKS' || initialTab === 'CALENDAR' || initialTab === 'COCKTAILS')) {
-          setActiveTab(initialTab);
+          setActiveTab(initialTab as any);
       }
   }, [initialTab]);
 
@@ -49,8 +49,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const [newTaskContent, setNewTaskContent] = useState('');
   const [isRecurringTask, setIsRecurringTask] = useState(false);
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
-  const [showTaskHistory, setShowTaskHistory] = useState(false);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   
   // Events State
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
@@ -71,13 +69,59 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const [selectedGlasswareId, setSelectedGlasswareId] = useState('');
 
   const [selectedDate, setSelectedDate] = useState<string>(getBarDateStr());
-  const [isCycleModalOpen, setIsCycleModalOpen] = useState(false);
-  const [cycleType, setCycleType] = useState<DailyCocktailType>('OF_THE_DAY');
-  const [cycleFrequency, setCycleFrequency] = useState<CycleFrequency>('DAILY');
-  const [cycleRecipes, setCycleRecipes] = useState<string[]>([]); 
-  const [cycleStartDate, setCycleStartDate] = useState<string>(getBarDateStr());
-  const [cycleIsActive, setCycleIsActive] = useState(false);
-  const [recipeToAddId, setRecipeToAddId] = useState<string>(''); 
+
+  // COCKTAIL LOGIC
+  const getCycleConfig = (type: DailyCocktailType): CycleConfig => {
+      if (!appConfig) return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
+      const configStr = appConfig[`cycle_${type}`];
+      if (configStr) { try { return JSON.parse(configStr); } catch(e) {} }
+      return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
+  };
+
+  const getDayDiff = (d1Str: string, d2Str: string) => {
+      const parseDate = (str: string) => {
+          const cleanStr = str.split('T')[0];
+          const [y, m, d] = cleanStr.split('-').map(Number);
+          return Date.UTC(y, m - 1, d);
+      };
+      const t1 = parseDate(d1Str);
+      const t2 = parseDate(d2Str);
+      const msPerDay = 1000 * 60 * 60 * 24;
+      return Math.floor((t1 - t2) / msPerDay);
+  };
+
+  const getCalculatedCocktail = (targetDate: string, type: DailyCocktailType): DailyCocktail | undefined => {
+      // 1. Check manual entry first
+      const manualEntry = dailyCocktails.find(c => c.date === targetDate && c.type === type);
+      if (manualEntry) return manualEntry;
+
+      // 2. Calculate cycle
+      const config = getCycleConfig(type);
+      if (!config.isActive || config.recipeIds.length === 0) return undefined;
+
+      const diffDays = getDayDiff(targetDate, config.startDate);
+      if (diffDays < 0) return undefined;
+
+      let index = 0;
+      const listLen = config.recipeIds.length;
+      
+      const cleanTargetDate = targetDate.split('T')[0];
+      const [y, m, d] = cleanTargetDate.split('-').map(Number);
+      const targetDayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+
+      if (config.frequency === 'DAILY') { index = diffDays % listLen; } 
+      else if (config.frequency === '2_DAYS') { index = Math.floor(diffDays / 2) % listLen; } 
+      else if (config.frequency === 'WEEKLY') { index = Math.floor(diffDays / 7) % listLen; } 
+      else if (config.frequency === '2_WEEKS') { index = Math.floor(diffDays / 14) % listLen; } 
+      else if (config.frequency === 'MON_FRI') {
+          const weeksPassed = Math.floor(diffDays / 7);
+          const isSecondSlot = (targetDayOfWeek === 5 || targetDayOfWeek === 6 || targetDayOfWeek === 0);
+          const totalSlotsPassed = weeksPassed * 2 + (isSecondSlot ? 1 : 0);
+          index = totalSlotsPassed % listLen;
+      }
+      
+      return { id: `calc-${targetDate}-${type}`, date: targetDate, type, recipeId: config.recipeIds[index] };
+  };
 
   const openEventModal = (evt?: Event) => {
       if (evt) {
@@ -201,65 +245,6 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       const updated = { ...task, isDone: !task.isDone, doneBy: !task.isDone ? currentUser.name : undefined, doneAt: !task.isDone ? new Date().toISOString() : undefined };
       setTasks(prev => prev.map(t => t.id === task.id ? updated : t));
       onSync('SAVE_TASK', updated);
-  };
-
-  // --- COCKTAIL LOGIC (Simplified) ---
-  const getCycleConfig = (type: DailyCocktailType): CycleConfig => {
-      if (!appConfig) return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
-      const configStr = appConfig[`cycle_${type}`];
-      if (configStr) { try { return JSON.parse(configStr); } catch(e) {} }
-      return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
-  };
-
-  /**
-   * Calculates difference in days between two dates.
-   */
-  const getDayDiff = (d1Str: string, d2Str: string) => {
-      const parseDate = (str: string) => {
-          const cleanStr = str.split('T')[0];
-          const [y, m, d] = cleanStr.split('-').map(Number);
-          return Date.UTC(y, m - 1, d);
-      };
-      const t1 = parseDate(d1Str);
-      const t2 = parseDate(d2Str);
-      const msPerDay = 1000 * 60 * 60 * 24;
-      return Math.floor((t1 - t2) / msPerDay);
-  };
-
-  /**
-   * Calculates the programmed cocktail for a specific date and type.
-   */
-  const getCalculatedCocktail = (targetDate: string, type: DailyCocktailType): DailyCocktail | undefined => {
-      // 1. Check manual entry first
-      const manualEntry = dailyCocktails.find(c => c.date === targetDate && c.type === type);
-      if (manualEntry) return manualEntry;
-
-      // 2. Calculate cycle
-      const config = getCycleConfig(type);
-      if (!config.isActive || config.recipeIds.length === 0) return undefined;
-
-      const diffDays = getDayDiff(targetDate, config.startDate);
-      if (diffDays < 0) return undefined;
-
-      let index = 0;
-      const listLen = config.recipeIds.length;
-      
-      const cleanTargetDate = targetDate.split('T')[0];
-      const [y, m, d] = cleanTargetDate.split('-').map(Number);
-      const targetDayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-
-      if (config.frequency === 'DAILY') { index = diffDays % listLen; } 
-      else if (config.frequency === '2_DAYS') { index = Math.floor(diffDays / 2) % listLen; } 
-      else if (config.frequency === 'WEEKLY') { index = Math.floor(diffDays / 7) % listLen; } 
-      else if (config.frequency === '2_WEEKS') { index = Math.floor(diffDays / 14) % listLen; } 
-      else if (config.frequency === 'MON_FRI') {
-          const weeksPassed = Math.floor(diffDays / 7);
-          const isSecondSlot = (targetDayOfWeek === 5 || targetDayOfWeek === 6 || targetDayOfWeek === 0);
-          const totalSlotsPassed = weeksPassed * 2 + (isSecondSlot ? 1 : 0);
-          index = totalSlotsPassed % listLen;
-      }
-      
-      return { id: `calc-${targetDate}-${type}`, date: targetDate, type, recipeId: config.recipeIds[index] };
   };
 
   return (
@@ -426,25 +411,43 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       {activeTab === 'COCKTAILS' && (
           <div className="space-y-6">
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-pink-500 rounded-full"></span>Programmations</h3>
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-pink-500 rounded-full"></span>Carte du Jour</h3>
                   <input type="date" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 font-bold text-slate-700" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {['OF_THE_DAY', 'MOCKTAIL', 'WELCOME', 'THALASSO'].map((type) => {
-                      const cocktail = getCalculatedCocktail(selectedDate, type as DailyCocktailType);
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {[
+                      {type: 'OF_THE_DAY', label: 'Cocktail du Jour', color: 'amber'},
+                      {type: 'MOCKTAIL', label: 'Mocktail', color: 'emerald'},
+                      {type: 'WELCOME', label: 'Accueil', color: 'indigo'},
+                      {type: 'THALASSO', label: 'Thalasso', color: 'cyan'}
+                  ].map((cfg) => {
+                      const cocktail = getCalculatedCocktail(selectedDate, cfg.type as DailyCocktailType);
                       const recipe = recipes.find(r => r.id === cocktail?.recipeId);
+                      
+                      const bgColor = {
+                          amber: 'bg-amber-50 border-amber-100 text-amber-900',
+                          emerald: 'bg-emerald-50 border-emerald-100 text-emerald-900',
+                          indigo: 'bg-indigo-50 border-indigo-100 text-indigo-900',
+                          cyan: 'bg-cyan-50 border-cyan-100 text-cyan-900'
+                      }[cfg.color];
+
                       return (
-                          <div key={type} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                              <div className="flex justify-between items-center mb-4">
-                                  <h4 className="font-black text-slate-800 uppercase">{type.replace('_', ' ')}</h4>
+                          <div key={cfg.type} className={`p-6 rounded-3xl border ${bgColor} flex flex-col justify-between min-h-[180px] shadow-sm`}>
+                              <div>
+                                  <h4 className="font-black uppercase text-xs tracking-widest opacity-60 mb-2">{cfg.label}</h4>
+                                  <p className="font-black text-xl leading-tight">
+                                      {recipe?.name || cocktail?.customName || 'Non défini'}
+                                  </p>
                               </div>
-                              <div className="bg-slate-50 p-4 rounded-2xl min-h-[80px]">
-                                  {cocktail ? (
-                                      <>
-                                          <p className="font-bold text-slate-900">{recipe?.name || cocktail.customName || 'Non défini'}</p>
-                                          <p className="text-xs text-slate-500 mt-1">{recipe?.description || 'Pas de description'}</p>
-                                      </>
-                                  ) : <p className="text-slate-400 italic text-sm">Rien de prévu.</p>}
+                              <div>
+                                  {recipe ? (
+                                      <p className="text-xs font-medium opacity-80 mt-2 line-clamp-2 italic">
+                                          "{recipe.description}"
+                                      </p>
+                                  ) : (
+                                      <p className="text-[10px] font-bold opacity-50 uppercase mt-4">Aucune recette associée</p>
+                                  )}
                               </div>
                           </div>
                       );
