@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile, DLCHistory } from '../types';
 
 interface MovementsProps {
@@ -35,7 +35,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [tempItemName, setTempItemName] = useState('');
 
   const handleAction = (type: 'IN' | 'OUT') => {
-    // Validation: Pas de décimales ici
+    // Validation stricte : Pas de décimales
     if (qty.includes('.') || qty.includes(',')) {
         alert("Les décimales ne sont pas autorisées sur cet écran. Veuillez saisir un nombre entier.");
         return;
@@ -54,8 +54,8 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
         return;
     }
 
-    let normalized = qty.replace(',', '.');
-    let quantity = parseInt(normalized) || 1; // Force Integer
+    let quantity = parseInt(qty, 10);
+    if (isNaN(quantity) || quantity <= 0) quantity = 1;
 
     // Logique DLC
     if (item.isDLC && dlcProfiles && onDlcEntry) {
@@ -72,7 +72,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
   const finalizeDlcTransaction = () => {
       if (!pendingDlcItem) return;
-      let quantity = parseInt(qty.replace(',', '.')) || 1; // Force Integer
+      let quantity = parseInt(qty, 10) || 1;
       onTransaction(pendingDlcItem.id, pendingDlcAction, quantity, isServiceTransfer);
       if (onDlcEntry && pendingDlcAction === 'IN') onDlcEntry(pendingDlcItem.id, 's_global', 'OPENING');
       setDlcModalOpen(false);
@@ -130,11 +130,12 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                             type="number" 
                             inputMode="numeric" 
                             pattern="[0-9]*"
+                            step="1"
                             className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-center outline-none" 
                             value={qty} 
                             onChange={(e) => {
-                                // Simple validation visuelle
                                 const val = e.target.value;
+                                // On n'accepte que les chiffres
                                 if (/^\d*$/.test(val)) setQty(val);
                             }} 
                           />
@@ -159,11 +160,14 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                   </div>
                   {transactions.slice(0, 20).map((t, idx) => {
                       const item = items.find(i => i.id === t.itemId);
+                      const d = new Date(t.date);
                       return (
                           <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm animate-in slide-in-from-right duration-300" style={{animationDelay: `${idx*50}ms`}}>
                               <div>
                                   <p className="font-bold text-slate-800 text-sm">{item?.name || 'Inconnu'}</p>
-                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{new Date(t.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {t.userName}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                      {!isNaN(d.getTime()) ? d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'} • {t.userName}
+                                  </p>
                               </div>
                               <div className={`px-3 py-1.5 rounded-lg font-black text-xs ${t.type === 'IN' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
                                   {t.type === 'IN' ? '+' : '-'}{t.quantity}

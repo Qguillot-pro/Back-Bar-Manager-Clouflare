@@ -20,17 +20,20 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
     
     return dlcHistory.map(entry => {
       const item = items.find(i => i.id === entry.itemId);
-      if (!item) return null; // Sécurité si l'article n'existe plus
+      if (!item) return null;
 
       const storage = storages.find(s => s.id === entry.storageId);
       const profile = item.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
       
       const durationHours = profile?.durationHours || 24;
-      const openedDate = entry.openedAt ? new Date(entry.openedAt) : new Date();
       
-      // Si la date d'ouverture est invalide, on utilise maintenant
-      const validOpenedDate = isNaN(openedDate.getTime()) ? new Date() : openedDate;
-      const expirationDate = new Date(validOpenedDate.getTime() + durationHours * 3600000);
+      // Sécurisation de la date d'ouverture
+      let openedDate = new Date(entry.openedAt);
+      if (isNaN(openedDate.getTime())) {
+          openedDate = new Date(); // Fallback si date invalide
+      }
+      
+      const expirationDate = new Date(openedDate.getTime() + durationHours * 3600000);
       const now = new Date();
       const timeLeft = expirationDate.getTime() - now.getTime();
       const isExpired = timeLeft < 0;
@@ -39,7 +42,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
         id: entry.id,
         itemName: item.name,
         storageName: storage?.name || 'Stock Global',
-        openedDate: validOpenedDate,
+        openedDate,
         expirationDate,
         timeLeft,
         isExpired,
@@ -69,6 +72,12 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
           setLossModalOpen(false);
           setSelectedDlcId(null);
       }
+  };
+
+  const safeDateString = (date: Date) => {
+      return !isNaN(date.getTime()) 
+        ? date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+        : '-';
   };
 
   return (
@@ -121,8 +130,8 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                   <span className="font-black text-slate-900 text-sm">{dlc.itemName}</span>
                   <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">Lieu: {dlc.storageName} • Par: {dlc.userName}</div>
                 </td>
-                <td className="p-6 text-xs text-center font-bold text-slate-500">{dlc.openedDate.toLocaleDateString()} {dlc.openedDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
-                <td className="p-6 text-xs text-center font-black text-slate-700">{dlc.expirationDate.toLocaleDateString()} {dlc.expirationDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                <td className="p-6 text-xs text-center font-bold text-slate-500">{safeDateString(dlc.openedDate)}</td>
+                <td className="p-6 text-xs text-center font-black text-slate-700">{safeDateString(dlc.expirationDate)}</td>
                 <td className="p-6 text-center">
                    <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dlc.isExpired ? 'bg-rose-500 text-white border-rose-600 animate-pulse' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                        {formatDuration(dlc.timeLeft)}
