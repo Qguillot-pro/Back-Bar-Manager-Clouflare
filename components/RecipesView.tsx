@@ -18,7 +18,8 @@ interface RecipesViewProps {
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [], cocktailCategories = [] }) => {
-  const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
+  const [viewMode, setViewMode] = useState<'CATEGORIES' | 'LIST' | 'CREATE' | 'DETAIL'>('CATEGORIES');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -115,6 +116,9 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       if (editingId) setRecipes(prev => prev.map(r => r.id === editingId ? recipe : r));
       else setRecipes(prev => [...prev, recipe]);
       onSync('SAVE_RECIPE', recipe);
+      
+      // Retour à la liste de la catégorie concernée
+      setSelectedCategoryFilter(newCat);
       setViewMode('LIST');
   };
 
@@ -145,22 +149,91 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       setNewIngredients(copy);
   };
 
-  if (viewMode === 'LIST') {
+  const handleSelectCategory = (catName: string) => {
+      setSelectedCategoryFilter(catName);
+      setViewMode('LIST');
+  };
+
+  // --- VUE DOSSIERS (CATEGORIES) ---
+  if (viewMode === 'CATEGORIES') {
+      // Calculate counts
+      const counts = cocktailCategories.map(cat => ({
+          ...cat,
+          count: recipes.filter(r => r.category === cat.name).length
+      }));
+
       return (
-          <div className="space-y-6">
+          <div className="space-y-8 animate-in fade-in">
               <div className="flex justify-between items-center bg-white p-6 rounded-3xl border shadow-sm">
                   <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                       <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
-                      Fiches Cocktails
+                      Recettes Cocktails
                   </h2>
-                  <button onClick={() => { setEditingId(null); setNewName(''); setNewIngredients([]); setViewMode('CREATE'); }} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-all">+ Créer une fiche</button>
+                  <button onClick={() => { setEditingId(null); setNewName(''); setNewIngredients([]); setViewMode('CREATE'); }} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-all">+ Créer</button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {recipes.map(r => (
-                      <div key={r.id} onClick={() => { setSelectedRecipe(r); setViewMode('DETAIL'); }} className="bg-white p-6 rounded-3xl border border-slate-100 hover:border-pink-300 hover:shadow-xl cursor-pointer transition-all animate-in fade-in slide-in-from-bottom-2 group">
+
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {counts.map(cat => (
+                      <div 
+                        key={cat.id} 
+                        onClick={() => handleSelectCategory(cat.name)}
+                        className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg hover:border-pink-300 hover:scale-[1.02] cursor-pointer transition-all flex flex-col items-center justify-center h-48 gap-3 group relative overflow-hidden"
+                      >
+                          <div className="absolute inset-0 bg-gradient-to-br from-pink-50/0 to-pink-50/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                          <div className="w-16 h-16 bg-pink-50 text-pink-500 rounded-2xl flex items-center justify-center text-2xl font-black shadow-inner mb-2 group-hover:bg-pink-500 group-hover:text-white transition-colors">
+                              {cat.name.charAt(0)}
+                          </div>
+                          <h3 className="font-black text-lg text-slate-800 uppercase tracking-tight text-center relative z-10">{cat.name}</h3>
+                          <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full group-hover:bg-white group-hover:text-pink-500 transition-colors relative z-10">
+                              {cat.count} Recettes
+                          </span>
+                      </div>
+                  ))}
+                  {/* Dossier "Non Classé" si besoin */}
+                  {recipes.filter(r => !cocktailCategories.some(c => c.name === r.category)).length > 0 && (
+                      <div 
+                        onClick={() => handleSelectCategory('Non Classé')}
+                        className="bg-slate-50 p-6 rounded-[2rem] border border-dashed border-slate-300 hover:border-slate-400 cursor-pointer transition-all flex flex-col items-center justify-center h-48 gap-3"
+                      >
+                          <h3 className="font-black text-lg text-slate-500 uppercase tracking-tight text-center">Non Classé</h3>
+                          <span className="text-[10px] font-bold text-slate-400 bg-white px-3 py-1 rounded-full">
+                              {recipes.filter(r => !cocktailCategories.some(c => c.name === r.category)).length} Recettes
+                          </span>
+                      </div>
+                  )}
+              </div>
+          </div>
+      );
+  }
+
+  // --- VUE LISTE (FILTRÉE) ---
+  if (viewMode === 'LIST') {
+      const filteredRecipes = recipes.filter(r => 
+          selectedCategoryFilter === 'Non Classé' 
+            ? !cocktailCategories.some(c => c.name === r.category)
+            : r.category === selectedCategoryFilter
+      );
+
+      return (
+          <div className="space-y-6">
+              <div className="flex items-center gap-4 bg-white p-6 rounded-3xl border shadow-sm">
+                  <button onClick={() => { setViewMode('CATEGORIES'); setSelectedCategoryFilter(null); }} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600 transition-colors">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                  </button>
+                  <div>
+                      <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                          <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
+                          {selectedCategoryFilter}
+                      </h2>
+                      <p className="text-xs text-slate-400 font-bold ml-3.5">{filteredRecipes.length} recettes</p>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-right-4">
+                  {filteredRecipes.map(r => (
+                      <div key={r.id} onClick={() => { setSelectedRecipe(r); setViewMode('DETAIL'); }} className="bg-white p-6 rounded-3xl border border-slate-100 hover:border-pink-300 hover:shadow-xl cursor-pointer transition-all group">
                           <div className="flex justify-between items-start mb-2">
                               <h3 className="font-black text-lg text-slate-800 group-hover:text-pink-600 transition-colors">{r.name}</h3>
-                              <span className="text-[8px] font-black text-pink-500 bg-pink-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{r.category}</span>
                           </div>
                           <p className="text-xs text-slate-500 mt-2 line-clamp-2 italic font-medium leading-relaxed">"{r.description}"</p>
                           <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
@@ -169,7 +242,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           </div>
                       </div>
                   ))}
-                  {recipes.length === 0 && <p className="col-span-full text-center py-20 text-slate-400 italic">Aucune fiche technique enregistrée.</p>}
+                  {filteredRecipes.length === 0 && <p className="col-span-full text-center py-20 text-slate-400 italic">Aucune recette dans ce dossier.</p>}
               </div>
           </div>
       );
@@ -191,7 +264,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           </button>
                       )}
                   </div>
-                  <button onClick={() => setViewMode('LIST')} className="text-slate-400 font-black text-xs uppercase hover:text-slate-600">Annuler</button>
+                  <button onClick={() => { setViewMode(selectedCategoryFilter ? 'LIST' : 'CATEGORIES'); }} className="text-slate-400 font-black text-xs uppercase hover:text-slate-600">Annuler</button>
               </div>
               <div className="p-8 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -367,7 +367,26 @@ const App: React.FC = () => {
     setLoginInput(newPin);
     if (newPin.length === 4) {
       const found = users.find(u => u.pin === newPin);
-      if (found) { setLoginStatus('success'); setTimeout(() => { setCurrentUser(found); setLoginStatus('idle'); setLoginInput(''); }, 600); }
+      if (found) { 
+          setLoginStatus('success'); 
+          
+          // ENREGISTREMENT DU LOG DE CONNEXION ICI
+          const logEntry = {
+              id: 'log_' + Date.now(),
+              userName: found.name,
+              action: 'LOGIN',
+              details: 'Connexion réussie',
+              timestamp: new Date().toISOString()
+          };
+          syncData('SAVE_LOG', logEntry);
+          setUserLogs(prev => [logEntry, ...prev]);
+
+          setTimeout(() => { 
+              setCurrentUser(found); 
+              setLoginStatus('idle'); 
+              setLoginInput(''); 
+          }, 600); 
+      }
       else { setLoginStatus('error'); setTimeout(() => { setLoginStatus('idle'); setLoginInput(''); }, 1000); }
     }
   }, [loginInput, loginStatus, users]);

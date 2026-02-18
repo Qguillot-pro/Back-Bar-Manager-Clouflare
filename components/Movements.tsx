@@ -196,6 +196,43 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
               </div>
           </div>
       )}
+
+      {/* RUPTURES CLIENT VIEW */}
+      {activeTab === 'UNFULFILLED' && (
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+              <div className="p-4 border-b bg-rose-50 flex items-center gap-2">
+                  <span className="w-1.5 h-4 bg-rose-500 rounded-full"></span>
+                  <h3 className="font-black text-rose-800 uppercase tracking-widest text-xs">Ruptures signalées par le service</h3>
+              </div>
+              <table className="w-full text-left">
+                  <thead className="bg-white text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                      <tr>
+                          <th className="p-4">Date/Heure</th>
+                          <th className="p-4">Produit</th>
+                          <th className="p-4 text-center">Qté Perdue</th>
+                          <th className="p-4">Signalé par</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                      {unfulfilledOrders.slice(0, 50).map(u => (
+                          <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-4 text-xs font-bold text-slate-500">
+                                  {new Date(u.date).toLocaleDateString()} <span className="text-slate-400 text-[10px]">{new Date(u.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                              </td>
+                              <td className="p-4 font-black text-slate-800">
+                                  {items.find(i => i.id === u.itemId)?.name || 'Inconnu'}
+                              </td>
+                              <td className="p-4 text-center font-black text-rose-500">{u.quantity || 1}</td>
+                              <td className="p-4 text-xs font-bold text-slate-600">{u.userName || '-'}</td>
+                          </tr>
+                      ))}
+                      {unfulfilledOrders.length === 0 && (
+                          <tr><td colSpan={4} className="p-12 text-center text-slate-400 italic">Aucune rupture signalée récemment.</td></tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      )}
     </div>
   );
 };
