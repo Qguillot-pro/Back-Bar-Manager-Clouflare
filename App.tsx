@@ -306,6 +306,40 @@ const App: React.FC = () => {
       }
   };
 
+  // Nouvelle fonction pour le StockTable : Gestion +/- avec annulation intelligente
+  const handleQuickAdjust = (itemId: string, storageId: string, delta: number) => {
+      const level = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
+      const currentQty = level?.currentQuantity || 0;
+      const newQty = Math.max(0, parseFloat((currentQty + delta).toFixed(3)));
+
+      // LOGIQUE D'ANNULATION : Si on fait (+) et que la dernière transaction était une sortie (-) de même valeur
+      // On supprime la transaction précédente au lieu d'en créer une nouvelle (Undo).
+      if (delta > 0 && transactions.length > 0) {
+          const lastTrans = transactions[0]; // La plus récente (triée dans fetchFullData)
+          const txTime = new Date(lastTrans.date).getTime();
+          const now = new Date().getTime();
+          const isRecent = (now - txTime) < 5 * 60 * 1000; // Moins de 5 min
+
+          if (isRecent && lastTrans.itemId === itemId && lastTrans.storageId === storageId && lastTrans.type === 'OUT' && lastTrans.quantity === delta) {
+              // On supprime la transaction de sortie "erreur"
+              setTransactions(prev => prev.filter(t => t.id !== lastTrans.id));
+              syncData('DELETE_TRANSACTION', { id: lastTrans.id });
+              
+              // On met à jour le stock (le remet au niveau d'avant l'erreur)
+              setStockLevels(prev => {
+                  const exists = prev.find(l => l.itemId === itemId && l.storageId === storageId);
+                  if (exists) return prev.map(l => l.itemId === itemId && l.storageId === storageId ? { ...l, currentQuantity: newQty } : l);
+                  return [...prev, { itemId, storageId, currentQuantity: newQty }];
+              });
+              syncData('SAVE_STOCK', { itemId, storageId, currentQuantity: newQty });
+              return; // STOP ICI
+          }
+      }
+
+      // Cas standard : Mise à jour avec note "Régulation"
+      handleUpdateStock(itemId, storageId, newQty, "Régulation");
+  };
+
   const handleRestockAction = (itemId: string, storageId: string, qtyNeeded: number, qtyToOrder?: number, isRupture?: boolean) => {
       if (qtyNeeded > 0) {
           const trans: Transaction = { id: 't_' + Date.now(), itemId, storageId, type: 'IN', quantity: qtyNeeded, date: new Date().toISOString(), userName: currentUser?.name, isCaveTransfer: true };
@@ -416,7 +450,7 @@ const App: React.FC = () => {
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} />}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={(id, s, t) => { const d = { id:'dlc_'+Date.now(), itemId:id, storageId:s, openedAt:new Date().toISOString(), userName:currentUser.name }; setDlcHistory(p=>[d, ...p]); syncData('SAVE_DLC_HISTORY', d); }} onDlcConsumption={(id) => { const old = dlcHistory.filter(h=>h.itemId===id).sort((a,b)=>new Date(a.openedAt).getTime()-new Date(b.openedAt).getTime())[0]; if(old){ setDlcHistory(p=>p.filter(h=>h.id!==old.id)); syncData('DELETE_DLC_HISTORY', {id: old.id}); } }} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} onUndo={handleUndoLastTransaction} />}
-          {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleTransaction} />}
+          {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} />}
           {view === 'inventory' && <GlobalInventory items={items} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} />}
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
           {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { setOrders(prev => prev.map(o => o.id === id ? { ...o, quantity: q, status: s || o.status, ruptureDate: r } : o)); syncData('SAVE_ORDER', { id, quantity: q, status: s, ruptureDate: r }); }} onDeleteOrder={(id) => { setOrders(prev => prev.filter(o => o.id !== id)); syncData('DELETE_ORDER', { id }); }} onAddManualOrder={(itemId, qty) => { const order: PendingOrder = { id: 'ord_' + Date.now(), itemId, quantity: qty, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name }; setOrders(prev => [...prev, order]); syncData('SAVE_ORDER', order); }} formats={formats} events={events} emailTemplates={emailTemplates} />}
