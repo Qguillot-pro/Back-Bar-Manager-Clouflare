@@ -39,7 +39,7 @@ const App: React.FC = () => {
   const [loginStatus, setLoginStatus] = useState<'idle' | 'success' | 'error'>('idle');
   
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); 
-  const [isTestMode, setIsTestMode] = useState(false);
+  const [isTestMode, setIsTestMode] = useState(false); // Mode Test State
   const [view, setView] = useState<string>('dashboard');
   const [showAdminLogbook, setShowAdminLogbook] = useState(false);
 
@@ -73,7 +73,11 @@ const App: React.FC = () => {
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
 
   const syncData = async (action: string, payload: any) => {
-    if (isTestMode) { console.log("[TEST MODE] Action simulated:", action, payload); return; }
+    // BLOCK SYNC IN TEST MODE
+    if (isTestMode) { 
+        console.log("[MODE TEST] Action simulée (Non enregistrée en DB):", action, payload); 
+        return; 
+    }
     try {
       await fetch('/api/action', {
         method: 'POST',
@@ -349,7 +353,12 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="h-screen flex bg-slate-50 overflow-hidden">
+    <div className={`h-screen flex bg-slate-50 overflow-hidden ${isTestMode ? 'border-4 border-rose-600 box-border' : ''}`}>
+      {/* TEST MODE INDICATOR */}
+      {isTestMode && (
+          <div className="fixed top-0 left-0 right-0 h-1 bg-rose-600 z-[9999] pointer-events-none"></div>
+      )}
+
       <aside className={`bg-slate-900 text-white flex flex-col transition-all duration-300 ${isSidebarCollapsed ? 'w-20' : 'w-64'} h-full flex-shrink-0 z-50`}>
         <div className="p-6 border-b border-white/5 flex items-center justify-between shrink-0">
             {!isSidebarCollapsed && <h1 className="font-black text-sm uppercase tracking-widest text-indigo-400">BarStock</h1>}
@@ -369,12 +378,24 @@ const App: React.FC = () => {
             <NavItem collapsed={isSidebarCollapsed} active={view === 'history'} onClick={()=>setView('history')} label="Historique" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'dlc_tracking'} onClick={()=>setView('dlc_tracking')} label="Suivi DLC" icon="M12 8v4l3 3" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'articles'} onClick={()=>setView('articles')} label="Base Articles" icon="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            <NavItem collapsed={isSidebarCollapsed} active={view === 'recipes'} onClick={()=>setView('recipes')} label="Fiches Techniques" icon="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" />
-            <NavItem collapsed={isSidebarCollapsed} active={view === 'product_knowledge'} onClick={()=>setView('product_knowledge')} label="Savoir Produit" icon="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" />
+            <NavItem collapsed={isSidebarCollapsed} active={view === 'recipes'} onClick={()=>setView('recipes')} label="Recette cocktails" icon="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" />
+            <NavItem collapsed={isSidebarCollapsed} active={view === 'product_knowledge'} onClick={()=>setView('product_knowledge')} label="Fiches produits" icon="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" />
             {currentUser.role === 'ADMIN' && <NavItem collapsed={isSidebarCollapsed} active={view === 'connection_logs'} onClick={()=>setView('connection_logs')} label="Logs" icon="M9 12l2 2 4-4" />}
         </nav>
 
         <div className="p-4 border-t border-white/5 bg-slate-900 space-y-3 shrink-0">
+            {currentUser.role === 'ADMIN' && !isSidebarCollapsed && (
+                <div className="flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2 border border-white/10">
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${isTestMode ? 'text-rose-400' : 'text-slate-400'}`}>Mode Test</span>
+                    <button 
+                        onClick={() => setIsTestMode(!isTestMode)} 
+                        className={`w-8 h-4 rounded-full relative transition-colors ${isTestMode ? 'bg-rose-500' : 'bg-slate-600'}`}
+                    >
+                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${isTestMode ? 'left-4.5' : 'left-0.5'}`}></div>
+                    </button>
+                </div>
+            )}
+
             <div className={`flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
                 <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-sm text-white shrink-0">{currentUser.name.charAt(0).toUpperCase()}</div>
                 {!isSidebarCollapsed && <div className="overflow-hidden"><p className="text-sm font-bold text-white truncate">{currentUser.name}</p><p className="text-[10px] text-slate-400 truncate">{currentUser.role}</p></div>}
@@ -389,6 +410,7 @@ const App: React.FC = () => {
       </aside>
 
       <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 relative">
+          {isTestMode && <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-black uppercase px-2 py-1 z-[100] rounded-bl-lg">Mode Test Actif - Aucune Sauvegarde</div>}
           {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} />}
           {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s_global', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={(k, v) => { setAppConfig(p => ({...p, [k]: v})); syncData('SAVE_CONFIG', {key: k, value: JSON.stringify(v)}); }} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} />}
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} />}

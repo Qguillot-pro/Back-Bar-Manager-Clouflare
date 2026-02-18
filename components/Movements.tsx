@@ -118,14 +118,21 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       {activeTab === 'MOVEMENTS' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 items-end">
                       <div className="flex-1">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit</label>
                           <input list="movement-items" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-indigo-100" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} />
                           <datalist id="movement-items">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
                       </div>
+                      <button 
+                        onClick={() => { setTempItemName(search); setIsTempItemModalOpen(true); }}
+                        className="bg-amber-100 hover:bg-amber-200 text-amber-600 p-4 rounded-2xl transition-colors"
+                        title="Créer un produit temporaire"
+                      >
+                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                      </button>
                       <div className="w-24">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Qté (Entier)</label>
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Qté</label>
                           <input 
                             type="number" 
                             inputMode="numeric" 

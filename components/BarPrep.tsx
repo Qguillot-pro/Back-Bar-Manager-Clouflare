@@ -68,11 +68,8 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
             ? `${itemDlcs.length} lots (Exp: ${closestExpiry.toLocaleDateString()} ${closestExpiry.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})})` 
             : "Aucun lot actif";
 
-        // Pour chaque lieu de stockage (défini par une consigne), calculer le gap
-        // Si pas de consigne définie, on peut imaginer un stockage par défaut 'Bar' mais ici on se base sur les consignes existantes
         if (itemConsignes.length === 0) {
-             // Cas rare: item de prod sans consigne de stockage. On l'affiche quand même si on veut, mais sans bouton de prod précis ?
-             // Pour simplifier, on ne traite que si une consigne existe (lieu de stockage défini).
+             // ...
         }
 
         itemConsignes.forEach(c => {
@@ -138,7 +135,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
       <header className="bg-purple-900 rounded-[2rem] p-8 text-white shadow-2xl flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
             <h1 className="text-2xl font-black italic uppercase tracking-tighter">Préparation Bar</h1>
-            <p className="text-purple-200 text-xs font-bold mt-1">Production Produits Frais (Jus, Sirops, Prémix)</p>
+            <p className="text-purple-200 text-xs font-bold mt-1">Production Produits Frais (Jus, Agrume, Prémix, menthe), les stocks sur le comptoir ne sont pas pris en compte.</p>
         </div>
         <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
             <span className="block text-2xl font-black">{aggregatedNeeds.length}</span>

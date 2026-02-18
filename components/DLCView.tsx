@@ -54,6 +54,8 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
     .sort((a, b) => a.expirationDate.getTime() - b.expirationDate.getTime());
   }, [dlcHistory, items, storages, dlcProfiles]);
 
+  const expiredCount = activeDlcs.filter(d => d.isExpired).length;
+
   const formatDuration = (ms: number) => {
     if (ms < 0) return "EXPIRÉ";
     const totalMinutes = Math.floor(ms / 60000);
@@ -83,6 +85,13 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden relative min-h-[400px] animate-in fade-in duration-500">
       
+      {/* BANNIÈRE ALERTE */}
+      {expiredCount > 0 && (
+          <div className="bg-rose-500 text-white p-4 text-center font-black uppercase text-xs tracking-widest animate-pulse">
+              ⚠️ {expiredCount} produit(s) expiré(s) détecté(s) ! Vérifiez immédiatement.
+          </div>
+      )}
+
       {lossModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl text-center space-y-6">
@@ -116,7 +125,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
         <table className="w-full text-left">
           <thead className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b">
             <tr>
-              <th className="p-6">Produit</th>
+              <th className="p-6">Produit / Lieu</th>
               <th className="p-6 text-center">Ouverture</th>
               <th className="p-6 text-center">Échéance</th>
               <th className="p-6 text-center">Temps Restant</th>
@@ -127,8 +136,11 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
             {activeDlcs.map(dlc => (
               <tr key={dlc.id} className={`${dlc.isExpired ? 'bg-rose-50/50' : 'hover:bg-slate-50'} transition-colors`}>
                 <td className="p-6">
-                  <span className="font-black text-slate-900 text-sm">{dlc.itemName}</span>
-                  <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">Lieu: {dlc.storageName} • Par: {dlc.userName}</div>
+                  <span className="font-black text-slate-900 text-sm block">{dlc.itemName}</span>
+                  <div className="text-[10px] font-bold text-indigo-500 uppercase mt-1 bg-indigo-50 inline-block px-2 py-0.5 rounded">
+                      {dlc.storageName}
+                  </div>
+                  <span className="text-[9px] text-slate-400 ml-2">Par: {dlc.userName}</span>
                 </td>
                 <td className="p-6 text-xs text-center font-bold text-slate-500">{safeDateString(dlc.openedDate)}</td>
                 <td className="p-6 text-xs text-center font-black text-slate-700">{safeDateString(dlc.expirationDate)}</td>

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { StockItem, StorageSpace, StockLevel, StockConsigne, StockPriority } from '../types';
 
 interface StockTableProps {
@@ -14,6 +14,61 @@ interface StockTableProps {
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
+const EditableNumberCell = ({ 
+    value, 
+    onSave, 
+    className 
+}: { 
+    value: number, 
+    onSave: (val: number) => void, 
+    className?: string 
+}) => {
+    const [localValue, setLocalValue] = useState<string>(value.toString());
+
+    // Update local state when prop changes, but ONLY if not currently focused (simplified approach: sync on render)
+    // Actually, to avoid overwriting while typing, we typically sync only when prop differs significantly or on blur/focus management.
+    // Here we will sync on prop change to ensure external updates are reflected, 
+    // BUT we must trust that onSave updates the parent which updates the prop back.
+    // To fix the "1." issue, we need to allow the local state to diverge from the prop while typing.
+    
+    useEffect(() => {
+        // Only update from prop if it's a new "committed" value that differs from what we think it is,
+        // or if we aren't editing. Since we don't track focus easily here without refs, 
+        // we'll rely on the parent sending back the parsed number.
+        // If the prop value matches the parsed local value, don't overwrite to keep "1." vs "1".
+        const parsedLocal = parseFloat(localValue.replace(',', '.'));
+        if (value !== parsedLocal) {
+             setLocalValue(value.toString());
+        }
+    }, [value]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
+        // Allow digits, one dot or comma.
+        if (/^[0-9]*([.,][0-9]*)?$/.test(val)) {
+            setLocalValue(val);
+        }
+    };
+
+    const handleBlur = () => {
+        let normalized = localValue.replace(',', '.');
+        if (normalized === '' || normalized === '.') normalized = '0';
+        const num = parseFloat(normalized);
+        onSave(isNaN(num) ? 0 : num);
+    };
+
+    return (
+        <input 
+            type="text"
+            inputMode="decimal"
+            value={localValue}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            className={className}
+        />
+    );
+};
+
 const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, priorities, onUpdateStock, onAdjustTransaction, consignes = [] }) => {
   const [activeTab, setActiveTab] = useState<'GLOBAL' | 'PRODUCT' | 'STORAGE'>('GLOBAL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,23 +81,9 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
 
   const getConsigneValue = (itemId: string, storageId: string) => consignes.find(c => c.itemId === itemId && c.storageId === storageId)?.minQuantity || 0;
 
-  const handleManualEdit = (itemId: string, storageId: string, val: string) => {
-    // On n'autorise que les chiffres, le point et la virgule
-    if (!/^[0-9]*([.,][0-9]*)?$/.test(val)) return;
-
-    let normalized = val.replace(',', '.');
-    
-    // Si l'utilisateur tape juste un point/virgule ou vide, on n'update pas encore pour éviter le saut à 0
-    if (normalized === '' || normalized === '.') {
-        onUpdateStock(itemId, storageId, 0);
-        return;
-    }
-    
-    const num = parseFloat(normalized);
-    if (!isNaN(num)) {
-        // Limitation à 3 décimales pour la précision bar
-        onUpdateStock(itemId, storageId, Math.round(num * 1000) / 1000);
-    }
+  const handleManualEdit = (itemId: string, storageId: string, val: number) => {
+      // Round to 3 decimals to avoid floating point issues
+      onUpdateStock(itemId, storageId, Math.round(val * 1000) / 1000);
   };
 
   const visibleStorages = useMemo(() => {
@@ -129,11 +170,9 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                         <td key={s.id} className="p-4 border-r text-center">
                                             <div className="flex justify-center items-center gap-2">
                                                 <button onClick={() => onAdjustTransaction?.(item.id, s.id, -1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white font-black transition-all">-</button>
-                                                <input 
-                                                    type="text"
-                                                    inputMode="decimal"
+                                                <EditableNumberCell 
                                                     value={qty}
-                                                    onChange={(e) => handleManualEdit(item.id, s.id, e.target.value)}
+                                                    onSave={(val) => handleManualEdit(item.id, s.id, val)}
                                                     className={`w-14 text-center p-1 rounded-lg font-black text-sm border-2 transition-all ${isLow ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-100 text-slate-700'}`}
                                                 />
                                                 <button onClick={() => onAdjustTransaction?.(item.id, s.id, 1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-emerald-500 hover:text-white font-black transition-all">+</button>
@@ -196,11 +235,9 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                               {s.id === 's0' && <span className="ml-2 bg-amber-100 text-amber-600 text-[8px] px-2 py-0.5 rounded-full font-black uppercase">Surstock</span>}
                                           </td>
                                           <td className="p-6 text-center">
-                                              <input 
-                                                type="text"
-                                                inputMode="decimal"
+                                              <EditableNumberCell 
                                                 value={qty}
-                                                onChange={(e) => handleManualEdit(selectedProductId, s.id, e.target.value)}
+                                                onSave={(val) => handleManualEdit(selectedProductId, s.id, val)}
                                                 className={`w-20 text-center p-3 rounded-xl font-black text-base border-2 transition-all ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
                                               />
                                           </td>
@@ -260,11 +297,9 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                                       <td className="p-6 font-bold text-slate-700">{item.name}</td>
                                       <td className="p-6 text-center">
-                                          <input 
-                                            type="text"
-                                            inputMode="decimal"
+                                          <EditableNumberCell 
                                             value={qty}
-                                            onChange={(e) => handleManualEdit(item.id, selectedStorageId, e.target.value)}
+                                            onSave={(val) => handleManualEdit(item.id, selectedStorageId, val)}
                                             className={`w-20 text-center p-2 rounded-xl font-black text-sm border-2 ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
                                           />
                                       </td>
