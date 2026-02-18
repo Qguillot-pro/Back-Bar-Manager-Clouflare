@@ -132,6 +132,19 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       setViewMode('CREATE');
   };
 
+  const handleIngredientChange = (index: number, val: string) => {
+      const copy = [...newIngredients];
+      const existing = items.find(i => i.name === val || i.id === val);
+      if (existing) {
+          copy[index].itemId = existing.id;
+          copy[index].tempName = undefined;
+      } else {
+          copy[index].itemId = undefined;
+          copy[index].tempName = val;
+      }
+      setNewIngredients(copy);
+  };
+
   if (viewMode === 'LIST') {
       return (
           <div className="space-y-6">
@@ -221,16 +234,18 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           <button onClick={() => setNewIngredients([...newIngredients, { quantity: 0, unit: 'cl' }])} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest bg-white border border-indigo-100 px-4 py-2 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm">+ Ajouter</button>
                       </div>
                       <div className="space-y-3">
+                          <datalist id="stock-items-list">
+                              {items.map(i => <option key={i.id} value={i.name} />)}
+                          </datalist>
                           {newIngredients.map((ing, idx) => (
                               <div key={idx} className="flex gap-3 items-center bg-white p-3 rounded-2xl border border-slate-100 shadow-sm animate-in zoom-in-95">
-                                  <select className="flex-1 bg-slate-50 border-none rounded-xl p-3 text-sm font-bold outline-none" value={ing.itemId || ''} onChange={e => {
-                                      const copy = [...newIngredients];
-                                      copy[idx].itemId = e.target.value;
-                                      setNewIngredients(copy);
-                                  }}>
-                                      <option value="">Article Stock...</option>
-                                      {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                                  </select>
+                                  <input 
+                                    list="stock-items-list" 
+                                    className="flex-1 bg-slate-50 border-none rounded-xl p-3 text-sm font-bold outline-none"
+                                    placeholder="Ingrédient (Stock ou Libre)..."
+                                    value={ing.itemId ? items.find(i=>i.id===ing.itemId)?.name : ing.tempName}
+                                    onChange={e => handleIngredientChange(idx, e.target.value)}
+                                  />
                                   <input type="number" step="0.1" className="w-20 bg-slate-50 border-none rounded-xl p-3 text-sm font-black text-center outline-none" value={ing.quantity} onChange={e => {
                                       const copy = [...newIngredients];
                                       copy[idx].quantity = parseFloat(e.target.value) || 0;

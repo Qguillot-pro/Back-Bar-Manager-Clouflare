@@ -107,12 +107,44 @@ const Configuration: React.FC<ConfigProps> = ({
   };
 
   const addProduct = () => { if (!itemName) return; const newItem: StockItem = { id: Math.random().toString(36).substr(2, 9), articleCode: itemArticleCode, name: itemName, category: itemCat, formatId: itemFormat, pricePerUnit: 0, lastUpdated: new Date().toISOString(), isDLC: itemIsDlc, dlcProfileId: itemIsDlc ? itemDlcProfile : undefined, isConsigne: itemIsConsigne, order: items.length, isDraft: true }; setItems(prev => [...prev, newItem]); onSync('SAVE_ITEM', newItem); setItemName(''); setItemArticleCode(''); setItemIsDlc(false); };
+  
   const addFormat = () => { if (!formatName) return; const newFormat: Format = { id: 'f' + Date.now(), name: formatName, value: formatValue, order: formats.length + 1 }; setFormats(prev => [...prev, newFormat]); onSync('SAVE_FORMAT', newFormat); setFormatName(''); setFormatValue(0); };
   const deleteFormat = (id: string) => { setFormats(prev => prev.filter(f => f.id !== id)); onSync('DELETE_FORMAT', { id }); };
+  const moveFormat = (idx: number, dir: 'up'|'down') => {
+      if ((dir === 'up' && idx === 0) || (dir === 'down' && idx === formats.length - 1)) return;
+      const c = [...formats];
+      const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+      [c[idx], c[swapIdx]] = [c[swapIdx], c[idx]];
+      setFormats(c);
+      onSync('REORDER_FORMATS', { formats: c.map(f => f.id) });
+  };
+
   const addCategory = () => { if (!newCatName) return; setCategories(prev => [...prev, newCatName]); onSync('SAVE_CATEGORY', { name: newCatName }); setNewCatName(''); };
   const deleteCategory = (cat: Category) => { setCategories(prev => prev.filter(c => c !== cat)); onSync('DELETE_CATEGORY', { name: cat }); };
+  const moveCategory = (idx: number, dir: 'up'|'down') => {
+      if ((dir === 'up' && idx === 0) || (dir === 'down' && idx === categories.length - 1)) return;
+      const c = [...categories];
+      const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+      [c[idx], c[swapIdx]] = [c[swapIdx], c[idx]];
+      setCategories(c);
+      onSync('REORDER_CATEGORIES', { categories: c });
+  };
+
   const addStorage = () => { if (!storageName) return; const newStorage = { id: 's' + Date.now(), name: storageName }; setStorages(prev => [...prev, newStorage]); onSync('SAVE_STORAGE', newStorage); setStorageName(''); };
   const deleteStorage = (id: string) => { setStorages(prev => prev.filter(st => st.id !== id)); onSync('DELETE_STORAGE', { id }); };
+  const moveStorage = (idx: number, dir: 'up'|'down') => {
+      if ((dir === 'up' && idx === 0) || (dir === 'down' && idx === storages.length - 1)) return;
+      const c = [...storages];
+      const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+      [c[idx], c[swapIdx]] = [c[swapIdx], c[idx]];
+      
+      // Update order property locally
+      c.forEach((s, i) => s.order = i);
+      setStorages(c);
+      
+      // Sync each position
+      c.forEach((s, i) => onSync('SAVE_STORAGE_ORDER', { id: s.id, order: i }));
+  };
   
   const handleSaveUser = () => { 
       if (!newUserName || !newUserPin) return; 
@@ -151,7 +183,6 @@ const Configuration: React.FC<ConfigProps> = ({
       if (id === currentUser.id) { alert("Vous ne pouvez pas vous supprimer vous-même."); return; }
       if (window.confirm("Supprimer cet utilisateur ?")) {
           setUsers(prev => prev.filter(u => u.id !== id));
-          // Note: Delete user requires logic usually, assuming simple remove for now as per schema
       }
   };
 
@@ -301,7 +332,16 @@ const Configuration: React.FC<ConfigProps> = ({
                             <button onClick={addFormat} className="bg-amber-600 text-white px-6 rounded-2xl font-black uppercase tracking-widest hover:bg-amber-700">OK</button>
                         </div>
                         <div className="space-y-2">
-                            {formats.map((f, i) => f && (<div key={f.id} className="flex justify-between bg-slate-50 px-5 py-3 rounded-2xl border"><span className="font-black text-[10px] uppercase tracking-widest">{f.name}</span><button onClick={() => deleteFormat(f.id)} className="text-rose-400 hover:text-rose-600">✕</button></div>))}
+                            {formats.map((f, i) => f && (
+                                <div key={f.id} className="flex justify-between items-center bg-slate-50 px-5 py-3 rounded-2xl border group">
+                                    <span className="font-black text-[10px] uppercase tracking-widest">{f.name}</span>
+                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => moveFormat(i, 'up')} className="text-slate-400 hover:text-indigo-600">▲</button>
+                                        <button onClick={() => moveFormat(i, 'down')} className="text-slate-400 hover:text-indigo-600">▼</button>
+                                        <button onClick={() => deleteFormat(f.id)} className="text-rose-400 hover:text-rose-600 ml-1">✕</button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -313,7 +353,16 @@ const Configuration: React.FC<ConfigProps> = ({
                             <button onClick={addCategory} className="bg-emerald-500 text-white px-6 rounded-2xl font-black uppercase tracking-widest hover:bg-emerald-600">OK</button>
                         </div>
                         <div className="space-y-2">
-                            {categories.map((c, i) => c && (<div key={c} className="flex justify-between bg-slate-50 px-5 py-3 rounded-2xl border"><span className="font-black text-[10px] uppercase tracking-widest">{c}</span><button onClick={() => deleteCategory(c)} className="text-rose-400 hover:text-rose-600">✕</button></div>))}
+                            {categories.map((c, i) => c && (
+                                <div key={c} className="flex justify-between items-center bg-slate-50 px-5 py-3 rounded-2xl border group">
+                                    <span className="font-black text-[10px] uppercase tracking-widest">{c}</span>
+                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => moveCategory(i, 'up')} className="text-slate-400 hover:text-indigo-600">▲</button>
+                                        <button onClick={() => moveCategory(i, 'down')} className="text-slate-400 hover:text-indigo-600">▼</button>
+                                        <button onClick={() => deleteCategory(c)} className="text-rose-400 hover:text-rose-600 ml-1">✕</button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                     <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
@@ -323,7 +372,16 @@ const Configuration: React.FC<ConfigProps> = ({
                             <button onClick={addStorage} className="bg-slate-800 text-white px-6 rounded-2xl font-black uppercase tracking-widest">OK</button>
                         </div>
                         <div className="space-y-2">
-                            {storages.map(s => s && s.id !== 's_global' && (<div key={s.id} className="flex items-center justify-between bg-slate-50 px-5 py-3 rounded-2xl border group"><span className="font-black text-[10px] uppercase tracking-widest">{s.name}</span>{s.id !== 's0' && <button onClick={() => deleteStorage(s.id)} className="text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}</div>))}
+                            {storages.map((s, i) => s && s.id !== 's_global' && (
+                                <div key={s.id} className="flex items-center justify-between bg-slate-50 px-5 py-3 rounded-2xl border group">
+                                    <span className="font-black text-[10px] uppercase tracking-widest">{s.name}</span>
+                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => moveStorage(i, 'up')} className="text-slate-400 hover:text-indigo-600">▲</button>
+                                        <button onClick={() => moveStorage(i, 'down')} className="text-slate-400 hover:text-indigo-600">▼</button>
+                                        {s.id !== 's0' && <button onClick={() => deleteStorage(s.id)} className="text-rose-400 hover:text-rose-600 ml-1">✕</button>}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -334,6 +392,7 @@ const Configuration: React.FC<ConfigProps> = ({
       {activeSubTab === 'priorities' && (
         <PriorityConfig items={items} storages={storages} priorities={priorities} setPriorities={setPriorities} categories={categories} onSync={onSync} />
       )}
+      {/* ... (Other Tabs Unchanged) ... */}
       {activeSubTab === 'glassware' && setGlassware && (
           <GlasswareConfig glassware={glassware} setGlassware={setGlassware} onSync={onSync} />
       )}
@@ -343,8 +402,6 @@ const Configuration: React.FC<ConfigProps> = ({
       {activeSubTab === 'cocktail_cats' && setCocktailCategories && (
           <CocktailCategoriesConfig categories={cocktailCategories} setCategories={setCocktailCategories} onSync={onSync} appConfig={appConfig} setAppConfig={setAppConfig} />
       )}
-      
-      {/* USERS CONFIGURATION */}
       {activeSubTab === 'users' && (
           <div className="max-w-3xl mx-auto space-y-8">
               {!authorizedSubTabs.has('users') ? (
@@ -352,7 +409,7 @@ const Configuration: React.FC<ConfigProps> = ({
                       <h3 className="font-black text-lg uppercase tracking-tight">Accès Sécurisé</h3>
                       <input 
                           type="password" 
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-center font-black text-2xl tracking-[1em] outline-none"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-center font-black text-2xl tracking-[1em] outline-none focus:ring-2 focus:ring-indigo-500"
                           placeholder="Code PIN"
                           maxLength={4}
                           value={authPinInput}

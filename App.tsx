@@ -161,25 +161,170 @@ const App: React.FC = () => {
     }
   };
 
-  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false) => {
-    const storageId = 's_global'; // Default for quick movements
-    const trans: Transaction = { id: 't_' + Date.now(), itemId, storageId, type, quantity: qty, date: new Date().toISOString(), userName: currentUser?.name, isServiceTransfer };
-    setTransactions(p => [trans, ...p]);
-    
-    // Simplistic generic update: looks for s_global
-    const currentQty = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId)?.currentQuantity || 0;
-    const newQty = type === 'IN' ? currentQty + qty : Math.max(0, currentQty - qty);
-    
-    setStockLevels(prev => {
-      const exists = prev.find(l => l.itemId === itemId && l.storageId === storageId);
-      if (exists) return prev.map(l => (l.itemId === itemId && l.storageId === storageId) ? { ...l, currentQuantity: newQty } : l);
-      return [...prev, { itemId, storageId, currentQuantity: newQty }];
-    });
-    syncData('SAVE_TRANSACTION', trans);
-    syncData('SAVE_STOCK', { itemId, storageId, currentQuantity: newQty });
+  // LOGIQUE DE MOUVEMENT INTELLIGENT (Priorités + Règles Spécifiques)
+  const handleSmartTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false) => {
+      // 1. Récupérer les stocks actuels et les priorités
+      const itemLevels = stockLevels.filter(l => l.itemId === itemId);
+      const itemPriorities = priorities.filter(p => p.itemId === itemId);
+      
+      // Fonction utilitaire pour trouver la priorité (défaut 0, s0=11 si non défini mais on gère s0 à part)
+      const getPrio = (sid: string) => {
+          if (sid === 's0') return -1; // S0 traité spécifiquement
+          return itemPriorities.find(p => p.storageId === sid)?.priority || 0;
+      };
+
+      // Création de transaction helper
+      const commitTrans = (sid: string, amount: number, tType: 'IN' | 'OUT', newQ: number) => {
+          const trans: Transaction = { id: 't_' + Date.now() + Math.random(), itemId, storageId: sid, type: tType, quantity: amount, date: new Date().toISOString(), userName: currentUser?.name, isServiceTransfer };
+          setTransactions(p => [trans, ...p]);
+          syncData('SAVE_TRANSACTION', trans);
+          
+          setStockLevels(prev => {
+              const exists = prev.find(l => l.itemId === itemId && l.storageId === sid);
+              if (exists) return prev.map(l => (l.itemId === itemId && l.storageId === sid) ? { ...l, currentQuantity: newQ } : l);
+              return [...prev, { itemId, storageId: sid, currentQuantity: newQ }];
+          });
+          syncData('SAVE_STOCK', { itemId, storageId: sid, currentQuantity: newQ });
+      };
+
+      if (type === 'IN') {
+          // Règle ENTRÉE : Remplir priorité la plus BASSE d'abord, respecter strictement MAX, finir par S0.
+          // On ne modifie pas les décimales (entiers uniquement).
+          
+          // Trier les stockages par priorité CROISSANTE (0, 1, 2...) sauf s0 qui est la fin
+          const targets = storages
+              .filter(s => s.id !== 's_global')
+              .map(s => {
+                  const level = itemLevels.find(l => l.storageId === s.id)?.currentQuantity || 0;
+                  const consigne = consignes.find(c => c.itemId === itemId && c.storageId === s.id);
+                  const max = consigne?.maxCapacity || 9999;
+                  const prio = getPrio(s.id);
+                  return { ...s, current: level, max, prio, availableSpace: Math.max(0, Math.floor(max - level)) };
+              })
+              .sort((a, b) => {
+                  if (a.id === 's0') return 1; // S0 à la fin
+                  if (b.id === 's0') return -1;
+                  return a.prio - b.prio; // Priorité croissante
+              });
+
+          let remainingQty = qty;
+
+          for (const target of targets) {
+              if (remainingQty <= 0) break;
+              
+              if (target.id === 's0') {
+                  // S0 prend tout le reste
+                  commitTrans(target.id, remainingQty, 'IN', target.current + remainingQty);
+                  remainingQty = 0;
+              } else {
+                  // Remplir jusqu'au max (entier)
+                  const toAdd = Math.min(remainingQty, target.availableSpace);
+                  if (toAdd > 0) {
+                      commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
+                      remainingQty -= toAdd;
+                  }
+              }
+          }
+          // Si reste encore (ex: tout est plein et pas de s0?), on force dans le dernier ou s0 si existe
+          if (remainingQty > 0) {
+              const fallback = targets.find(t => t.id === 's0') || targets[targets.length - 1];
+              if (fallback) commitTrans(fallback.id, remainingQty, 'IN', fallback.current + remainingQty);
+          }
+
+      } else {
+          // Règle SORTIE
+          
+          // Vérifier présence de décimales
+          const decimalStorage = itemLevels.find(l => l.currentQuantity % 1 !== 0);
+          
+          if (decimalStorage) {
+              // CAS DÉCIMAL EXISTANT
+              // Règle: Mettre le stock décimal à l'entier au-dessus (Ceil)
+              // PUIS déduire -1 de la priorité la plus élevée (si entier dispo)
+              // SINON mettre le stock au décimal en dessous.
+              
+              // Interprétation: On consomme sur la bouteille ouverte.
+              // Si on demande une "Sortie" standard (ex: -1), c'est souvent une bouteille finie qu'on remplace.
+              // La règle demandée : "mettre le stock en décimal à l'entier au-dessus puis déduire de -1 le stock à la priorité la plus élevée"
+              // correspond à "J'ai fini ma bouteille ouverte (0.x -> 0), j'en ouvre une neuve de la réserve (Stock Prio Max -1 -> Bouteille ouverte 1.0)".
+              // C'est un mouvement complexe : + sur l'ouvert, - sur le stock.
+              // MAIS `handleTransaction` est appelé avec une quantité simple.
+              
+              // Si qty = 1 (Standard movement via keypad '1' then 'OUT'):
+              // On cherche un stock entier disponible ailleurs (Prio Max).
+              const integerStocks = itemLevels
+                  .filter(l => l.storageId !== decimalStorage.storageId && l.currentQuantity >= 1)
+                  .map(l => ({ ...l, prio: getPrio(l.storageId) }))
+                  .sort((a, b) => b.prio - a.prio); // Prio décroissante
+
+              if (integerStocks.length > 0) {
+                  // On a du stock entier. On applique la règle de "Remplacement"
+                  // 1. On complète la décimale (pour simuler l'ouverture d'une nouvelle) : NON, on remet à 1 ? 
+                  // La demande est : "mettre le stock en décimal à l'entier au-dessus". Si j'ai 0.8, ça devient 1.
+                  const gapToFull = Math.ceil(decimalStorage.currentQuantity) - decimalStorage.currentQuantity;
+                  // En fait, visuellement, si j'ai 0.8 et que je sors 1, ça veut dire que j'ai fini la 0.8 et entamé la suivante ?
+                  // Appliquons strictement :
+                  // Update Decimal Storage -> Math.ceil(current)
+                  commitTrans(decimalStorage.storageId, gapToFull, 'IN', Math.ceil(decimalStorage.currentQuantity)); 
+                  
+                  // Deduct -1 from Highest Priority
+                  const source = integerStocks[0];
+                  commitTrans(source.storageId, 1, 'OUT', source.currentQuantity - 1);
+              } else {
+                  // Pas de stock entier dispo. "mettre le stock au décimale en dessous"
+                  // Ex: 0.8 -> 0.7 ? Ou floor ? "décimale en dessous" est ambigu. 
+                  // Supposons consommation standard : on tape dans la décimale.
+                  // On retire 0.1 par défaut ? Non, la qty est passée en paramètre.
+                  // Si qty est 1 et qu'on a 0.8... on met à 0.
+                  const newQ = Math.max(0, decimalStorage.currentQuantity - 0.1); // On décrémente arbitrairement ou via qty ?
+                  // Pour être sûr, on retire simplement la quantité demandée du stock décimal, borné à 0.
+                  // Si l'user a demandé 1, et qu'on a 0.8, on vide.
+                  const qtyToTake = Math.min(decimalStorage.currentQuantity, qty);
+                  commitTrans(decimalStorage.storageId, qtyToTake, 'OUT', decimalStorage.currentQuantity - qtyToTake);
+              }
+
+          } else {
+              // CAS ENTIERS UNIQUEMENT
+              // Déduire Surstock (s0) d'abord
+              // Puis priorité la plus haute à la plus basse.
+              
+              let remainingQty = qty;
+              
+              // 1. Check s0
+              const s0Level = itemLevels.find(l => l.storageId === 's0');
+              if (s0Level && s0Level.currentQuantity > 0) {
+                  const take = Math.min(remainingQty, s0Level.currentQuantity);
+                  commitTrans('s0', take, 'OUT', s0Level.currentQuantity - take);
+                  remainingQty -= take;
+              }
+
+              if (remainingQty > 0) {
+                  // 2. Check Priorities High -> Low
+                  const targets = itemLevels
+                      .filter(l => l.storageId !== 's0' && l.currentQuantity > 0)
+                      .map(l => ({ ...l, prio: getPrio(l.storageId) }))
+                      .sort((a, b) => b.prio - a.prio); // Décroissant
+
+                  for (const target of targets) {
+                      if (remainingQty <= 0) break;
+                      const take = Math.min(remainingQty, target.currentQuantity);
+                      commitTrans(target.storageId, take, 'OUT', target.currentQuantity - take);
+                      remainingQty -= take;
+                  }
+              }
+          }
+      }
   };
 
-  // NOUVEAU: Gestion unifiée de mise à jour de stock avec création de transaction optionnelle (Régulation)
+  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false) => {
+    // Si c'est un mouvement générique (via Movements ou s_global), on utilise le Smart Move
+    // Sinon (si storageId spécifique via StockTable), on fait le mouvement simple (déjà géré par StockTable via onUpdateStock)
+    // Ici handleTransaction est appelé par Movements avec storageId par défaut.
+    
+    // On appelle la logique intelligente
+    handleSmartTransaction(itemId, type, qty, isServiceTransfer);
+  };
+
   const handleUpdateStock = (itemId: string, storageId: string, newQuantity: number, note?: string) => {
       // 1. Mise à jour du stock
       syncData('SAVE_STOCK', {itemId, storageId, currentQuantity: newQuantity});
@@ -193,7 +338,6 @@ const App: React.FC = () => {
           return [...prev, { itemId, storageId, currentQuantity: newQuantity }];
       });
 
-      // 2. Création automatique de la transaction si c'est une régulation (via boutons +/-, ou saisie)
       if (note && newQuantity !== previousQty) {
           const diff = newQuantity - previousQty;
           const type = diff > 0 ? 'IN' : 'OUT';
@@ -271,8 +415,7 @@ const App: React.FC = () => {
         
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
             <NavItem collapsed={isSidebarCollapsed} active={view === 'dashboard'} onClick={()=>setView('dashboard')} label="Tableau de Bord" icon="M4 6h16M4 12h16M4 18h16" />
-            <NavItem collapsed={isSidebarCollapsed} active={view === 'daily_life:TASKS'} onClick={()=>setView('daily_life:TASKS')} label="Vie Quotidienne" icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            <NavItem collapsed={isSidebarCollapsed} active={view === 'daily_life:COCKTAILS'} onClick={()=>setView('daily_life:COCKTAILS')} label="Cocktails du Jour" icon="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <NavItem collapsed={isSidebarCollapsed} active={view.startsWith('daily_life')} onClick={()=>setView('daily_life:TASKS')} label="Vie Quotidienne" icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'bar_prep'} onClick={()=>setView('bar_prep')} label="Préparation Bar" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'restock'} onClick={()=>setView('restock')} label="Préparation Cave" icon="M19 14l-7 7m0 0l-7-7m7 7V3" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'movements'} onClick={()=>setView('movements')} label="Mouvements" icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
@@ -303,7 +446,7 @@ const App: React.FC = () => {
 
       <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 relative">
           {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} />}
-          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s_global', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={(k, v) => { setAppConfig(p => ({...p, [k]: v})); syncData('SAVE_CONFIG', {key: k, value: JSON.stringify(v)}); }} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} />}
+          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s_global', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={(k, v) => { setAppConfig(p => ({...p, [k]: v})); syncData('SAVE_CONFIG', {key: k, value: JSON.stringify(v)}); }} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} />}
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} />}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); }} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={(id, s, t) => { const d = { id:'dlc_'+Date.now(), itemId:id, storageId:s, openedAt:new Date().toISOString(), userName:currentUser.name }; setDlcHistory(p=>[d, ...p]); syncData('SAVE_DLC_HISTORY', d); }} onDlcConsumption={(id) => { const old = dlcHistory.filter(h=>h.itemId===id).sort((a,b)=>new Date(a.openedAt).getTime()-new Date(b.openedAt).getTime())[0]; if(old){ setDlcHistory(p=>p.filter(h=>h.id!==old.id)); syncData('DELETE_DLC_HISTORY', {id: old.id}); } }} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); }} onUndo={handleUndoLastTransaction} />}

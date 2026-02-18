@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig } from '../types';
+import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig, CocktailCategory } from '../types';
 
 interface DailyLifeProps {
   tasks: Task[];
@@ -22,6 +22,7 @@ interface DailyLifeProps {
   appConfig?: AppConfig;
   saveConfig?: (key: string, value: any) => void;
   initialTab?: string;
+  cocktailCategories?: CocktailCategory[];
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -35,9 +36,10 @@ const getBarDateStr = (d: Date = new Date()) => {
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
-    appConfig, saveConfig, initialTab
+    appConfig, saveConfig, initialTab, cocktailCategories = []
 }) => {
   const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS'>('TASKS');
+  const [configCycleType, setConfigCycleType] = useState<DailyCocktailType | null>(null); // For Cycle Config Modal
   
   useEffect(() => {
       if (initialTab && (initialTab === 'TASKS' || initialTab === 'CALENDAR' || initialTab === 'COCKTAILS')) {
@@ -76,6 +78,10 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       const configStr = appConfig[`cycle_${type}`];
       if (configStr) { try { return JSON.parse(configStr); } catch(e) {} }
       return { frequency: 'DAILY', recipeIds: [], startDate: new Date().toISOString(), isActive: false };
+  };
+
+  const saveCycleConfig = (type: DailyCocktailType, cfg: CycleConfig) => {
+      if(saveConfig) saveConfig(`cycle_${type}`, cfg);
   };
 
   const getDayDiff = (d1Str: string, d2Str: string) => {
@@ -121,6 +127,124 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       }
       
       return { id: `calc-${targetDate}-${type}`, date: targetDate, type, recipeId: config.recipeIds[index] };
+  };
+
+  // Cycle Config Component
+  const CycleConfigModal = ({ type, onClose }: { type: DailyCocktailType, onClose: () => void }) => {
+      const existing = getCycleConfig(type);
+      const [isActive, setIsActive] = useState(existing.isActive);
+      const [frequency, setFrequency] = useState<CycleFrequency>(existing.frequency);
+      const [startDate, setStartDate] = useState(existing.startDate.split('T')[0]);
+      const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>(existing.recipeIds);
+      const [filterCategory, setFilterCategory] = useState<string>('');
+
+      const availableRecipes = useMemo(() => {
+          return recipes.filter(r => !filterCategory || r.category === filterCategory);
+      }, [recipes, filterCategory]);
+
+      const handleAddRecipe = (id: string) => setSelectedRecipeIds([...selectedRecipeIds, id]);
+      const handleRemoveRecipe = (idx: number) => {
+          const c = [...selectedRecipeIds];
+          c.splice(idx, 1);
+          setSelectedRecipeIds(c);
+      };
+      
+      const handleMoveRecipe = (idx: number, dir: 'up' | 'down') => {
+          if ((dir === 'up' && idx === 0) || (dir === 'down' && idx === selectedRecipeIds.length - 1)) return;
+          const c = [...selectedRecipeIds];
+          const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+          [c[idx], c[swapIdx]] = [c[swapIdx], c[idx]];
+          setSelectedRecipeIds(c);
+      };
+
+      const handleSave = () => {
+          saveCycleConfig(type, { isActive, frequency, startDate: new Date(startDate).toISOString(), recipeIds: selectedRecipeIds });
+          onClose();
+      };
+
+      return (
+          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+              <div className="bg-white rounded-[2rem] w-full max-w-2xl h-[85vh] flex flex-col shadow-2xl border border-slate-200">
+                  <div className="p-6 border-b flex justify-between items-center">
+                      <h3 className="font-black text-lg uppercase tracking-tight text-slate-800">Programmation : {type === 'OF_THE_DAY' ? 'Cocktail du Jour' : type}</h3>
+                      <button onClick={onClose} className="text-slate-400 font-bold hover:text-slate-600">✕</button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                      <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                          <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+                              <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
+                              Activer le cycle automatique
+                          </label>
+                      </div>
+                      
+                      {isActive && (
+                          <>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fréquence de changement</label>
+                                      <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={frequency} onChange={e => setFrequency(e.target.value as any)}>
+                                          <option value="DAILY">Tous les jours</option>
+                                          <option value="2_DAYS">Tous les 2 jours</option>
+                                          <option value="MON_FRI">Lundi / Vendredi</option>
+                                          <option value="WEEKLY">Toutes les semaines</option>
+                                          <option value="2_WEEKS">Toutes les 2 semaines</option>
+                                      </select>
+                                  </div>
+                                  <div>
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Date de début (Référence)</label>
+                                      <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                                  </div>
+                              </div>
+
+                              <div className="flex gap-4 h-96">
+                                  <div className="flex-1 flex flex-col border border-slate-200 rounded-xl overflow-hidden">
+                                      <div className="p-3 bg-slate-50 border-b flex flex-col gap-2">
+                                          <span className="text-[10px] font-black uppercase text-slate-400">Bibliothèque</span>
+                                          <select className="bg-white border rounded-lg p-1 text-xs font-bold" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+                                              <option value="">Toutes catégories</option>
+                                              {cocktailCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                          </select>
+                                      </div>
+                                      <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-slate-50/50">
+                                          {availableRecipes.map(r => (
+                                              <button key={r.id} onClick={() => handleAddRecipe(r.id)} className="w-full text-left p-2 bg-white border border-slate-100 rounded-lg text-xs font-bold hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                                                  {r.name}
+                                              </button>
+                                          ))}
+                                      </div>
+                                  </div>
+                                  <div className="flex items-center justify-center">
+                                      <svg className="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                                  </div>
+                                  <div className="flex-1 flex flex-col border-2 border-indigo-100 rounded-xl overflow-hidden bg-indigo-50/30">
+                                      <div className="p-3 bg-indigo-50 border-b border-indigo-100 text-[10px] font-black uppercase text-indigo-400">Cycle Sélectionné ({selectedRecipeIds.length})</div>
+                                      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                                          {selectedRecipeIds.map((id, idx) => {
+                                              const r = recipes.find(x => x.id === id);
+                                              return (
+                                                  <div key={`${id}-${idx}`} className="flex items-center justify-between p-2 bg-white border border-indigo-100 rounded-lg shadow-sm">
+                                                      <span className="text-xs font-bold truncate flex-1">{idx+1}. {r?.name || 'Inconnu'}</span>
+                                                      <div className="flex items-center gap-1 ml-2">
+                                                          <button onClick={() => handleMoveRecipe(idx, 'up')} className="text-slate-400 hover:text-indigo-600"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg></button>
+                                                          <button onClick={() => handleMoveRecipe(idx, 'down')} className="text-slate-400 hover:text-indigo-600"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg></button>
+                                                          <button onClick={() => handleRemoveRecipe(idx)} className="text-rose-400 hover:text-rose-600 ml-1">✕</button>
+                                                      </div>
+                                                  </div>
+                                              );
+                                          })}
+                                      </div>
+                                  </div>
+                              </div>
+                          </>
+                      )}
+                  </div>
+                  <div className="p-6 border-t bg-slate-50 flex justify-end gap-3">
+                      <button onClick={onClose} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-bold text-xs uppercase hover:bg-slate-50">Annuler</button>
+                      <button onClick={handleSave} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 shadow-lg">Sauvegarder</button>
+                  </div>
+              </div>
+          </div>
+      );
   };
 
   const openEventModal = (evt?: Event) => {
@@ -250,6 +374,8 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20 relative">
       
+      {configCycleType && <CycleConfigModal type={configCycleType} onClose={() => setConfigCycleType(null)} />}
+
       {/* EVENT MODAL */}
       {isEventModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
@@ -433,7 +559,16 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       }[cfg.color];
 
                       return (
-                          <div key={cfg.type} className={`p-6 rounded-3xl border ${bgColor} flex flex-col justify-between min-h-[180px] shadow-sm`}>
+                          <div key={cfg.type} className={`p-6 rounded-3xl border ${bgColor} flex flex-col justify-between min-h-[180px] shadow-sm relative group`}>
+                              {currentUser.role === 'ADMIN' && (
+                                  <button 
+                                    onClick={() => setConfigCycleType(cfg.type as DailyCocktailType)} 
+                                    className="absolute top-2 right-2 p-2 bg-white/50 hover:bg-white rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Configurer le cycle"
+                                  >
+                                      <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                  </button>
+                              )}
                               <div>
                                   <h4 className="font-black uppercase text-xs tracking-widest opacity-60 mb-2">{cfg.label}</h4>
                                   <p className="font-black text-xl leading-tight">
