@@ -163,17 +163,14 @@ const App: React.FC = () => {
 
   // LOGIQUE DE MOUVEMENT INTELLIGENT (Priorités + Règles Spécifiques)
   const handleSmartTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false) => {
-      // 1. Récupérer les stocks actuels et les priorités
       const itemLevels = stockLevels.filter(l => l.itemId === itemId);
       const itemPriorities = priorities.filter(p => p.itemId === itemId);
       
-      // Fonction utilitaire pour trouver la priorité (défaut 0, s0=11 si non défini mais on gère s0 à part)
       const getPrio = (sid: string) => {
-          if (sid === 's0') return -1; // S0 traité spécifiquement
+          if (sid === 's0') return -1;
           return itemPriorities.find(p => p.storageId === sid)?.priority || 0;
       };
 
-      // Création de transaction helper
       const commitTrans = (sid: string, amount: number, tType: 'IN' | 'OUT', newQ: number) => {
           const trans: Transaction = { id: 't_' + Date.now() + Math.random(), itemId, storageId: sid, type: tType, quantity: amount, date: new Date().toISOString(), userName: currentUser?.name, isServiceTransfer };
           setTransactions(p => [trans, ...p]);
@@ -188,10 +185,6 @@ const App: React.FC = () => {
       };
 
       if (type === 'IN') {
-          // Règle ENTRÉE : Remplir priorité la plus BASSE d'abord, respecter strictement MAX, finir par S0.
-          // On ne modifie pas les décimales (entiers uniquement).
-          
-          // Trier les stockages par priorité CROISSANTE (0, 1, 2...) sauf s0 qui est la fin
           const targets = storages
               .filter(s => s.id !== 's_global')
               .map(s => {
@@ -202,7 +195,7 @@ const App: React.FC = () => {
                   return { ...s, current: level, max, prio, availableSpace: Math.max(0, Math.floor(max - level)) };
               })
               .sort((a, b) => {
-                  if (a.id === 's0') return 1; // S0 à la fin
+                  if (a.id === 's0') return 1;
                   if (b.id === 's0') return -1;
                   return a.prio - b.prio; // Priorité croissante
               });
@@ -211,13 +204,10 @@ const App: React.FC = () => {
 
           for (const target of targets) {
               if (remainingQty <= 0) break;
-              
               if (target.id === 's0') {
-                  // S0 prend tout le reste
                   commitTrans(target.id, remainingQty, 'IN', target.current + remainingQty);
                   remainingQty = 0;
               } else {
-                  // Remplir jusqu'au max (entier)
                   const toAdd = Math.min(remainingQty, target.availableSpace);
                   if (toAdd > 0) {
                       commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
@@ -225,72 +215,32 @@ const App: React.FC = () => {
                   }
               }
           }
-          // Si reste encore (ex: tout est plein et pas de s0?), on force dans le dernier ou s0 si existe
           if (remainingQty > 0) {
               const fallback = targets.find(t => t.id === 's0') || targets[targets.length - 1];
               if (fallback) commitTrans(fallback.id, remainingQty, 'IN', fallback.current + remainingQty);
           }
 
       } else {
-          // Règle SORTIE
-          
-          // Vérifier présence de décimales
           const decimalStorage = itemLevels.find(l => l.currentQuantity % 1 !== 0);
           
           if (decimalStorage) {
-              // CAS DÉCIMAL EXISTANT
-              // Règle: Mettre le stock décimal à l'entier au-dessus (Ceil)
-              // PUIS déduire -1 de la priorité la plus élevée (si entier dispo)
-              // SINON mettre le stock au décimal en dessous.
-              
-              // Interprétation: On consomme sur la bouteille ouverte.
-              // Si on demande une "Sortie" standard (ex: -1), c'est souvent une bouteille finie qu'on remplace.
-              // La règle demandée : "mettre le stock en décimal à l'entier au-dessus puis déduire de -1 le stock à la priorité la plus élevée"
-              // correspond à "J'ai fini ma bouteille ouverte (0.x -> 0), j'en ouvre une neuve de la réserve (Stock Prio Max -1 -> Bouteille ouverte 1.0)".
-              // C'est un mouvement complexe : + sur l'ouvert, - sur le stock.
-              // MAIS `handleTransaction` est appelé avec une quantité simple.
-              
-              // Si qty = 1 (Standard movement via keypad '1' then 'OUT'):
-              // On cherche un stock entier disponible ailleurs (Prio Max).
               const integerStocks = itemLevels
                   .filter(l => l.storageId !== decimalStorage.storageId && l.currentQuantity >= 1)
                   .map(l => ({ ...l, prio: getPrio(l.storageId) }))
-                  .sort((a, b) => b.prio - a.prio); // Prio décroissante
+                  .sort((a, b) => b.prio - a.prio); 
 
               if (integerStocks.length > 0) {
-                  // On a du stock entier. On applique la règle de "Remplacement"
-                  // 1. On complète la décimale (pour simuler l'ouverture d'une nouvelle) : NON, on remet à 1 ? 
-                  // La demande est : "mettre le stock en décimal à l'entier au-dessus". Si j'ai 0.8, ça devient 1.
                   const gapToFull = Math.ceil(decimalStorage.currentQuantity) - decimalStorage.currentQuantity;
-                  // En fait, visuellement, si j'ai 0.8 et que je sors 1, ça veut dire que j'ai fini la 0.8 et entamé la suivante ?
-                  // Appliquons strictement :
-                  // Update Decimal Storage -> Math.ceil(current)
                   commitTrans(decimalStorage.storageId, gapToFull, 'IN', Math.ceil(decimalStorage.currentQuantity)); 
-                  
-                  // Deduct -1 from Highest Priority
                   const source = integerStocks[0];
                   commitTrans(source.storageId, 1, 'OUT', source.currentQuantity - 1);
               } else {
-                  // Pas de stock entier dispo. "mettre le stock au décimale en dessous"
-                  // Ex: 0.8 -> 0.7 ? Ou floor ? "décimale en dessous" est ambigu. 
-                  // Supposons consommation standard : on tape dans la décimale.
-                  // On retire 0.1 par défaut ? Non, la qty est passée en paramètre.
-                  // Si qty est 1 et qu'on a 0.8... on met à 0.
-                  const newQ = Math.max(0, decimalStorage.currentQuantity - 0.1); // On décrémente arbitrairement ou via qty ?
-                  // Pour être sûr, on retire simplement la quantité demandée du stock décimal, borné à 0.
-                  // Si l'user a demandé 1, et qu'on a 0.8, on vide.
                   const qtyToTake = Math.min(decimalStorage.currentQuantity, qty);
                   commitTrans(decimalStorage.storageId, qtyToTake, 'OUT', decimalStorage.currentQuantity - qtyToTake);
               }
 
           } else {
-              // CAS ENTIERS UNIQUEMENT
-              // Déduire Surstock (s0) d'abord
-              // Puis priorité la plus haute à la plus basse.
-              
               let remainingQty = qty;
-              
-              // 1. Check s0
               const s0Level = itemLevels.find(l => l.storageId === 's0');
               if (s0Level && s0Level.currentQuantity > 0) {
                   const take = Math.min(remainingQty, s0Level.currentQuantity);
@@ -299,11 +249,10 @@ const App: React.FC = () => {
               }
 
               if (remainingQty > 0) {
-                  // 2. Check Priorities High -> Low
                   const targets = itemLevels
                       .filter(l => l.storageId !== 's0' && l.currentQuantity > 0)
                       .map(l => ({ ...l, prio: getPrio(l.storageId) }))
-                      .sort((a, b) => b.prio - a.prio); // Décroissant
+                      .sort((a, b) => b.prio - a.prio);
 
                   for (const target of targets) {
                       if (remainingQty <= 0) break;
@@ -317,16 +266,10 @@ const App: React.FC = () => {
   };
 
   const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false) => {
-    // Si c'est un mouvement générique (via Movements ou s_global), on utilise le Smart Move
-    // Sinon (si storageId spécifique via StockTable), on fait le mouvement simple (déjà géré par StockTable via onUpdateStock)
-    // Ici handleTransaction est appelé par Movements avec storageId par défaut.
-    
-    // On appelle la logique intelligente
     handleSmartTransaction(itemId, type, qty, isServiceTransfer);
   };
 
   const handleUpdateStock = (itemId: string, storageId: string, newQuantity: number, note?: string) => {
-      // 1. Mise à jour du stock
       syncData('SAVE_STOCK', {itemId, storageId, currentQuantity: newQuantity});
       
       const previousLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
@@ -419,7 +362,8 @@ const App: React.FC = () => {
             <NavItem collapsed={isSidebarCollapsed} active={view === 'bar_prep'} onClick={()=>setView('bar_prep')} label="Préparation Bar" icon="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'restock'} onClick={()=>setView('restock')} label="Préparation Cave" icon="M19 14l-7 7m0 0l-7-7m7 7V3" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'movements'} onClick={()=>setView('movements')} label="Mouvements" icon="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            <NavItem collapsed={isSidebarCollapsed} active={view === 'inventory'} onClick={()=>setView('inventory')} label="Stock Global" icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+            <NavItem collapsed={isSidebarCollapsed} active={view === 'stock_table'} onClick={()=>setView('stock_table')} label="Stock Bar" icon="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            <NavItem collapsed={isSidebarCollapsed} active={view === 'inventory'} onClick={()=>setView('inventory')} label="Inventaire Général" icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'consignes'} onClick={()=>setView('consignes')} label="Consignes Stock" icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'orders'} onClick={()=>setView('orders')} label="À Commander" icon="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17" badge={orders.filter(o=>o.status==='PENDING').length} />
             <NavItem collapsed={isSidebarCollapsed} active={view === 'history'} onClick={()=>setView('history')} label="Historique" icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -450,6 +394,7 @@ const App: React.FC = () => {
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} />}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); }} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={(id, s, t) => { const d = { id:'dlc_'+Date.now(), itemId:id, storageId:s, openedAt:new Date().toISOString(), userName:currentUser.name }; setDlcHistory(p=>[d, ...p]); syncData('SAVE_DLC_HISTORY', d); }} onDlcConsumption={(id) => { const old = dlcHistory.filter(h=>h.itemId===id).sort((a,b)=>new Date(a.openedAt).getTime()-new Date(b.openedAt).getTime())[0]; if(old){ setDlcHistory(p=>p.filter(h=>h.id!==old.id)); syncData('DELETE_DLC_HISTORY', {id: old.id}); } }} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); }} onUndo={handleUndoLastTransaction} />}
+          {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleTransaction} />}
           {view === 'inventory' && <GlobalInventory items={items} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} />}
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
           {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { setOrders(prev => prev.map(o => o.id === id ? { ...o, quantity: q, status: s || o.status, ruptureDate: r } : o)); syncData('SAVE_ORDER', { id, quantity: q, status: s, ruptureDate: r }); }} onDeleteOrder={(id) => { setOrders(prev => prev.filter(o => o.id !== id)); syncData('DELETE_ORDER', { id }); }} onAddManualOrder={(itemId, qty) => { const order: PendingOrder = { id: 'ord_' + Date.now(), itemId, quantity: qty, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name }; setOrders(prev => [...prev, order]); syncData('SAVE_ORDER', order); }} formats={formats} events={events} emailTemplates={emailTemplates} />}
