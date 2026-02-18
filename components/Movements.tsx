@@ -33,6 +33,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
   const [isTempItemModalOpen, setIsTempItemModalOpen] = useState(false);
   const [tempItemName, setTempItemName] = useState('');
+  const [tempItemQty, setTempItemQty] = useState<number>(0);
 
   const handleAction = (type: 'IN' | 'OUT') => {
     // Validation stricte : Pas de décimales
@@ -81,18 +82,29 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       setQty('1');
   };
 
+  const handleCreateTemp = () => {
+      if (onCreateTemporaryItem && tempItemName) {
+          onCreateTemporaryItem(tempItemName, tempItemQty);
+          setTempItemName('');
+          setTempItemQty(0);
+          setIsTempItemModalOpen(false);
+      }
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto relative">
       {/* MODALE PRODUIT PROVISOIRE */}
       {isTempItemModalOpen && (
           <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6">
-                  <h3 className="text-xl font-black text-slate-900 uppercase">Produit Provisoire</h3>
-                  <p className="text-xs text-slate-500 font-bold">Produit inconnu. Voulez-vous le créer pour enregistrer l'entrée ?</p>
-                  <input type="text" className="w-full bg-slate-50 border rounded-xl p-3 font-bold text-slate-900" value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} />
+                  <h3 className="text-xl font-black text-slate-900 uppercase">Créer Produit Temporaire</h3>
+                  <div className="space-y-2">
+                      <input type="text" className="w-full bg-slate-50 border rounded-xl p-3 font-bold text-slate-900" placeholder="Nom du produit..." value={tempItemName} onChange={(e) => setTempItemName(e.target.value)} />
+                      <input type="number" className="w-full bg-slate-50 border rounded-xl p-3 font-bold text-slate-900 text-center" placeholder="Quantité reçue / souhaitée" value={tempItemQty || ''} onChange={(e) => setTempItemQty(parseInt(e.target.value) || 0)} />
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                       <button onClick={() => setIsTempItemModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px]">Annuler</button>
-                      <button onClick={() => { onCreateTemporaryItem?.(tempItemName, 0); setIsTempItemModalOpen(false); }} className="py-3 bg-amber-500 text-white rounded-xl font-black uppercase text-[10px]">Créer</button>
+                      <button onClick={handleCreateTemp} className="py-3 bg-amber-500 text-white rounded-xl font-black uppercase text-[10px]">Créer</button>
                   </div>
               </div>
           </div>
@@ -126,7 +138,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                       </div>
                       <button 
                         onClick={() => { setTempItemName(search); setIsTempItemModalOpen(true); }}
-                        className="bg-amber-100 hover:bg-amber-200 text-amber-600 p-4 rounded-2xl transition-colors"
+                        className="bg-amber-100 hover:bg-amber-200 text-amber-600 p-4 rounded-2xl transition-colors h-[58px] flex items-center justify-center"
                         title="Créer un produit temporaire"
                       >
                           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -142,7 +154,6 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                             value={qty} 
                             onChange={(e) => {
                                 const val = e.target.value;
-                                // On n'accepte que les chiffres
                                 if (/^\d*$/.test(val)) setQty(val);
                             }} 
                           />

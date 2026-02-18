@@ -25,26 +25,18 @@ const EditableNumberCell = ({
 }) => {
     const [localValue, setLocalValue] = useState<string>(value.toString());
 
-    // Update local state when prop changes, but ONLY if not currently focused (simplified approach: sync on render)
-    // Actually, to avoid overwriting while typing, we typically sync only when prop differs significantly or on blur/focus management.
-    // Here we will sync on prop change to ensure external updates are reflected, 
-    // BUT we must trust that onSave updates the parent which updates the prop back.
-    // To fix the "1." issue, we need to allow the local state to diverge from the prop while typing.
-    
+    // Sync only if prop changes significantly (e.g. external update)
     useEffect(() => {
-        // Only update from prop if it's a new "committed" value that differs from what we think it is,
-        // or if we aren't editing. Since we don't track focus easily here without refs, 
-        // we'll rely on the parent sending back the parsed number.
-        // If the prop value matches the parsed local value, don't overwrite to keep "1." vs "1".
+        // Compare parsed local vs prop to allow formatting diffs (e.g. "1." vs 1)
         const parsedLocal = parseFloat(localValue.replace(',', '.'));
-        if (value !== parsedLocal) {
+        if (parsedLocal !== value) {
              setLocalValue(value.toString());
         }
     }, [value]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
-        // Allow digits, one dot or comma.
+        // Allow digits, one dot or comma at most
         if (/^[0-9]*([.,][0-9]*)?$/.test(val)) {
             setLocalValue(val);
         }
@@ -54,7 +46,9 @@ const EditableNumberCell = ({
         let normalized = localValue.replace(',', '.');
         if (normalized === '' || normalized === '.') normalized = '0';
         const num = parseFloat(normalized);
-        onSave(isNaN(num) ? 0 : num);
+        const finalNum = isNaN(num) ? 0 : num;
+        onSave(finalNum);
+        setLocalValue(finalNum.toString()); // Clean format on blur
     };
 
     return (

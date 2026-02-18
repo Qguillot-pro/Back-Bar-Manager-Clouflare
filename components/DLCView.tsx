@@ -27,10 +27,9 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       
       const durationHours = profile?.durationHours || 24;
       
-      // Sécurisation de la date d'ouverture
       let openedDate = new Date(entry.openedAt);
       if (isNaN(openedDate.getTime())) {
-          openedDate = new Date(); // Fallback si date invalide
+          openedDate = new Date(); 
       }
       
       const expirationDate = new Date(openedDate.getTime() + durationHours * 3600000);
@@ -87,8 +86,9 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       
       {/* BANNIÈRE ALERTE */}
       {expiredCount > 0 && (
-          <div className="bg-rose-500 text-white p-4 text-center font-black uppercase text-xs tracking-widest animate-pulse">
-              ⚠️ {expiredCount} produit(s) expiré(s) détecté(s) ! Vérifiez immédiatement.
+          <div className="bg-rose-500 text-white p-4 text-center font-black uppercase text-xs tracking-widest animate-pulse flex items-center justify-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              Attention : {expiredCount} produit(s) expiré(s) détecté(s) !
           </div>
       )}
 
@@ -117,7 +117,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
         </h2>
         <div className="flex items-center gap-3">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeDlcs.length} lots actifs</span>
-            <div className="w-3 h-3 bg-rose-500 rounded-full animate-pulse"></div>
+            <div className={`w-3 h-3 rounded-full ${expiredCount > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`}></div>
         </div>
       </div>
       
@@ -137,8 +137,8 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
               <tr key={dlc.id} className={`${dlc.isExpired ? 'bg-rose-50/50' : 'hover:bg-slate-50'} transition-colors`}>
                 <td className="p-6">
                   <span className="font-black text-slate-900 text-sm block">{dlc.itemName}</span>
-                  <div className="text-[10px] font-bold text-indigo-500 uppercase mt-1 bg-indigo-50 inline-block px-2 py-0.5 rounded">
-                      {dlc.storageName}
+                  <div className="text-[10px] font-bold text-indigo-500 uppercase mt-1 bg-indigo-50 inline-block px-2 py-0.5 rounded border border-indigo-100">
+                      📍 {dlc.storageName}
                   </div>
                   <span className="text-[9px] text-slate-400 ml-2">Par: {dlc.userName}</span>
                 </td>
