@@ -360,6 +360,29 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
         </div>
       </header>
 
+      {/* TEMP EVENT NEEDS */}
+      {eventTempNeeds.length > 0 && (
+          <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100 space-y-4">
+              <h3 className="font-black text-purple-800 uppercase tracking-tight flex items-center gap-2">
+                  <span className="w-1.5 h-6 bg-purple-500 rounded-full"></span>
+                  Besoins Événements (Hors Stock)
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {eventTempNeeds.map((need, idx) => (
+                      <div key={idx} className="bg-white p-4 rounded-2xl border border-purple-100 shadow-sm flex justify-between items-center">
+                          <div>
+                              <p className="font-black text-slate-800">{need.name}</p>
+                              <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">{need.eventName}</p>
+                          </div>
+                          <div className="bg-purple-100 text-purple-700 font-black px-3 py-1 rounded-lg">
+                              {need.quantity}
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
       {Object.entries(groupedNeeds).map(([category, aggProducts]: [string, AggregatedNeed[]]) => {
           if (aggProducts.length === 0) return null;
           return (

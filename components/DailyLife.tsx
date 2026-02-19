@@ -319,9 +319,12 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       const item = items.find(i => normalizeText(i.name) === normalizeText(productSearch));
       if (item) {
           setNewEventProducts([...newEventProducts, { itemId: item.id, quantity: parseInt(productQtyInput) || 1 }]);
-          setProductSearch('');
-          setProductQtyInput('1');
+      } else if (productSearch.trim()) {
+          // Temporary item
+          setNewEventProducts([...newEventProducts, { name: productSearch, quantity: parseInt(productQtyInput) || 1, isTemporary: true }]);
       }
+      setProductSearch('');
+      setProductQtyInput('1');
   };
 
   const handleRemoveEventProduct = (index: number) => {
@@ -447,13 +450,16 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                           <div className="md:col-span-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Titre</label><input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} /></div>
                           <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Début</label><input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventStart} onChange={e => setNewEventStart(e.target.value)} /></div>
                           <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fin</label><input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventEnd} onChange={e => setNewEventEnd(e.target.value)} /></div>
+                          <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Lieu</label><input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventLocation} onChange={e => setNewEventLocation(e.target.value)} /></div>
+                          <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre de convives</label><input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventGuests} onChange={e => setNewEventGuests(e.target.value)} /></div>
+                          <div className="md:col-span-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Description</label><textarea className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none h-24 resize-none" value={newEventDesc} onChange={e => setNewEventDesc(e.target.value)} /></div>
                       </div>
                       {/* Produits & Verres (Simplifié) */}
                       <div className="space-y-4">
                           <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
                               <h4 className="font-black text-xs uppercase text-indigo-700 mb-3">Produits</h4>
                               <div className="flex gap-2 mb-3"><input list="evt-prod-list" className="flex-1 bg-white border border-indigo-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Chercher..." value={productSearch} onChange={e => setProductSearch(e.target.value)} /><datalist id="evt-prod-list">{items.map(i => <option key={i.id} value={i.name} />)}</datalist><input type="number" className="w-20 bg-white border border-indigo-200 rounded-lg p-2 text-xs font-bold text-center outline-none" value={productQtyInput} onChange={e => setProductQtyInput(e.target.value)} /><button onClick={handleAddEventProduct} className="bg-indigo-600 text-white px-4 rounded-lg font-black text-xs">+</button></div>
-                              <div className="space-y-1">{newEventProducts.map((p, idx) => (<div key={idx} className="flex justify-between bg-white/50 p-2 rounded-lg text-xs"><span className="font-bold">{items.find(i=>i.id===p.itemId)?.name}</span><div className="flex gap-2"><span className="font-black text-indigo-600">x{p.quantity}</span><button onClick={()=>handleRemoveEventProduct(idx)} className="text-rose-400">✕</button></div></div>))}</div>
+                              <div className="space-y-1">{newEventProducts.map((p, idx) => (<div key={idx} className="flex justify-between bg-white/50 p-2 rounded-lg text-xs"><span className="font-bold">{p.itemId ? items.find(i=>i.id===p.itemId)?.name : p.name} {p.isTemporary && '(Temp)'}</span><div className="flex gap-2"><span className="font-black text-indigo-600">x{p.quantity}</span><button onClick={()=>handleRemoveEventProduct(idx)} className="text-rose-400">✕</button></div></div>))}</div>
                           </div>
                       </div>
                   </div>

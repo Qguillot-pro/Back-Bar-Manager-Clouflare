@@ -230,8 +230,10 @@ export interface EventComment {
 }
 
 export interface EventProduct {
-    itemId: string;
+    itemId?: string; // Optional for temporary items
+    name?: string;   // Mandatory for temporary items, optional if itemId exists (can be derived)
     quantity: number;
+    isTemporary?: boolean;
 }
 
 export interface EventGlasswareNeed {

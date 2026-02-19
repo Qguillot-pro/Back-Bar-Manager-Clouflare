@@ -97,7 +97,25 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   // 4. Messages & Vie Quotidienne Data
   const activeMessages = useMemo(() => messages.filter(m => !m.isArchived).slice(0, 5), [messages]);
   const upcomingEvents = useMemo(() => events.filter(e => new Date(e.endTime) >= new Date()).sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()).slice(0, 3), [events]);
-  const pendingTasksCount = useMemo(() => tasks.filter(t => !t.isDone).length, [tasks]);
+  const pendingTasksCount = useMemo(() => {
+      const now = new Date();
+      const startOfShift = new Date(now);
+      if (now.getHours() < 4) startOfShift.setDate(now.getDate() - 1);
+      startOfShift.setHours(4, 0, 0, 0);
+      const currentDayOfWeek = startOfShift.getDay();
+
+      return tasks.filter(t => {
+          if (!t.recurrence || t.recurrence.length === 0) return !t.isDone;
+          if (t.recurrence.includes(currentDayOfWeek)) {
+              if (t.doneAt) {
+                  const doneDate = new Date(t.doneAt);
+                  return doneDate < startOfShift;
+              }
+              return true;
+          }
+          return false;
+      }).length;
+  }, [tasks]);
 
   // 5. Cocktails Data - CYCLE CALCULATION LOGIC DUPLICATED HERE FOR AUTONOMY
   const getCycleConfig = (type: DailyCocktailType): CycleConfig => {

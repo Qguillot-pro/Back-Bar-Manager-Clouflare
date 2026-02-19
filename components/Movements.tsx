@@ -66,9 +66,14 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
         return;
     }
 
+    if (type === 'OUT' && item.isConsigne) {
+        alert("⚠️ Attention : Bouteille consignée ! Ne pas jeter.");
+    }
+
     onTransaction(item.id, type, quantity, isServiceTransfer);
     setSearch('');
     setQty('1');
+    setIsServiceTransfer(false); // Reset checkbox
   };
 
   const finalizeDlcTransaction = () => {
@@ -160,9 +165,20 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                       </div>
                   </div>
                   
+                  <div className="flex items-center gap-2 px-2">
+                      <input 
+                        type="checkbox" 
+                        id="serviceTransfer" 
+                        checked={isServiceTransfer} 
+                        onChange={e => setIsServiceTransfer(e.target.checked)} 
+                        className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" 
+                      />
+                      <label htmlFor="serviceTransfer" className="text-xs font-black uppercase tracking-widest text-slate-500 cursor-pointer select-none">Transfert Interservice</label>
+                  </div>
+
                   <div className="grid grid-cols-3 gap-4">
-                      <button onClick={() => handleAction('IN')} className="col-span-1 bg-emerald-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 text-xs">Entrée (+)</button>
                       <button onClick={() => handleAction('OUT')} className="col-span-2 bg-rose-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 text-lg">Sortie (-)</button>
+                      <button onClick={() => handleAction('IN')} className="col-span-1 bg-emerald-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 text-xs">Entrée (+)</button>
                   </div>
               </div>
 

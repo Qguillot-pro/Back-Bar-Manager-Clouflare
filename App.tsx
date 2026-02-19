@@ -72,6 +72,34 @@ const App: React.FC = () => {
   const [productSheets, setProductSheets] = useState<ProductSheet[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
 
+  const [loginTime, setLoginTime] = useState<number | null>(null);
+  const [showLogoutSummary, setShowLogoutSummary] = useState(false);
+
+  // AUTO-LOGOUT 3H
+  useEffect(() => {
+      if (!currentUser || !loginTime) return;
+      const interval = setInterval(() => {
+          if (Date.now() - loginTime > 3 * 60 * 60 * 1000) {
+              setCurrentUser(null);
+              setLoginTime(null);
+              setView('dashboard');
+              alert("Session expirée (3h). Veuillez vous reconnecter.");
+          }
+      }, 60000);
+      return () => clearInterval(interval);
+  }, [currentUser, loginTime]);
+
+  const handleLogoutClick = () => {
+      setShowLogoutSummary(true);
+  };
+
+  const confirmLogout = () => {
+      setShowLogoutSummary(false);
+      setCurrentUser(null);
+      setLoginTime(null);
+      setView('dashboard');
+  };
+
   const syncData = async (action: string, payload: any) => {
     // BLOCK SYNC IN TEST MODE
     if (isTestMode) { 
@@ -369,6 +397,7 @@ const App: React.FC = () => {
       const found = users.find(u => u.pin === newPin);
       if (found) { 
           setLoginStatus('success'); 
+          setLoginTime(Date.now()); // AJOUT
           
           // ENREGISTREMENT DU LOG DE CONNEXION ICI
           const logEntry = {
@@ -459,9 +488,52 @@ const App: React.FC = () => {
                 {currentUser.role === 'ADMIN' && <button onClick={() => setShowAdminLogbook(true)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" /></svg></button>}
                 <button onClick={() => setView('configuration')} className={`flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center transition-all ${view === 'configuration' ? 'bg-indigo-600 text-white' : ''}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066" /></svg></button>
             </div>
-            <button onClick={() => {setCurrentUser(null); setView('dashboard');}} className="w-full bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border border-rose-900/20">{!isSidebarCollapsed && "Déconnexion"}<svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7" /></svg></button>
+            <button onClick={handleLogoutClick} className="w-full bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border border-rose-900/20">{!isSidebarCollapsed && "Déconnexion"}<svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7" /></svg></button>
         </div>
       </aside>
+
+      {/* MODAL ACTUALITES / DECONNEXION */}
+      {showLogoutSummary && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white rounded-2xl p-8 max-w-2xl w-full shadow-2xl space-y-6">
+                  <div className="flex justify-between items-center border-b pb-4">
+                      <h2 className="text-2xl font-black text-slate-900 uppercase">Actualités & Fin de Session</h2>
+                      <button onClick={() => setShowLogoutSummary(false)} className="text-slate-400 hover:text-slate-600"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                          <h3 className="font-bold text-indigo-600 uppercase text-xs tracking-widest">Messages du jour</h3>
+                          <div className="bg-slate-50 p-4 rounded-xl h-48 overflow-y-auto custom-scrollbar space-y-2">
+                              {messages.filter(m => !m.isArchived).slice(0, 5).map(m => (
+                                  <div key={m.id} className="text-sm border-l-2 border-indigo-400 pl-3">
+                                      <span className="font-bold text-slate-700">{m.userName}:</span> <span className="text-slate-600">{m.content}</span>
+                                  </div>
+                              ))}
+                              {messages.filter(m => !m.isArchived).length === 0 && <p className="text-slate-400 italic text-sm">Aucun message récent.</p>}
+                          </div>
+                      </div>
+                      <div className="space-y-4">
+                          <h3 className="font-bold text-emerald-600 uppercase text-xs tracking-widest">Événements à venir</h3>
+                          <div className="bg-slate-50 p-4 rounded-xl h-48 overflow-y-auto custom-scrollbar space-y-2">
+                              {events.filter(e => new Date(e.endTime) >= new Date()).slice(0, 3).map(e => (
+                                  <div key={e.id} className="text-sm border-l-2 border-emerald-400 pl-3">
+                                      <div className="font-bold text-slate-700">{e.title}</div>
+                                      <div className="text-xs text-slate-500">{new Date(e.startTime).toLocaleDateString()}</div>
+                                  </div>
+                              ))}
+                              {events.filter(e => new Date(e.endTime) >= new Date()).length === 0 && <p className="text-slate-400 italic text-sm">Aucun événement proche.</p>}
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="flex justify-end gap-4 pt-4 border-t">
+                      <button onClick={() => setShowLogoutSummary(false)} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors">Retour</button>
+                      <button onClick={confirmLogout} className="px-6 py-3 rounded-xl font-bold bg-rose-600 text-white hover:bg-rose-700 shadow-lg shadow-rose-900/20 transition-all">Confirmer la Déconnexion</button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 relative">
           {isTestMode && <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-black uppercase px-2 py-1 z-[100] rounded-bl-lg">Mode Test Actif - Aucune Sauvegarde</div>}
@@ -476,7 +548,7 @@ const App: React.FC = () => {
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
           {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { setOrders(prev => prev.map(o => o.id === id ? { ...o, quantity: q, status: s || o.status, ruptureDate: r } : o)); syncData('SAVE_ORDER', { id, quantity: q, status: s, ruptureDate: r }); }} onDeleteOrder={(id) => { setOrders(prev => prev.filter(o => o.id !== id)); syncData('DELETE_ORDER', { id }); }} onAddManualOrder={(itemId, qty) => { const order: PendingOrder = { id: 'ord_' + Date.now(), itemId, quantity: qty, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name }; setOrders(prev => [...prev, order]); syncData('SAVE_ORDER', order); }} formats={formats} events={events} emailTemplates={emailTemplates} />}
           {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={storages} unfulfilledOrders={unfulfilledOrders} formats={formats} losses={losses} onUpdateOrderQuantity={(ids, q) => { ids.forEach(id => { const o = orders.find(ord => ord.id === id); if (o) { const updated = { ...o, status: 'RECEIVED' as const, receivedAt: new Date().toISOString(), quantity: q }; setOrders(p => p.map(x => x.id === id ? updated : x)); syncData('SAVE_ORDER', updated); } }); }} />}
-          {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={storages} onDelete={(id, qty) => { const target = dlcHistory.find(h => h.id === id); if(target) { const loss: Loss = { id: 'loss_'+Date.now(), itemId: target.itemId, openedAt: target.openedAt, discardedAt: new Date().toISOString(), quantity: qty || 0, userName: currentUser?.name }; setLosses(p=>[loss,...p]); syncData('SAVE_LOSS', loss); setDlcHistory(p => p.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', { id }); } }} />}
+          {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={storages} userRole={currentUser.role} onDelete={(id, qty) => { const target = dlcHistory.find(h => h.id === id); if(target) { const loss: Loss = { id: 'loss_'+Date.now(), itemId: target.itemId, openedAt: target.openedAt, discardedAt: new Date().toISOString(), quantity: qty || 0, userName: currentUser?.name }; setLosses(p=>[loss,...p]); syncData('SAVE_LOSS', loss); setDlcHistory(p => p.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', { id }); } }} onEdit={(id, newDate) => { setDlcHistory(prev => prev.map(h => h.id === id ? { ...h, openedAt: newDate } : h)); syncData('UPDATE_DLC_HISTORY', { id, openedAt: newDate }); }} />}
           {view === 'articles' && <ArticlesList items={items} setItems={setItems} formats={formats} categories={categories} onDelete={(id) => { setItems(p => p.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); }} userRole={currentUser.role} dlcProfiles={dlcProfiles} onSync={syncData} events={events} recipes={recipes} />}
           {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} />}
           {view === 'product_knowledge' && <ProductKnowledge sheets={productSheets} items={items} currentUserRole={currentUser.role} onSync={syncData} productTypes={productTypes} />}

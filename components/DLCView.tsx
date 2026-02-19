@@ -8,12 +8,34 @@ interface DLCViewProps {
   dlcProfiles: DLCProfile[];
   storages: StorageSpace[];
   onDelete: (id: string, qtyLostPercent?: number) => void;
+  userRole?: string; // AJOUT
+  onEdit?: (id: string, newDate: string) => void; // AJOUT
 }
 
-const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete }) => {
+const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete, userRole, onEdit }) => {
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [selectedDlcId, setSelectedDlcId] = useState<string | null>(null);
-  const [percentLost, setPercentLost] = useState<number>(0);
+  const [percentLost, setPercentLost] = useState<number>(100); // Default 100%
+
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editDate, setEditDate] = useState('');
+
+  const handleEditClick = (dlc: any) => {
+      setSelectedDlcId(dlc.id);
+      // Format date for input datetime-local
+      const d = new Date(dlc.openedDate);
+      const iso = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+      setEditDate(iso);
+      setEditModalOpen(true);
+  };
+
+  const confirmEdit = () => {
+      if (selectedDlcId && onEdit && editDate) {
+          onEdit(selectedDlcId, new Date(editDate).toISOString());
+          setEditModalOpen(false);
+          setSelectedDlcId(null);
+      }
+  };
 
   const activeDlcs = useMemo(() => {
     if (!dlcHistory || !items) return [];
@@ -126,6 +148,24 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
           </div>
       )}
 
+      {editModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl text-center space-y-6">
+                  <h3 className="text-xl font-black text-slate-900 uppercase">Modifier Date Ouverture</h3>
+                  <input 
+                      type="datetime-local" 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900"
+                      value={editDate}
+                      onChange={(e) => setEditDate(e.target.value)}
+                  />
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                      <button onClick={() => setEditModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Annuler</button>
+                      <button onClick={confirmEdit} className="py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">Enregistrer</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="p-6 border-b bg-slate-50 flex flex-col md:flex-row justify-between items-center gap-4">
         <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
             <span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>
@@ -165,9 +205,18 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                        {formatDuration(dlc.timeLeft)}
                    </span>
                 </td>
-                <td className="p-6 text-center">
+                <td className="p-6 text-center flex items-center justify-center gap-2">
+                    {userRole === 'ADMIN' && (
+                        <button 
+                            onClick={() => handleEditClick(dlc)}
+                            className="p-3 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-2xl transition-all active:scale-90"
+                            title="Modifier la date"
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                        </button>
+                    )}
                     <button 
-                        onClick={() => { setSelectedDlcId(dlc.id); setPercentLost(0); setLossModalOpen(true); }} 
+                        onClick={() => { setSelectedDlcId(dlc.id); setPercentLost(100); setLossModalOpen(true); }} 
                         className="p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all active:scale-90"
                         title="Signaler la perte ou fin de vie"
                     >

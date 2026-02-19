@@ -30,11 +30,11 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
   const pendingOrders = useMemo(() => (orders || []).filter(o => o.status === 'PENDING'), [orders]);
   const orderedOrders = useMemo(() => (orders || []).filter(o => o.status === 'ORDERED'), [orders]);
 
-  // Upcoming Event Suggestions (10 days)
+  // Upcoming Event Suggestions (8 days)
   const eventSuggestions = useMemo(() => {
       const now = new Date();
       const limit = new Date();
-      limit.setDate(limit.getDate() + 10);
+      limit.setDate(limit.getDate() + 8); // 8 jours
 
       const suggestions: { event: Event, products: EventProduct[] }[] = [];
 
@@ -43,18 +43,15 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
           if (start >= now && start <= limit && evt.productsJson) {
               try {
                   const prods: EventProduct[] = JSON.parse(evt.productsJson);
-                  // Filter out products that are already in pending or ordered
-                  const neededProds = prods.filter(p => {
-                      return !orders.some(o => o.itemId === p.itemId && (o.status === 'PENDING' || o.status === 'ORDERED'));
-                  });
-                  if (neededProds.length > 0) {
-                      suggestions.push({ event: evt, products: neededProds });
+                  // Ne pas filtrer les produits déjà commandés (Demande: "ne pas cumuler")
+                  if (prods.length > 0) {
+                      suggestions.push({ event: evt, products: prods });
                   }
               } catch(e) {}
           }
       });
       return suggestions;
-  }, [events, orders]);
+  }, [events]);
 
   const handleValidateAll = () => {
       if (window.confirm(`Valider l'envoi de ${pendingOrders.length} lignes de commande ?`)) {
@@ -76,8 +73,22 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
       }
   };
 
-  const addEventProduct = (itemId: string, qty: number) => {
-      onAddManualOrder(itemId, qty);
+  const addEventProduct = (itemId: string | undefined, name: string | undefined, qty: number) => {
+      if (itemId) {
+          onAddManualOrder(itemId, qty);
+      } else if (name) {
+          // Pour les produits temporaires, on cherche s'il existe déjà ou on alerte
+          const existing = items.find(i => normalizeText(i.name) === normalizeText(name));
+          if (existing) {
+              onAddManualOrder(existing.id, qty);
+          } else {
+              // Création d'un produit temporaire via le parent si possible, sinon alerte
+              // Ici on va juste alerter car onAddManualOrder attend un ID.
+              // Idéalement il faudrait pouvoir créer un item temporaire ici.
+              // On va utiliser un hack: passer un ID spécial ou demander à l'utilisateur.
+              alert(`Le produit "${name}" n'existe pas dans la base. Veuillez le créer ou l'ajouter manuellement.`);
+          }
+      }
   };
 
   const toggleSelection = (id: string) => {
@@ -232,12 +243,13 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
                                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{safeDateString(sug.event.startTime)}</p>
                                   </div>
                                   <div className="space-y-2">
-                                      {sug.products.map(p => {
-                                          const item = items.find(i => i.id === p.itemId);
+                                      {sug.products.map((p, idx) => {
+                                          const item = p.itemId ? items.find(i => i.id === p.itemId) : null;
+                                          const displayName = item?.name || p.name || 'Produit Inconnu';
                                           return (
-                                              <div key={p.itemId} className="flex justify-between items-center bg-slate-50 p-2 rounded-xl">
-                                                  <span className="text-xs font-bold text-slate-700">{item?.name}</span>
-                                                  <button onClick={() => addEventProduct(p.itemId, p.quantity)} className="bg-purple-500 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase hover:bg-purple-600 transition-colors">
+                                              <div key={p.itemId || idx} className="flex justify-between items-center bg-slate-50 p-2 rounded-xl">
+                                                  <span className="text-xs font-bold text-slate-700">{displayName}</span>
+                                                  <button onClick={() => addEventProduct(p.itemId, p.name, p.quantity)} className="bg-purple-500 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase hover:bg-purple-600 transition-colors">
                                                       Ajouter (+{p.quantity})
                                                   </button>
                                               </div>
