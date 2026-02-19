@@ -97,11 +97,27 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl text-center space-y-6">
                   <h3 className="text-xl font-black text-slate-900 uppercase">Jeter le produit</h3>
                   <p className="text-xs text-slate-500 font-bold">Quelle part du produit a été perdue ?</p>
-                  <div className="grid grid-cols-3 gap-2">
-                      {[0, 50, 100].map(p => (
-                          <button key={p} onClick={() => setPercentLost(p)} className={`py-3 rounded-xl font-black transition-all ${percentLost === p ? 'bg-rose-500 text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{p === 0 ? 'Vide' : p+'%'}</button>
-                      ))}
+                  
+                  <div className="space-y-4 py-4">
+                      <div className="text-center font-black text-3xl text-rose-500">
+                          {percentLost}% <span className="text-sm text-slate-400 font-bold uppercase">Perdu</span>
+                      </div>
+                      <input 
+                          type="range" 
+                          min="0" 
+                          max="100" 
+                          step="10" 
+                          className="w-full h-3 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-500 hover:bg-slate-200 transition-colors"
+                          value={percentLost}
+                          onChange={(e) => setPercentLost(parseInt(e.target.value))}
+                      />
+                      <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                          <span>Vide (0%)</span>
+                          <span>Moitié (50%)</span>
+                          <span>Plein (100%)</span>
+                      </div>
                   </div>
+
                   <div className="grid grid-cols-2 gap-3 pt-2">
                       <button onClick={() => setLossModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Annuler</button>
                       <button onClick={handleConfirmLoss} className="py-3 bg-rose-500 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-rose-200">Valider</button>
@@ -151,7 +167,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                 </td>
                 <td className="p-6 text-center">
                     <button 
-                        onClick={() => { setSelectedDlcId(dlc.id); setLossModalOpen(true); }} 
+                        onClick={() => { setSelectedDlcId(dlc.id); setPercentLost(0); setLossModalOpen(true); }} 
                         className="p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all active:scale-90"
                         title="Signaler la perte ou fin de vie"
                     >
