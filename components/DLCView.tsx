@@ -8,34 +8,18 @@ interface DLCViewProps {
   dlcProfiles: DLCProfile[];
   storages: StorageSpace[];
   onDelete: (id: string, qtyLostPercent?: number) => void;
-  userRole?: string; // AJOUT
-  onEdit?: (id: string, newDate: string) => void; // AJOUT
+  onUpdateDlc?: (dlc: DLCHistory) => void;
+  userRole?: string;
 }
 
-const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete, userRole, onEdit }) => {
+const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete, onUpdateDlc, userRole }) => {
   const [lossModalOpen, setLossModalOpen] = useState(false);
-  const [selectedDlcId, setSelectedDlcId] = useState<string | null>(null);
-  const [percentLost, setPercentLost] = useState<number>(100); // Default 100%
-
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedDlcId, setSelectedDlcId] = useState<string | null>(null);
+  const [percentLost, setPercentLost] = useState<number>(0);
+  
   const [editDate, setEditDate] = useState('');
-
-  const handleEditClick = (dlc: any) => {
-      setSelectedDlcId(dlc.id);
-      // Format date for input datetime-local
-      const d = new Date(dlc.openedDate);
-      const iso = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-      setEditDate(iso);
-      setEditModalOpen(true);
-  };
-
-  const confirmEdit = () => {
-      if (selectedDlcId && onEdit && editDate) {
-          onEdit(selectedDlcId, new Date(editDate).toISOString());
-          setEditModalOpen(false);
-          setSelectedDlcId(null);
-      }
-  };
+  const [editTime, setEditTime] = useState('');
 
   const activeDlcs = useMemo(() => {
     if (!dlcHistory || !items) return [];
@@ -97,6 +81,26 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       }
   };
 
+  const handleOpenEdit = (dlcId: string, openedAt: string) => {
+      setSelectedDlcId(dlcId);
+      const d = new Date(openedAt);
+      setEditDate(d.toISOString().split('T')[0]);
+      setEditTime(d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+      setEditModalOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+      if (selectedDlcId && onUpdateDlc) {
+          const dlc = dlcHistory.find(d => d.id === selectedDlcId);
+          if (dlc) {
+              const newDate = new Date(`${editDate}T${editTime}`);
+              onUpdateDlc({ ...dlc, openedAt: newDate.toISOString() });
+          }
+          setEditModalOpen(false);
+          setSelectedDlcId(null);
+      }
+  };
+
   const safeDateString = (date: Date) => {
       return !isNaN(date.getTime()) 
         ? date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
@@ -151,16 +155,20 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       {editModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl text-center space-y-6">
-                  <h3 className="text-xl font-black text-slate-900 uppercase">Modifier Date Ouverture</h3>
-                  <input 
-                      type="datetime-local" 
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-900"
-                      value={editDate}
-                      onChange={(e) => setEditDate(e.target.value)}
-                  />
+                  <h3 className="text-xl font-black text-slate-900 uppercase">Modifier DLC</h3>
+                  <div className="space-y-4 text-left">
+                      <div>
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Date d'ouverture</label>
+                          <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={editDate} onChange={e => setEditDate(e.target.value)} />
+                      </div>
+                      <div>
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Heure</label>
+                          <input type="time" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={editTime} onChange={e => setEditTime(e.target.value)} />
+                      </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-3 pt-2">
                       <button onClick={() => setEditModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Annuler</button>
-                      <button onClick={confirmEdit} className="py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">Enregistrer</button>
+                      <button onClick={handleSaveEdit} className="py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">Sauvegarder</button>
                   </div>
               </div>
           </div>
@@ -205,25 +213,27 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                        {formatDuration(dlc.timeLeft)}
                    </span>
                 </td>
-                <td className="p-6 text-center flex items-center justify-center gap-2">
-                    {userRole === 'ADMIN' && (
+                <td className="p-6 text-center">
+                    <div className="flex justify-center gap-2">
+                        {userRole === 'ADMIN' && (
+                            <button 
+                                onClick={() => handleOpenEdit(dlc.id, dlc.openedDate.toISOString())}
+                                className="p-3 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-2xl transition-all active:scale-90"
+                                title="Modifier la date"
+                            >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            </button>
+                        )}
                         <button 
-                            onClick={() => handleEditClick(dlc)}
-                            className="p-3 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-2xl transition-all active:scale-90"
-                            title="Modifier la date"
+                            onClick={() => { setSelectedDlcId(dlc.id); setPercentLost(0); setLossModalOpen(true); }} 
+                            className="p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all active:scale-90"
+                            title="Signaler la perte ou fin de vie"
                         >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
                         </button>
-                    )}
-                    <button 
-                        onClick={() => { setSelectedDlcId(dlc.id); setPercentLost(100); setLossModalOpen(true); }} 
-                        className="p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all active:scale-90"
-                        title="Signaler la perte ou fin de vie"
-                    >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                    </button>
+                    </div>
                 </td>
               </tr>
             ))}

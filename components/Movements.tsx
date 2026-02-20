@@ -35,6 +35,10 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [tempItemName, setTempItemName] = useState('');
   const [tempItemQty, setTempItemQty] = useState<number>(0);
 
+  const [consigneModalOpen, setConsigneModalOpen] = useState(false);
+  const [pendingConsigneItem, setPendingConsigneItem] = useState<StockItem | null>(null);
+  const [pendingConsigneAction, setPendingConsigneAction] = useState<'IN' | 'OUT'>('OUT');
+
   const handleAction = (type: 'IN' | 'OUT') => {
     // Validation stricte : Pas de décimales
     if (qty.includes('.') || qty.includes(',')) {
@@ -66,14 +70,29 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
         return;
     }
 
-    if (type === 'OUT' && item.isConsigne) {
-        alert("⚠️ Attention : Bouteille consignée ! Ne pas jeter.");
+    // Logique Consigne (Popup)
+    if (item.isConsigne) {
+        setPendingConsigneItem(item);
+        setPendingConsigneAction(type);
+        setConsigneModalOpen(true);
+        return;
     }
 
     onTransaction(item.id, type, quantity, isServiceTransfer);
     setSearch('');
     setQty('1');
-    setIsServiceTransfer(false); // Reset checkbox
+    setIsServiceTransfer(false);
+  };
+
+  const finalizeConsigneTransaction = () => {
+      if (!pendingConsigneItem) return;
+      let quantity = parseInt(qty, 10) || 1;
+      onTransaction(pendingConsigneItem.id, pendingConsigneAction, quantity, isServiceTransfer);
+      setConsigneModalOpen(false);
+      setPendingConsigneItem(null);
+      setSearch('');
+      setQty('1');
+      setIsServiceTransfer(false);
   };
 
   const finalizeDlcTransaction = () => {
@@ -126,6 +145,23 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
           </div>
       )}
 
+      {consigneModalOpen && (
+          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full text-center space-y-6 shadow-2xl">
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <span className="text-3xl">♻️</span>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{pendingConsigneItem?.name}</h3>
+                  <p className="text-sm font-bold text-slate-600">
+                      Ce produit est consigné.<br/>
+                      {pendingConsigneAction === 'OUT' ? "N'oubliez pas de récupérer la consigne vide !" : "Avez-vous bien stocké les consignes pleines ?"}
+                  </p>
+                  <button onClick={finalizeConsigneTransaction} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-blue-700 transition-all">J'ai compris</button>
+                  <button onClick={() => setConsigneModalOpen(false)} className="text-slate-400 font-bold text-xs uppercase underline">Annuler</button>
+              </div>
+          </div>
+      )}
+
       {/* TABS */}
       <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex gap-2">
           <button onClick={() => setActiveTab('MOVEMENTS')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>Mouvements</button>
@@ -165,20 +201,19 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                       </div>
                   </div>
                   
-                  <div className="flex items-center gap-2 px-2">
-                      <input 
-                        type="checkbox" 
-                        id="serviceTransfer" 
-                        checked={isServiceTransfer} 
-                        onChange={e => setIsServiceTransfer(e.target.checked)} 
-                        className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" 
-                      />
-                      <label htmlFor="serviceTransfer" className="text-xs font-black uppercase tracking-widest text-slate-500 cursor-pointer select-none">Transfert Interservice</label>
+                  <div className="flex items-center gap-2 px-1">
+                      <label className="flex items-center gap-2 cursor-pointer group">
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${isServiceTransfer ? 'bg-purple-500 border-purple-500' : 'border-slate-300 bg-white'}`}>
+                              <input type="checkbox" className="hidden" checked={isServiceTransfer} onChange={e => setIsServiceTransfer(e.target.checked)} />
+                              {isServiceTransfer && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>}
+                          </div>
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${isServiceTransfer ? 'text-purple-600' : 'text-slate-400 group-hover:text-slate-600'}`}>Transfert Interservice</span>
+                      </label>
                   </div>
 
                   <div className="grid grid-cols-3 gap-4">
-                      <button onClick={() => handleAction('OUT')} className="col-span-2 bg-rose-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 text-lg">Sortie (-)</button>
                       <button onClick={() => handleAction('IN')} className="col-span-1 bg-emerald-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 text-xs">Entrée (+)</button>
+                      <button onClick={() => handleAction('OUT')} className="col-span-2 bg-rose-500 text-white py-6 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 text-lg">Sortie (-)</button>
                   </div>
               </div>
 
@@ -199,9 +234,13 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                           <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm animate-in slide-in-from-right duration-300" style={{animationDelay: `${idx*50}ms`}}>
                               <div>
                                   <p className="font-bold text-slate-800 text-sm">{item?.name || 'Inconnu'}</p>
-                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                                      {!isNaN(d.getTime()) ? d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'} • {t.userName}
-                                  </p>
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                          {!isNaN(d.getTime()) ? d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'} • {t.userName}
+                                      </span>
+                                      {t.note === 'Régulation' && <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1.5 rounded uppercase tracking-wider">Régulation</span>}
+                                      {t.isServiceTransfer && <span className="text-[8px] font-black bg-purple-100 text-purple-700 px-1.5 rounded uppercase tracking-wider">Interservice</span>}
+                                  </div>
                               </div>
                               <div className={`px-3 py-1.5 rounded-lg font-black text-xs ${t.type === 'IN' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
                                   {t.type === 'IN' ? '+' : '-'}{t.quantity}

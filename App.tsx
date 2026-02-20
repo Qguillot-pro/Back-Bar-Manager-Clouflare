@@ -72,34 +72,6 @@ const App: React.FC = () => {
   const [productSheets, setProductSheets] = useState<ProductSheet[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
 
-  const [loginTime, setLoginTime] = useState<number | null>(null);
-  const [showLogoutSummary, setShowLogoutSummary] = useState(false);
-
-  // AUTO-LOGOUT 3H
-  useEffect(() => {
-      if (!currentUser || !loginTime) return;
-      const interval = setInterval(() => {
-          if (Date.now() - loginTime > 3 * 60 * 60 * 1000) {
-              setCurrentUser(null);
-              setLoginTime(null);
-              setView('dashboard');
-              alert("Session expirée (3h). Veuillez vous reconnecter.");
-          }
-      }, 60000);
-      return () => clearInterval(interval);
-  }, [currentUser, loginTime]);
-
-  const handleLogoutClick = () => {
-      setShowLogoutSummary(true);
-  };
-
-  const confirmLogout = () => {
-      setShowLogoutSummary(false);
-      setCurrentUser(null);
-      setLoginTime(null);
-      setView('dashboard');
-  };
-
   const syncData = async (action: string, payload: any) => {
     // BLOCK SYNC IN TEST MODE
     if (isTestMode) { 
@@ -172,6 +144,36 @@ const App: React.FC = () => {
   };
 
   useEffect(() => { fetchAuthData(); }, []);
+
+  // SESSION TIMEOUT LOGIC (3 HOURS)
+  useEffect(() => {
+      let timeout: NodeJS.Timeout;
+      const resetTimer = () => {
+          clearTimeout(timeout);
+          if (currentUser) {
+              timeout = setTimeout(() => {
+                  setCurrentUser(null);
+                  setView('dashboard');
+                  alert("Session expirée (3h d'inactivité). Veuillez vous reconnecter.");
+              }, 3 * 60 * 60 * 1000); // 3 heures
+          }
+      };
+
+      window.addEventListener('mousemove', resetTimer);
+      window.addEventListener('keydown', resetTimer);
+      window.addEventListener('click', resetTimer);
+      window.addEventListener('touchstart', resetTimer);
+
+      resetTimer(); // Init
+
+      return () => {
+          clearTimeout(timeout);
+          window.removeEventListener('mousemove', resetTimer);
+          window.removeEventListener('keydown', resetTimer);
+          window.removeEventListener('click', resetTimer);
+          window.removeEventListener('touchstart', resetTimer);
+      };
+  }, [currentUser]);
 
   const handleUndoLastTransaction = () => {
     if (transactions.length === 0) return;
@@ -383,10 +385,29 @@ const App: React.FC = () => {
           syncData('SAVE_STOCK', { itemId, storageId, currentQuantity: currentQty + qtyNeeded });
       }
       if ((qtyToOrder && qtyToOrder > 0) || isRupture) {
-          const order: PendingOrder = { id: 'ord_' + Date.now(), itemId, quantity: qtyToOrder || 0, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name, ruptureDate: isRupture ? new Date().toISOString() : undefined };
-          setOrders(prev => [...prev, order]);
-          syncData('SAVE_ORDER', order);
+          // MERGE LOGIC: Check if pending order exists
+          const existingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
+          if (existingOrder) {
+              const newOrderQty = (existingOrder.quantity || 0) + (qtyToOrder || 0);
+              const updatedOrder = { ...existingOrder, quantity: newOrderQty, ruptureDate: isRupture ? new Date().toISOString() : existingOrder.ruptureDate };
+              setOrders(prev => prev.map(o => o.id === existingOrder.id ? updatedOrder : o));
+              syncData('SAVE_ORDER', updatedOrder);
+          } else {
+              const order: PendingOrder = { id: 'ord_' + Date.now(), itemId, quantity: qtyToOrder || 0, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name, ruptureDate: isRupture ? new Date().toISOString() : undefined };
+              setOrders(prev => [...prev, order]);
+              syncData('SAVE_ORDER', order);
+          }
       }
+  };
+
+  const handleEditTask = (task: Task) => {
+      setTasks(prev => prev.map(t => t.id === task.id ? task : t));
+      syncData('SAVE_TASK', task);
+  };
+
+  const handleUpdateDlc = (dlc: DLCHistory) => {
+      setDlcHistory(prev => prev.map(d => d.id === dlc.id ? dlc : d));
+      syncData('SAVE_DLC_HISTORY', dlc);
   };
 
   const handlePinInput = useCallback((num: string) => {
@@ -397,7 +418,6 @@ const App: React.FC = () => {
       const found = users.find(u => u.pin === newPin);
       if (found) { 
           setLoginStatus('success'); 
-          setLoginTime(Date.now()); // AJOUT
           
           // ENREGISTREMENT DU LOG DE CONNEXION ICI
           const logEntry = {
@@ -488,67 +508,35 @@ const App: React.FC = () => {
                 {currentUser.role === 'ADMIN' && <button onClick={() => setShowAdminLogbook(true)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" /></svg></button>}
                 <button onClick={() => setView('configuration')} className={`flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center transition-all ${view === 'configuration' ? 'bg-indigo-600 text-white' : ''}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066" /></svg></button>
             </div>
-            <button onClick={handleLogoutClick} className="w-full bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border border-rose-900/20">{!isSidebarCollapsed && "Déconnexion"}<svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7" /></svg></button>
+            <button onClick={() => {setCurrentUser(null); setView('dashboard');}} className="w-full bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border border-rose-900/20">{!isSidebarCollapsed && "Déconnexion"}<svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7" /></svg></button>
         </div>
       </aside>
-
-      {/* MODAL ACTUALITES / DECONNEXION */}
-      {showLogoutSummary && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-              <div className="bg-white rounded-2xl p-8 max-w-2xl w-full shadow-2xl space-y-6">
-                  <div className="flex justify-between items-center border-b pb-4">
-                      <h2 className="text-2xl font-black text-slate-900 uppercase">Actualités & Fin de Session</h2>
-                      <button onClick={() => setShowLogoutSummary(false)} className="text-slate-400 hover:text-slate-600"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                          <h3 className="font-bold text-indigo-600 uppercase text-xs tracking-widest">Messages du jour</h3>
-                          <div className="bg-slate-50 p-4 rounded-xl h-48 overflow-y-auto custom-scrollbar space-y-2">
-                              {messages.filter(m => !m.isArchived).slice(0, 5).map(m => (
-                                  <div key={m.id} className="text-sm border-l-2 border-indigo-400 pl-3">
-                                      <span className="font-bold text-slate-700">{m.userName}:</span> <span className="text-slate-600">{m.content}</span>
-                                  </div>
-                              ))}
-                              {messages.filter(m => !m.isArchived).length === 0 && <p className="text-slate-400 italic text-sm">Aucun message récent.</p>}
-                          </div>
-                      </div>
-                      <div className="space-y-4">
-                          <h3 className="font-bold text-emerald-600 uppercase text-xs tracking-widest">Événements à venir</h3>
-                          <div className="bg-slate-50 p-4 rounded-xl h-48 overflow-y-auto custom-scrollbar space-y-2">
-                              {events.filter(e => new Date(e.endTime) >= new Date()).slice(0, 3).map(e => (
-                                  <div key={e.id} className="text-sm border-l-2 border-emerald-400 pl-3">
-                                      <div className="font-bold text-slate-700">{e.title}</div>
-                                      <div className="text-xs text-slate-500">{new Date(e.startTime).toLocaleDateString()}</div>
-                                  </div>
-                              ))}
-                              {events.filter(e => new Date(e.endTime) >= new Date()).length === 0 && <p className="text-slate-400 italic text-sm">Aucun événement proche.</p>}
-                          </div>
-                      </div>
-                  </div>
-
-                  <div className="flex justify-end gap-4 pt-4 border-t">
-                      <button onClick={() => setShowLogoutSummary(false)} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors">Retour</button>
-                      <button onClick={confirmLogout} className="px-6 py-3 rounded-xl font-bold bg-rose-600 text-white hover:bg-rose-700 shadow-lg shadow-rose-900/20 transition-all">Confirmer la Déconnexion</button>
-                  </div>
-              </div>
-          </div>
-      )}
 
       <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 relative">
           {isTestMode && <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-black uppercase px-2 py-1 z-[100] rounded-bl-lg">Mode Test Actif - Aucune Sauvegarde</div>}
           {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} />}
           {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
-          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={(k, v) => { setAppConfig(p => ({...p, [k]: v})); syncData('SAVE_CONFIG', {key: k, value: JSON.stringify(v)}); }} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} />}
+          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={(k, v) => { setAppConfig(p => ({...p, [k]: v})); syncData('SAVE_CONFIG', {key: k, value: JSON.stringify(v)}); }} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} />}
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} />}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={(id, s, t) => { const d = { id:'dlc_'+Date.now(), itemId:id, storageId:s, openedAt:new Date().toISOString(), userName:currentUser.name }; setDlcHistory(p=>[d, ...p]); syncData('SAVE_DLC_HISTORY', d); }} onDlcConsumption={(id) => { const old = dlcHistory.filter(h=>h.itemId===id).sort((a,b)=>new Date(a.openedAt).getTime()-new Date(b.openedAt).getTime())[0]; if(old){ setDlcHistory(p=>p.filter(h=>h.id!==old.id)); syncData('DELETE_DLC_HISTORY', {id: old.id}); } }} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } }} onUndo={handleUndoLastTransaction} />}
           {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} />}
           {view === 'inventory' && <GlobalInventory items={items} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} />}
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
-          {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { setOrders(prev => prev.map(o => o.id === id ? { ...o, quantity: q, status: s || o.status, ruptureDate: r } : o)); syncData('SAVE_ORDER', { id, quantity: q, status: s, ruptureDate: r }); }} onDeleteOrder={(id) => { setOrders(prev => prev.filter(o => o.id !== id)); syncData('DELETE_ORDER', { id }); }} onAddManualOrder={(itemId, qty) => { const order: PendingOrder = { id: 'ord_' + Date.now(), itemId, quantity: qty, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name }; setOrders(prev => [...prev, order]); syncData('SAVE_ORDER', order); }} formats={formats} events={events} emailTemplates={emailTemplates} />}
+          {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { setOrders(prev => prev.map(o => o.id === id ? { ...o, quantity: q, status: s || o.status, ruptureDate: r } : o)); syncData('SAVE_ORDER', { id, quantity: q, status: s, ruptureDate: r }); }} onDeleteOrder={(id) => { setOrders(prev => prev.filter(o => o.id !== id)); syncData('DELETE_ORDER', { id }); }} onAddManualOrder={(itemId, qty) => { 
+              const existing = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
+              if (existing) {
+                  const updated = { ...existing, quantity: (existing.quantity || 0) + qty };
+                  setOrders(prev => prev.map(o => o.id === existing.id ? updated : o));
+                  syncData('SAVE_ORDER', updated);
+              } else {
+                  const order: PendingOrder = { id: 'ord_' + Date.now(), itemId, quantity: qty, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name }; 
+                  setOrders(prev => [...prev, order]); 
+                  syncData('SAVE_ORDER', order); 
+              }
+          }} formats={formats} events={events} emailTemplates={emailTemplates} />}
           {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={storages} unfulfilledOrders={unfulfilledOrders} formats={formats} losses={losses} onUpdateOrderQuantity={(ids, q) => { ids.forEach(id => { const o = orders.find(ord => ord.id === id); if (o) { const updated = { ...o, status: 'RECEIVED' as const, receivedAt: new Date().toISOString(), quantity: q }; setOrders(p => p.map(x => x.id === id ? updated : x)); syncData('SAVE_ORDER', updated); } }); }} />}
-          {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={storages} userRole={currentUser.role} onDelete={(id, qty) => { const target = dlcHistory.find(h => h.id === id); if(target) { const loss: Loss = { id: 'loss_'+Date.now(), itemId: target.itemId, openedAt: target.openedAt, discardedAt: new Date().toISOString(), quantity: qty || 0, userName: currentUser?.name }; setLosses(p=>[loss,...p]); syncData('SAVE_LOSS', loss); setDlcHistory(p => p.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', { id }); } }} onEdit={(id, newDate) => { setDlcHistory(prev => prev.map(h => h.id === id ? { ...h, openedAt: newDate } : h)); syncData('UPDATE_DLC_HISTORY', { id, openedAt: newDate }); }} />}
+          {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={storages} onDelete={(id, qty) => { const target = dlcHistory.find(h => h.id === id); if(target) { const loss: Loss = { id: 'loss_'+Date.now(), itemId: target.itemId, openedAt: target.openedAt, discardedAt: new Date().toISOString(), quantity: qty || 0, userName: currentUser?.name }; setLosses(p=>[loss,...p]); syncData('SAVE_LOSS', loss); setDlcHistory(p => p.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', { id }); } }} onUpdateDlc={handleUpdateDlc} userRole={currentUser.role} />}
           {view === 'articles' && <ArticlesList items={items} setItems={setItems} formats={formats} categories={categories} onDelete={(id) => { setItems(p => p.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); }} userRole={currentUser.role} dlcProfiles={dlcProfiles} onSync={syncData} events={events} recipes={recipes} />}
           {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} />}
           {view === 'product_knowledge' && <ProductKnowledge sheets={productSheets} items={items} currentUserRole={currentUser.role} onSync={syncData} productTypes={productTypes} />}

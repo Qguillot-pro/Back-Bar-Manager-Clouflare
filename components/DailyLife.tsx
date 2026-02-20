@@ -23,6 +23,7 @@ interface DailyLifeProps {
   saveConfig?: (key: string, value: any) => void;
   initialTab?: string;
   cocktailCategories?: CocktailCategory[];
+  onEditTask?: (task: Task) => void;
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -36,11 +37,17 @@ const getBarDateStr = (d: Date = new Date()) => {
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
-    appConfig, saveConfig, initialTab, cocktailCategories = []
+    appConfig, saveConfig, initialTab, cocktailCategories = [], onEditTask
 }) => {
   const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS'>('TASKS');
   const [configCycleType, setConfigCycleType] = useState<DailyCocktailType | null>(null); 
   
+  // Task Filters
+  const [showArchived, setShowArchived] = useState(false);
+  const [showRecurringOnly, setShowRecurringOnly] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editTaskContent, setEditTaskContent] = useState('');
+
   useEffect(() => {
       if (initialTab && (initialTab === 'TASKS' || initialTab === 'CALENDAR' || initialTab === 'COCKTAILS')) {
           setActiveTab(initialTab as any);
@@ -319,12 +326,9 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       const item = items.find(i => normalizeText(i.name) === normalizeText(productSearch));
       if (item) {
           setNewEventProducts([...newEventProducts, { itemId: item.id, quantity: parseInt(productQtyInput) || 1 }]);
-      } else if (productSearch.trim()) {
-          // Temporary item
-          setNewEventProducts([...newEventProducts, { name: productSearch, quantity: parseInt(productQtyInput) || 1, isTemporary: true }]);
+          setProductSearch('');
+          setProductQtyInput('1');
       }
-      setProductSearch('');
-      setProductQtyInput('1');
   };
 
   const handleRemoveEventProduct = (index: number) => {
@@ -358,14 +362,31 @@ const DailyLife: React.FC<DailyLifeProps> = ({
     const currentDayOfWeek = startOfShift.getDay(); // 0=Dim, 1=Lun...
 
     return tasks.filter(t => {
-        // Tâche normale non faite
-        if (!t.recurrence || t.recurrence.length === 0) {
+        const isRecurring = t.recurrence && t.recurrence.length > 0;
+
+        if (showRecurringOnly) {
+            return isRecurring;
+        }
+
+        if (showArchived) {
+            // Show only done tasks (non-recurring OR recurring done today)
+            if (!isRecurring) return t.isDone;
+            // For recurring, "archived" doesn't make much sense, but maybe show if done today?
+            if (t.recurrence?.includes(currentDayOfWeek) && t.doneAt) {
+                 const doneDate = new Date(t.doneAt);
+                 return doneDate >= startOfShift;
+            }
+            return false;
+        }
+
+        // Default View (To Do)
+        if (!isRecurring) {
             return !t.isDone;
         }
         
         // Tâche récurrente
         // 1. Est-elle prévue aujourd'hui ?
-        if (t.recurrence.includes(currentDayOfWeek)) {
+        if (t.recurrence?.includes(currentDayOfWeek)) {
             // 2. A-t-elle été faite DEPUIS le début du shift actuel ?
             if (t.doneAt) {
                 const doneDate = new Date(t.doneAt);
@@ -376,7 +397,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
         
         return false; // Pas prévue aujourd'hui
     });
-  }, [tasks]);
+  }, [tasks, showArchived, showRecurringOnly]);
 
   const handleAddTask = () => {
       if (!newTaskContent.trim()) return;
@@ -419,6 +440,19 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       onSync('SAVE_TASK', updated);
   };
 
+  const handleEditClick = (task: Task) => {
+      setEditingTask(task);
+      setEditTaskContent(task.content);
+  };
+
+  const handleSaveEdit = () => {
+      if (editingTask && onEditTask && editTaskContent.trim()) {
+          onEditTask({ ...editingTask, content: editTaskContent });
+          setEditingTask(null);
+          setEditTaskContent('');
+      }
+  };
+
   const toggleRecurrenceDay = (dayIndex: number) => {
       if (recurrenceDays.includes(dayIndex)) {
           setRecurrenceDays(prev => prev.filter(d => d !== dayIndex));
@@ -450,16 +484,13 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                           <div className="md:col-span-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Titre</label><input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} /></div>
                           <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Début</label><input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventStart} onChange={e => setNewEventStart(e.target.value)} /></div>
                           <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fin</label><input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventEnd} onChange={e => setNewEventEnd(e.target.value)} /></div>
-                          <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Lieu</label><input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventLocation} onChange={e => setNewEventLocation(e.target.value)} /></div>
-                          <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre de convives</label><input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventGuests} onChange={e => setNewEventGuests(e.target.value)} /></div>
-                          <div className="md:col-span-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Description</label><textarea className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none h-24 resize-none" value={newEventDesc} onChange={e => setNewEventDesc(e.target.value)} /></div>
                       </div>
                       {/* Produits & Verres (Simplifié) */}
                       <div className="space-y-4">
                           <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
                               <h4 className="font-black text-xs uppercase text-indigo-700 mb-3">Produits</h4>
                               <div className="flex gap-2 mb-3"><input list="evt-prod-list" className="flex-1 bg-white border border-indigo-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Chercher..." value={productSearch} onChange={e => setProductSearch(e.target.value)} /><datalist id="evt-prod-list">{items.map(i => <option key={i.id} value={i.name} />)}</datalist><input type="number" className="w-20 bg-white border border-indigo-200 rounded-lg p-2 text-xs font-bold text-center outline-none" value={productQtyInput} onChange={e => setProductQtyInput(e.target.value)} /><button onClick={handleAddEventProduct} className="bg-indigo-600 text-white px-4 rounded-lg font-black text-xs">+</button></div>
-                              <div className="space-y-1">{newEventProducts.map((p, idx) => (<div key={idx} className="flex justify-between bg-white/50 p-2 rounded-lg text-xs"><span className="font-bold">{p.itemId ? items.find(i=>i.id===p.itemId)?.name : p.name} {p.isTemporary && '(Temp)'}</span><div className="flex gap-2"><span className="font-black text-indigo-600">x{p.quantity}</span><button onClick={()=>handleRemoveEventProduct(idx)} className="text-rose-400">✕</button></div></div>))}</div>
+                              <div className="space-y-1">{newEventProducts.map((p, idx) => (<div key={idx} className="flex justify-between bg-white/50 p-2 rounded-lg text-xs"><span className="font-bold">{items.find(i=>i.id===p.itemId)?.name}</span><div className="flex gap-2"><span className="font-black text-indigo-600">x{p.quantity}</span><button onClick={()=>handleRemoveEventProduct(idx)} className="text-rose-400">✕</button></div></div>))}</div>
                           </div>
                       </div>
                   </div>
@@ -484,12 +515,37 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 
       {activeTab === 'TASKS' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+              
+              {/* EDIT MODAL */}
+              {editingTask && (
+                  <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+                      <div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl space-y-4">
+                          <h3 className="font-black text-slate-800 uppercase">Modifier la tâche</h3>
+                          <input 
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none"
+                              value={editTaskContent}
+                              onChange={e => setEditTaskContent(e.target.value)}
+                          />
+                          <div className="flex gap-2 justify-end">
+                              <button onClick={() => setEditingTask(null)} className="px-4 py-2 text-slate-400 font-bold text-xs uppercase">Annuler</button>
+                              <button onClick={handleSaveEdit} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-black uppercase text-xs">Sauvegarder</button>
+                          </div>
+                      </div>
+                  </div>
+              )}
+
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                   <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>À faire</h3>
+                      <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>{showArchived ? 'Tâches Archivées' : showRecurringOnly ? 'Tâches Récurrentes' : 'À faire'}</h3>
+                      <div className="flex gap-2">
+                          <button onClick={() => { setShowArchived(false); setShowRecurringOnly(false); }} className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${!showArchived && !showRecurringOnly ? 'bg-amber-100 text-amber-700' : 'text-slate-400 hover:bg-slate-50'}`}>À Faire</button>
+                          <button onClick={() => { setShowArchived(false); setShowRecurringOnly(true); }} className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${showRecurringOnly ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-50'}`}>Récurrentes</button>
+                          <button onClick={() => { setShowArchived(true); setShowRecurringOnly(false); }} className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${showArchived ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:bg-slate-50'}`}>Archives</button>
+                      </div>
                   </div>
                   
                   {/* AJOUT TACHE */}
+                  {!showArchived && !showRecurringOnly && (
                   <div className="space-y-3 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                       <div className="flex gap-2">
                           <input 
@@ -531,6 +587,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                           </div>
                       )}
                   </div>
+                  )}
 
                   <div className="space-y-3">
                       {activeTasks.map(t => {
@@ -553,9 +610,16 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                       {t.isDone && t.doneBy && <p className="text-[9px] text-slate-400 font-bold mt-0.5">Fait par {t.doneBy}</p>}
                                   </div>
                                   {(currentUser.role === 'ADMIN' || t.createdBy === currentUser.name) && (
-                                      <button onClick={() => handleDeleteTask(t.id)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-2">
-                                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                      </button>
+                                      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                          {currentUser.role === 'ADMIN' && (
+                                              <button onClick={() => handleEditClick(t)} className="text-slate-300 hover:text-indigo-500 p-2">
+                                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                              </button>
+                                          )}
+                                          <button onClick={() => handleDeleteTask(t.id)} className="text-slate-300 hover:text-rose-500 p-2">
+                                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                          </button>
+                                      </div>
                                   )}
                               </div>
                           );

@@ -34,15 +34,6 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
       localStorage.setItem('barstock_validated_receipts', JSON.stringify(Array.from(validatedGroups)));
   }, [validatedGroups]);
 
-  // DEFAULT FILTERS
-  useEffect(() => {
-      if (activeTab === 'MOVEMENTS') setPeriodFilter('DAY');
-      else if (activeTab === 'LOSSES') setPeriodFilter('MONTH');
-      else if (activeTab === 'CLIENT_RUPTURE') setPeriodFilter('MONTH');
-      else if (activeTab === 'STOCK_RUPTURE') setPeriodFilter('WEEK');
-      else if (activeTab === 'RECEIVED') setPeriodFilter('WEEK');
-  }, [activeTab]);
-
   const availableWeeks = useMemo(() => {
       const weeks = [];
       const d = new Date(selectedYear, 0, 1);
@@ -55,9 +46,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           const weekStart = new Date(d);
           const weekEnd = new Date(d);
           weekEnd.setDate(weekEnd.getDate() + 6);
-          weekEnd.setHours(23, 59, 59, 999);
-          
-          const label = `S${weekNum} ${monthNames[weekStart.getMonth()]}`;
+          const label = `S${weekNum} (${monthNames[weekStart.getMonth()]})`;
           const value = weekNum.toString();
           weeks.push({ value, label, start: weekStart, end: weekEnd });
           d.setDate(d.getDate() + 7);
@@ -93,25 +82,6 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
   const checkDateInFilter = (dateStr: string) => {
       if (!dateStr) return false;
       const date = safeDate(dateStr);
-      
-      // Special logic for STOCK_RUPTURE (Thu 16:00 - Thu 16:00)
-      if (activeTab === 'STOCK_RUPTURE' && periodFilter === 'WEEK') {
-          const weekObj = availableWeeks.find(w => w.value === selectedWeek);
-          if (!weekObj) return false;
-          
-          // Find Thursday of the selected week
-          const thuStart = new Date(weekObj.start);
-          thuStart.setDate(thuStart.getDate() + 3); // Mon -> Thu
-          thuStart.setHours(16, 0, 0, 0);
-
-          const thuEnd = new Date(thuStart);
-          thuEnd.setDate(thuEnd.getDate() + 7);
-          thuEnd.setSeconds(thuEnd.getSeconds() - 1);
-
-          return date >= thuStart && date <= thuEnd;
-      }
-
-      // Standard logic
       const barDate = new Date(date);
       if (barDate.getHours() < 4) {
           barDate.setDate(barDate.getDate() - 1);
@@ -226,46 +196,6 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
 
   }, [filteredReceived, items]);
 
-  const aggregatedData = useMemo(() => {
-      const data: Record<string, { item: StockItem, quantity: number, count: number }> = {};
-
-      if (activeTab === 'LOSSES') {
-          losses.filter(l => checkDateInFilter(l.discardedAt)).forEach(l => {
-              if (!data[l.itemId]) data[l.itemId] = { item: items.find(i => i.id === l.itemId)!, quantity: 0, count: 0 };
-              if (data[l.itemId].item) {
-                  data[l.itemId].quantity += l.quantity;
-                  data[l.itemId].count++;
-              }
-          });
-      } else if (activeTab === 'CLIENT_RUPTURE') {
-          unfulfilledOrders.filter(u => checkDateInFilter(u.date)).forEach(u => {
-             if (!data[u.itemId]) data[u.itemId] = { item: items.find(i => i.id === u.itemId)!, quantity: 0, count: 0 };
-             if (data[u.itemId].item) {
-                 data[u.itemId].quantity += (u.quantity || 1);
-                 data[u.itemId].count++;
-             }
-          });
-      } else if (activeTab === 'STOCK_RUPTURE') {
-          transactions.filter(t => t.type === 'OUT' && checkDateInFilter(t.date)).forEach(t => {
-              if (!data[t.itemId]) data[t.itemId] = { item: items.find(i => i.id === t.itemId)!, quantity: 0, count: 0 };
-              if (data[t.itemId].item) {
-                  data[t.itemId].quantity += t.quantity;
-                  data[t.itemId].count++;
-              }
-          });
-      } else if (activeTab === 'RECEIVED') {
-          orders.filter(o => o.status === 'RECEIVED' && o.receivedAt && checkDateInFilter(o.receivedAt)).forEach(o => {
-              if (!data[o.itemId]) data[o.itemId] = { item: items.find(i => i.id === o.itemId)!, quantity: 0, count: 0 };
-              if (data[o.itemId].item) {
-                  data[o.itemId].quantity += o.quantity;
-                  data[o.itemId].count++;
-              }
-          });
-      }
-
-      return Object.values(data).sort((a, b) => b.quantity - a.quantity);
-  }, [activeTab, losses, unfulfilledOrders, transactions, orders, items, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear]);
-
   const handleQuantityChange = (groupKey: string, val: string) => {
       if (/^\d*$/.test(val)) {
           setEditedQuantities(prev => ({ ...prev, [groupKey]: parseInt(val) || 0 }));
@@ -295,7 +225,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           </div>
 
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex flex-wrap gap-2 items-center">
+              <div className="flex flex-wrap gap-2">
                   <select 
                     value={periodFilter} 
                     onChange={(e) => setPeriodFilter(e.target.value as PeriodFilter)}
@@ -310,40 +240,12 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                   {periodFilter === 'DAY' && (
                       <input type="date" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none" />
                   )}
-
-                  {periodFilter === 'WEEK' && (
-                      <div className="flex gap-2">
-                          <select value={selectedWeek} onChange={(e) => setSelectedWeek(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
-                              {availableWeeks.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-                          </select>
-                          <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
-                              {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-                          </select>
-                      </div>
-                  )}
-
-                  {periodFilter === 'MONTH' && (
-                      <div className="flex gap-2">
-                          <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
-                              {["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"].map((m, i) => <option key={i} value={i}>{m}</option>)}
-                          </select>
-                          <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
-                              {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-                          </select>
-                      </div>
-                  )}
-
-                  {periodFilter === 'YEAR' && (
-                      <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
-                          {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-                      </select>
-                  )}
               </div>
           </div>
       </div>
 
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-          {activeTab === 'MOVEMENTS' ? (
+          {activeTab === 'MOVEMENTS' && (
             <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                 <table className="w-full text-left">
                     <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
@@ -368,7 +270,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                                     <td className="p-4 font-black text-slate-900">
                                         {item?.name || 'Inconnu'}
                                         {t.note && <span className="block text-[9px] text-slate-400 font-normal italic mt-0.5">{t.note}</span>}
-                                        {t.isServiceTransfer && <span className="block text-[9px] text-indigo-500 font-bold uppercase mt-0.5">Transfert Interservice</span>}
+                                        {t.isServiceTransfer && <span className="block text-[9px] text-purple-500 font-bold uppercase tracking-wider mt-0.5">Transfert Interservice</span>}
                                     </td>
                                     <td className="p-4">
                                         <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider ${t.type === 'IN' ? (t.isCaveTransfer ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600') : 'bg-rose-100 text-rose-600'}`}>
@@ -387,36 +289,42 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                     </tbody>
                 </table>
             </div>
-          ) : (
-            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
-                        <tr>
-                            <th className="p-4">Produit</th>
-                            <th className="p-4 text-center">Format</th>
-                            <th className="p-4 text-center">Nb. Événements</th>
-                            <th className="p-4 text-right">Quantité Totale</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {aggregatedData.map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                                <td className="p-4 font-black text-slate-900">{row.item?.name || 'Inconnu'}</td>
-                                <td className="p-4 text-center text-xs font-bold text-slate-500">
-                                    {formats.find(f => f.id === row.item?.formatId)?.name || '-'}
-                                </td>
-                                <td className="p-4 text-center text-xs font-bold text-slate-600">{row.count}</td>
-                                <td className="p-4 text-right font-black text-slate-900 text-lg">
-                                    {parseFloat(row.quantity.toFixed(2))}
-                                </td>
-                            </tr>
-                        ))}
-                        {aggregatedData.length === 0 && (
-                            <tr><td colSpan={4} className="p-8 text-center text-slate-400 italic text-sm">Aucune donnée pour cette période.</td></tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
+          )}
+          
+          {activeTab === 'LOSSES' && (
+              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                  <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
+                          <tr>
+                              <th className="p-4">Date</th>
+                              <th className="p-4">Utilisateur</th>
+                              <th className="p-4">Produit</th>
+                              <th className="p-4 text-right">Quantité Perdue</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                          {filteredLosses.filter(l => l.quantity > 0).map((l, idx) => {
+                              const item = items.find(i => i.id === l.itemId);
+                              const d = safeDate(l.discardedAt);
+                              return (
+                                  <tr key={`${l.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                                      <td className="p-4 text-xs font-bold text-slate-600">
+                                          {d.toLocaleDateString('fr-FR')} <span className="text-slate-400 text-[10px]">{d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</span>
+                                      </td>
+                                      <td className="p-4 text-xs font-bold text-slate-800">{l.userName || '-'}</td>
+                                      <td className="p-4 font-black text-slate-900">{item?.name || 'Inconnu'}</td>
+                                      <td className="p-4 text-right font-black text-rose-600">
+                                          -{l.quantity}%
+                                      </td>
+                                  </tr>
+                              );
+                          })}
+                          {filteredLosses.filter(l => l.quantity > 0).length === 0 && (
+                              <tr><td colSpan={4} className="p-8 text-center text-slate-400 italic text-sm">Aucune perte enregistrée.</td></tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
           )}
       </div>
     </div>
