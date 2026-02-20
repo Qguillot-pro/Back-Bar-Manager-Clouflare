@@ -295,7 +295,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           </div>
 
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
                   <select 
                     value={periodFilter} 
                     onChange={(e) => setPeriodFilter(e.target.value as PeriodFilter)}
@@ -309,6 +309,34 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
 
                   {periodFilter === 'DAY' && (
                       <input type="date" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none" />
+                  )}
+
+                  {periodFilter === 'WEEK' && (
+                      <div className="flex gap-2">
+                          <select value={selectedWeek} onChange={(e) => setSelectedWeek(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                              {availableWeeks.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                          </select>
+                          <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                              {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                          </select>
+                      </div>
+                  )}
+
+                  {periodFilter === 'MONTH' && (
+                      <div className="flex gap-2">
+                          <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                              {["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"].map((m, i) => <option key={i} value={i}>{m}</option>)}
+                          </select>
+                          <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                              {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                          </select>
+                      </div>
+                  )}
+
+                  {periodFilter === 'YEAR' && (
+                      <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                          {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                      </select>
                   )}
               </div>
           </div>
