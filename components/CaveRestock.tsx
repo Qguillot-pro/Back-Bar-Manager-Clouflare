@@ -207,7 +207,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
   const groupedNeeds = useMemo(() => {
     const groups: Record<string, AggregatedNeed[]> = {};
-    categories.forEach(c => groups[c] = []);
+    categories.forEach(c => groups[c.name] = []);
     if (!groups['Produits Temporaires']) groups['Produits Temporaires'] = [];
     if (!groups['Autre']) groups['Autre'] = []; 
 
