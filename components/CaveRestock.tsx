@@ -205,6 +205,36 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
   }, [consignes, items, storages, stockLevels, priorities, unfulfilledOrders, transactions, orders, events, dlcProfiles]);
 
+  const eventTempNeeds = useMemo(() => {
+      const needs: { name: string, quantity: number, eventName: string }[] = [];
+      const now = new Date();
+      const currentBarDate = new Date(now);
+      if (currentBarDate.getHours() < 4) currentBarDate.setDate(currentBarDate.getDate() - 1);
+
+      events.forEach(evt => {
+          const evtStart = new Date(evt.startTime);
+          const restockDate = new Date(evtStart);
+          if (evtStart.getHours() < 18) restockDate.setDate(restockDate.getDate() - 1);
+          
+          const isSameDay = 
+              restockDate.getDate() === currentBarDate.getDate() && 
+              restockDate.getMonth() === currentBarDate.getMonth() &&
+              restockDate.getFullYear() === currentBarDate.getFullYear();
+
+          if (isSameDay && evt.productsJson) {
+              try {
+                  const products: EventProduct[] = JSON.parse(evt.productsJson);
+                  products.forEach(p => {
+                      if ((!p.itemId || !items.find(i => i.id === p.itemId)) && p.name) {
+                          needs.push({ name: p.name, quantity: p.quantity, eventName: evt.title });
+                      }
+                  });
+              } catch(e) {}
+          }
+      });
+      return needs;
+  }, [events, items]);
+
   const groupedNeeds = useMemo(() => {
     const groups: Record<string, AggregatedNeed[]> = {};
     (categories || []).forEach(c => groups[c] = []);
