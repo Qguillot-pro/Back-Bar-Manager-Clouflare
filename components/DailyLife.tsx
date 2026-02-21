@@ -44,6 +44,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS' | 'MEALS'>('TASKS');
   const [configCycleType, setConfigCycleType] = useState<DailyCocktailType | null>(null); 
+  const [currentWeekOffset, setCurrentWeekOffset] = useState(0);
   
   // Task Filters
   const [showArchived, setShowArchived] = useState(false);
@@ -489,7 +490,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const weekDays = useMemo(() => {
       const today = new Date();
       const currentDay = today.getDay(); // 0=Sun, 1=Mon...
-      const diff = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1); // Adjust to get Monday
+      const diff = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1) + (currentWeekOffset * 7); // Adjust to get Monday + Offset
       
       const monday = new Date(today.setDate(diff));
       const days = [];
@@ -499,7 +500,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
           days.push(d.toISOString().split('T')[0]);
       }
       return days;
-  }, []);
+  }, [currentWeekOffset]);
 
   const daysLabels = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 
@@ -582,7 +583,20 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 
       {activeTab === 'MEALS' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-x-auto">
-              <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>Réservation Repas Personnel (Semaine en cours)</h3>
+              <div className="flex justify-between items-center mb-6">
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>Réservation Repas Personnel</h3>
+                  <div className="flex items-center gap-4 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                      <button onClick={() => setCurrentWeekOffset(p => p - 1)} className="p-2 hover:bg-white hover:shadow-sm rounded-lg text-slate-400 hover:text-indigo-600 transition-all">
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                      </button>
+                      <span className="text-xs font-black uppercase text-slate-600 min-w-[140px] text-center">
+                          Semaine {currentWeekOffset === 0 ? 'en cours' : (currentWeekOffset > 0 ? `+${currentWeekOffset}` : currentWeekOffset)}
+                      </span>
+                      <button onClick={() => setCurrentWeekOffset(p => p + 1)} className="p-2 hover:bg-white hover:shadow-sm rounded-lg text-slate-400 hover:text-indigo-600 transition-all">
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                      </button>
+                  </div>
+              </div>
               
               <table className="w-full text-left border-collapse">
                   <thead>
@@ -605,7 +619,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                      {users.filter(u => u.role === 'BARMAN' || u.role === 'ADMIN').map(user => (
+                      {users.filter(u => (u.role === 'BARMAN' || u.role === 'ADMIN') && u.showInMealPlanning !== false).map(user => (
                           <tr key={user.id} className="hover:bg-slate-50/50">
                               <td className="p-4 font-bold text-slate-800 text-sm">{user.name}</td>
                               {weekDays.map(dateStr => {

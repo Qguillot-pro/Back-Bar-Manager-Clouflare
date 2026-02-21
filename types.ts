@@ -41,6 +41,7 @@ export interface User {
   name: string;
   role: UserRole;
   pin: string;
+  showInMealPlanning?: boolean;
 }
 
 export interface UserLog {

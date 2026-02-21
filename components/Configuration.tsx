@@ -72,6 +72,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [newUserName, setNewUserName] = useState('');
   const [newUserPin, setNewUserPin] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('BARMAN');
+  const [newUserShowInMeal, setNewUserShowInMeal] = useState(true);
   const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
 
   // DLC Profile State
@@ -152,7 +153,8 @@ const Configuration: React.FC<ConfigProps> = ({
           id: editingUserId || 'u' + Date.now(), 
           name: newUserName, 
           role: newUserRole, 
-          pin: newUserPin 
+          pin: newUserPin,
+          showInMealPlanning: newUserShowInMeal
       }; 
       
       if (editingUserId) {
@@ -162,7 +164,7 @@ const Configuration: React.FC<ConfigProps> = ({
       }
       
       onSync('SAVE_USER', userToSave); 
-      setNewUserName(''); setNewUserPin(''); setEditingUserId(null); setNewUserRole('BARMAN');
+      setNewUserName(''); setNewUserPin(''); setEditingUserId(null); setNewUserRole('BARMAN'); setNewUserShowInMeal(true);
   };
 
   const startEditUser = (u: User) => {
@@ -170,6 +172,7 @@ const Configuration: React.FC<ConfigProps> = ({
       setNewUserName(u.name);
       setNewUserPin(u.pin);
       setNewUserRole(u.role);
+      setNewUserShowInMeal(u.showInMealPlanning !== false);
   };
 
   const cancelEditUser = () => {
@@ -177,6 +180,7 @@ const Configuration: React.FC<ConfigProps> = ({
       setNewUserName('');
       setNewUserPin('');
       setNewUserRole('BARMAN');
+      setNewUserShowInMeal(true);
   };
   
   const deleteUser = (id: string) => {
@@ -454,13 +458,28 @@ const Configuration: React.FC<ConfigProps> = ({
                   <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
                       <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>Gestion Utilisateurs</h3>
                       
-                      <div className="flex gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <input className="flex-1 bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" placeholder="Nom..." value={newUserName} onChange={e => setNewUserName(e.target.value)} />
-                          <input className="w-24 bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-center text-sm" placeholder="PIN" maxLength={4} value={newUserPin} onChange={e => setNewUserPin(e.target.value)} />
-                          <select className="bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newUserRole} onChange={e => setNewUserRole(e.target.value as UserRole)}>
-                              <option value="BARMAN">Barman</option>
-                              <option value="ADMIN">Admin</option>
-                          </select>
+                      <div className="flex gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100 items-end">
+                          <div className="flex-1 space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom</label>
+                              <input className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" placeholder="Nom..." value={newUserName} onChange={e => setNewUserName(e.target.value)} />
+                          </div>
+                          <div className="w-24 space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">PIN</label>
+                              <input className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-center text-sm" placeholder="PIN" maxLength={4} value={newUserPin} onChange={e => setNewUserPin(e.target.value)} />
+                          </div>
+                          <div className="w-32 space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Rôle</label>
+                              <select className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newUserRole} onChange={e => setNewUserRole(e.target.value as UserRole)}>
+                                  <option value="BARMAN">Barman</option>
+                                  <option value="ADMIN">Admin</option>
+                              </select>
+                          </div>
+                          <div className="flex items-center h-[46px] px-2">
+                              <label className="flex items-center gap-2 cursor-pointer" title="Afficher dans le planning repas">
+                                  <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={newUserShowInMeal} onChange={e => setNewUserShowInMeal(e.target.checked)} />
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Repas</span>
+                              </label>
+                          </div>
                           <div className="flex flex-col gap-1">
                               <button onClick={handleSaveUser} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black uppercase text-xs hover:bg-indigo-700 shadow-lg">{editingUserId ? 'Modifier' : 'Ajouter'}</button>
                               {editingUserId && <button onClick={cancelEditUser} className="text-[10px] text-slate-400 font-bold uppercase hover:text-slate-600">Annuler</button>}

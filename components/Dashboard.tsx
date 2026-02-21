@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, MealReservation, User } from '../types';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, MealReservation, User, Format } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -26,11 +26,13 @@ interface DashboardProps {
   appConfig: AppConfig;
   mealReservations?: MealReservation[];
   users?: User[];
+  formats?: Format[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, mealReservations = [], users = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, mealReservations = [], users = [], formats = [] }) => {
   const [newMessageText, setNewMessageText] = useState('');
   const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
+  const [selectedCocktailType, setSelectedCocktailType] = useState<string | null>(null);
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
   const [welcomeCustomName, setWelcomeCustomName] = useState('');
   const [recipeSearch, setRecipeSearch] = useState('');
@@ -176,12 +178,41 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       return { id: `calc-${currentBarDate}-${type}`, date: currentBarDate, type, recipeId: config.recipeIds[index] };
   };
 
+  const calculateRecipePrice = (recipe: Recipe) => {
+      let totalCost = 0;
+      recipe.ingredients.forEach(ing => {
+          if (ing.itemId) {
+              const item = items.find(i => i.id === ing.itemId);
+              if (item) {
+                  let quantityInL = ing.quantity;
+                  if (ing.unit === 'cl') quantityInL = ing.quantity / 100;
+                  else if (ing.unit === 'ml') quantityInL = ing.quantity / 1000;
+                  else if (ing.unit === 'oz') quantityInL = ing.quantity * 0.0295735;
+                  
+                  const format = formats.find(f => f.id === item.formatId);
+                  const volume = format?.value || 0.7;
+                  if (volume > 0) {
+                      const cost = (item.pricePerUnit / volume) * quantityInL;
+                      totalCost += cost;
+                  }
+              }
+          }
+      });
+      
+      const margin = appConfig.defaultMargin || 82;
+      const priceHT = totalCost / (1 - (margin / 100));
+      const priceTTC = priceHT * 1.20;
+      
+      return { cost: totalCost, suggestedPrice: priceTTC };
+  };
+
   const getCocktailInfo = (type: string) => {
       // Use the calculation logic directly
       const c = getCalculatedCocktail(type as DailyCocktailType);
       
       let name = 'Non défini';
       let recipe: Recipe | undefined;
+      let priceInfo = { cost: 0, suggestedPrice: 0 };
 
       if (c) {
           if (c.customName) {
@@ -189,13 +220,16 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
           } else if (c.recipeId) {
               recipe = recipes.find(r => r.id === c.recipeId);
               name = recipe?.name || 'Recette Inconnue';
+              if (recipe) {
+                  priceInfo = calculateRecipePrice(recipe);
+              }
           }
       }
       
       // Determine if manual override (warning) exists
       const isManual = dailyCocktails.some(dc => dc.date === currentBarDate && dc.type === type);
       
-      return { name, recipe, hasWarning: isManual };
+      return { name, recipe, hasWarning: isManual, price: priceInfo.suggestedPrice };
   };
 
   // 6. Meal Reservations Data
@@ -239,6 +273,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
 
       if (info.recipe) {
           setSelectedCocktailRecipe(info.recipe);
+          setSelectedCocktailType(type);
       } else {
           // Si pas de recette, on redirige vers la configuration (Vie Quotidienne)
           onNavigate('daily_life:COCKTAILS');
@@ -268,6 +303,18 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
               <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] print-section">
                   <div className="relative h-24 bg-slate-900 flex items-center justify-center p-6 shrink-0 no-print-bg">
                       <h2 className="text-2xl font-black text-white uppercase tracking-tighter text-center">{selectedCocktailRecipe.name}</h2>
+                      {(() => {
+                          if (selectedCocktailType === 'THALASSO' || selectedCocktailType === 'WELCOME') return null;
+                          const price = calculateRecipePrice(selectedCocktailRecipe).suggestedPrice;
+                          if (price > 0) {
+                              return (
+                                  <div className="absolute bottom-2 right-4 bg-emerald-500 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest shadow-lg no-print">
+                                      Conseillé: {price.toFixed(2)}€
+                                  </div>
+                              );
+                          }
+                          return null;
+                      })()}
                       <div className="absolute top-4 right-4 flex gap-2 no-print">
                           <button onClick={handlePrint} className="text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all" title="Imprimer">
                               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
@@ -385,6 +432,11 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                                   {icons[type] && <span className="text-[10px]">{icons[type]}</span>}
                               </div>
                               <p className={`font-bold text-sm leading-tight line-clamp-2 ${info.name === 'Non défini' ? 'opacity-50 italic' : ''}`}>{info.name}</p>
+                              {(type === 'OF_THE_DAY' || type === 'MOCKTAIL') && info.price > 0 && (
+                                  <div className="mt-1">
+                                      <span className="text-[10px] font-black bg-white/20 text-white px-2 py-0.5 rounded-md">{info.price.toFixed(2)}€</span>
+                                  </div>
+                              )}
                           </div>
                       );
                   })}
@@ -587,7 +639,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                   return (
                       <div 
                         key={r.id} 
-                        onClick={() => setSelectedCocktailRecipe(r)}
+                        onClick={() => { setSelectedCocktailRecipe(r); setSelectedCocktailType('LIBRARY'); }}
                         className={`bg-slate-50 p-4 rounded-2xl border transition-all group cursor-pointer ${hasOutOfStock ? 'border-rose-100 hover:border-rose-300 hover:bg-rose-50/30' : 'border-slate-100 hover:border-pink-200 hover:bg-pink-50/30'}`}
                       >
                           <div className="flex justify-between items-start mb-1">
