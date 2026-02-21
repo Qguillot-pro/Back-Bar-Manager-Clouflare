@@ -52,7 +52,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       let qtyInCl = ing.quantity;
       if (ing.unit === 'ml') qtyInCl = ing.quantity / 10;
       if (ing.unit === 'dash') qtyInCl = ing.quantity * 0.1;
-      if (ing.unit === 'piece') qtyInCl = 1; // Unité par pièce, on considère 1 unité du prix bouteille ? À affiner si besoin.
+      if (ing.unit === 'piece') qtyInCl = 1;
 
       return (item.pricePerUnit / divider) * qtyInCl;
   };
@@ -61,9 +61,14 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       return stockLevels.filter(l => l.itemId === itemId).reduce((acc, curr) => acc + curr.currentQuantity, 0);
   };
 
-  const totalCost = useMemo(() => newIngredients.reduce((acc, curr) => acc + getIngredientCost(curr), 0), [newIngredients, items]);
+  const totalCost = useMemo(() => newIngredients.reduce((acc, curr) => acc + getIngredientCost(curr), 0), [newIngredients, items, formats]);
   const margin = appConfig.defaultMargin || 82;
   const suggestedPrice = totalCost / (1 - (margin / 100));
+
+  // Helper pour le calcul de coût d'une recette existante (mode DETAIL)
+  const getRecipeCost = (recipe: Recipe) => {
+      return recipe.ingredients.reduce((acc, curr) => acc + getIngredientCost(curr), 0);
+  };
 
   const handleAI = async () => {
     if (!newName) {
@@ -389,8 +394,11 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
 
   if (viewMode === 'DETAIL' && selectedRecipe) {
       const glass = glassware.find(g => g.id === selectedRecipe.glasswareId);
+      const currentCost = getRecipeCost(selectedRecipe);
+      const currentSuggestedPrice = currentCost / (1 - (margin / 100));
+
       return (
-          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300 no-print">
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
               <div className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh] print-section">
                   <div className="bg-slate-900 text-white p-10 relative shrink-0 no-print-bg">
                       <div className="flex justify-between items-start">
@@ -412,7 +420,11 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       <div className="grid grid-cols-3 gap-6">
                           <div className="bg-slate-50 p-4 rounded-3xl text-center border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase mb-2">Verre</p><p className="font-bold text-slate-800 text-xs">{glass?.name || 'Standard'}</p></div>
                           <div className="bg-slate-50 p-4 rounded-3xl text-center border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase mb-2">Méthode</p><p className="font-bold text-slate-800 text-xs">{selectedRecipe.technique}</p></div>
-                          <div className="bg-pink-50 p-4 rounded-3xl text-center border border-pink-100 no-print-bg"><p className="text-[9px] font-black text-pink-400 uppercase mb-2">Prix Vente</p><p className="font-black text-pink-600 text-base">{selectedRecipe.sellingPrice?.toFixed(2)} €</p></div>
+                          <div className="bg-pink-50 p-4 rounded-3xl text-center border border-pink-100 no-print-bg">
+                              <p className="text-[9px] font-black text-pink-400 uppercase mb-2">Prix Conseillé</p>
+                              <p className="font-black text-pink-600 text-base">{currentSuggestedPrice.toFixed(2)} €</p>
+                              <p className="text-[8px] text-pink-400 mt-1">Coût: {currentCost.toFixed(2)}€</p>
+                          </div>
                       </div>
                       
                       <div className="space-y-6">
