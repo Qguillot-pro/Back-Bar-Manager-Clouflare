@@ -13,6 +13,8 @@ interface BarPrepProps {
   categories: Category[];
   dlcProfiles: DLCProfile[];
   dlcHistory?: DLCHistory[];
+  onUpdateDlc?: (dlc: DLCHistory) => void;
+  userRole?: string;
 }
 
 interface NeedDetail {
@@ -31,8 +33,11 @@ interface AggregatedNeed {
   details: NeedDetail[];
 }
 
-const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, dlcProfiles, dlcHistory = [] }) => {
+const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, dlcProfiles, dlcHistory = [], onUpdateDlc, userRole }) => {
   const [selectedDetail, setSelectedDetail] = useState<{ item: StockItem, detail: NeedDetail } | null>(null);
+  const [productionQty, setProductionQty] = useState<string>('0');
+  const [editingDlc, setEditingDlc] = useState<DLCHistory | null>(null);
+  const [editOpenedAt, setEditOpenedAt] = useState('');
   
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
     const map = new Map<string, AggregatedNeed>();
@@ -99,14 +104,24 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
 
   const handleProduce = () => {
       if (selectedDetail) {
-          onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, selectedDetail.detail.gap);
+          const qty = parseFloat(productionQty);
+          if (qty > 0) {
+              onAction(selectedDetail.item.id, selectedDetail.detail.storage.id, qty);
+          }
           setSelectedDetail(null);
+      }
+  };
+
+  const handleSaveDlcEdit = () => {
+      if (editingDlc && onUpdateDlc) {
+          onUpdateDlc({ ...editingDlc, openedAt: new Date(editOpenedAt).toISOString() });
+          setEditingDlc(null);
       }
   };
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-20 relative animate-in fade-in slide-in-from-bottom-2">
-      {/* MODAL */}
+      {/* MODAL PRODUCTION */}
       {selectedDetail && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xl animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-6 relative overflow-hidden">
@@ -122,12 +137,46 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                       <p className="text-4xl font-black text-purple-600">{selectedDetail.detail.gap > 0 ? selectedDetail.detail.gap.toFixed(2) : 'Stock OK'}</p>
                   </div>
 
-                  <button onClick={handleProduce} disabled={selectedDetail.detail.gap <= 0} className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50">
-                      Confirmer Production (+{selectedDetail.detail.gap > 0 ? selectedDetail.detail.gap : 1})
+                  <div className="space-y-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Quantité à produire</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-2xl font-black text-center text-purple-600 outline-none focus:ring-2 focus:ring-purple-200"
+                        value={productionQty}
+                        onChange={e => setProductionQty(e.target.value)}
+                      />
+                  </div>
+
+                  <button onClick={handleProduce} disabled={parseFloat(productionQty) <= 0} className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50">
+                      Confirmer Production (+{parseFloat(productionQty)})
                   </button>
-                  <p className="text-[10px] text-slate-400">Si le stock est OK, vous pouvez forcer une production de 1 unité.</p>
                   
                   <button onClick={() => setSelectedDetail(null)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-500 p-2">✕</button>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL EDIT DLC (ADMIN ONLY) */}
+      {editingDlc && (
+          <div className="fixed inset-0 z-[1001] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-200">
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-4">Modifier Date Ouverture</h3>
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Date & Heure</label>
+                          <input 
+                              type="datetime-local" 
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 font-bold text-slate-900 outline-none"
+                              value={editOpenedAt}
+                              onChange={e => setEditOpenedAt(e.target.value)}
+                          />
+                      </div>
+                      <div className="flex gap-3 pt-4">
+                          <button onClick={() => setEditingDlc(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-200">Annuler</button>
+                          <button onClick={handleSaveDlcEdit} className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-purple-700">Enregistrer</button>
+                      </div>
+                  </div>
               </div>
           </div>
       )}
@@ -163,10 +212,24 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                                       }`}>
                                           DLC: {agg.dlcInfo.label}
                                       </span>
+                                      {userRole === 'ADMIN' && agg.dlcInfo.count > 0 && (
+                                          <button 
+                                            onClick={() => {
+                                                const lastLot = dlcHistory.filter(h => h.itemId === agg.item.id).sort((a,b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
+                                                if (lastLot) {
+                                                    setEditingDlc(lastLot);
+                                                    setEditOpenedAt(new Date(lastLot.openedAt).toISOString().slice(0, 16));
+                                                }
+                                            }}
+                                            className="text-[10px] font-black text-purple-500 hover:text-purple-700 uppercase tracking-widest"
+                                          >
+                                              Modifier Lot
+                                          </button>
+                                      )}
                                   </div>
                               </div>
                               {agg.totalGap > 0 ? (
-                                  <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-lg">Manque Total: +{agg.totalGap}</span>
+                                  <span className="text-[10px] font-bold text-purple-500 uppercase tracking-widest bg-purple-50 px-3 py-1 rounded-lg">Manque Total: +{agg.totalGap.toFixed(2)}</span>
                               ) : (
                                   <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-lg">Stock OK</span>
                               )}
@@ -176,12 +239,15 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                                   <div key={idx} className="flex items-center justify-between bg-purple-50/50 p-2 rounded-xl border border-purple-100">
                                       <span className="text-xs font-bold text-purple-900 uppercase ml-2">{d.storage.name}</span>
                                       <div className="flex items-center gap-3">
-                                          <span className={`text-[10px] font-bold ${d.currentQty < d.minQty ? 'text-rose-500' : 'text-emerald-500'}`}>Stock Local: {d.currentQty} / Min: {d.minQty}</span>
+                                          <span className={`text-[10px] font-bold ${d.currentQty < d.minQty ? 'text-rose-500' : 'text-emerald-500'}`}>Stock Local: {d.currentQty.toFixed(2)} / Min: {d.minQty.toFixed(2)}</span>
                                           <button 
-                                            onClick={() => setSelectedDetail({ item: agg.item, detail: d })} 
+                                            onClick={() => {
+                                                setSelectedDetail({ item: agg.item, detail: d });
+                                                setProductionQty(d.gap > 0 ? d.gap.toFixed(2) : '1');
+                                            }} 
                                             className={`bg-white border px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-colors ${d.gap > 0 ? 'text-purple-600 border-purple-200 hover:bg-purple-600 hover:text-white' : 'text-slate-400 border-slate-200 hover:bg-slate-100'}`}
                                           >
-                                              Produire {d.gap > 0 ? `(+${d.gap})` : ''}
+                                              Produire {d.gap > 0 ? `(+${d.gap.toFixed(2)})` : ''}
                                           </button>
                                       </div>
                                   </div>

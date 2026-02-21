@@ -31,6 +31,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
   const [welcomeCustomName, setWelcomeCustomName] = useState('');
+  const [recipeSearch, setRecipeSearch] = useState('');
 
   // 1. KPI Alertes Réappro
   const totalRestockNeeded = useMemo(() => {
@@ -202,6 +203,19 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       }
   };
 
+  const handlePrint = () => {
+      window.print();
+  };
+
+  const filteredRecipes = useMemo(() => {
+      if (!recipeSearch) return recipes.slice(0, 8);
+      const search = recipeSearch.toLowerCase();
+      return recipes.filter(r => 
+          r.name.toLowerCase().includes(search) || 
+          r.category.toLowerCase().includes(search)
+      ).slice(0, 12);
+  }, [recipes, recipeSearch]);
+
   const handleCocktailClick = (type: string) => {
       const info = getCocktailInfo(type);
       
@@ -240,13 +254,18 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       
       {/* COCKTAIL DETAIL MODAL (READ ONLY) */}
       {selectedCocktailRecipe && (
-          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-                  <div className="relative h-24 bg-slate-900 flex items-center justify-center p-6 shrink-0">
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300 no-print">
+              <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] print-section">
+                  <div className="relative h-24 bg-slate-900 flex items-center justify-center p-6 shrink-0 no-print-bg">
                       <h2 className="text-2xl font-black text-white uppercase tracking-tighter text-center">{selectedCocktailRecipe.name}</h2>
-                      <button onClick={() => setSelectedCocktailRecipe(null)} className="absolute top-4 right-4 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all">
-                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                      </button>
+                      <div className="absolute top-4 right-4 flex gap-2 no-print">
+                          <button onClick={handlePrint} className="text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all" title="Imprimer">
+                              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                          </button>
+                          <button onClick={() => setSelectedCocktailRecipe(null)} className="text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all">
+                              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                      </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-8 space-y-6">
                       <div className="grid grid-cols-2 gap-4">
@@ -264,24 +283,33 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                       <div>
                           <h3 className="font-black text-xs uppercase text-slate-400 tracking-widest mb-3 border-b pb-2">Recette</h3>
                           <ul className="space-y-2">
-                              {selectedCocktailRecipe.ingredients.map((ing, i) => (
-                                  <li key={i} className="flex justify-between items-center text-sm font-bold text-slate-700">
-                                      <span>{ing.itemId ? items.find(it => it.id === ing.itemId)?.name : ing.tempName}</span>
-                                      <span className="bg-slate-100 px-2 py-1 rounded text-slate-900">{ing.quantity} {ing.unit}</span>
-                                  </li>
-                              ))}
+                              {selectedCocktailRecipe.ingredients.map((ing, i) => {
+                                  const item = items.find(it => it.id === ing.itemId);
+                                  const stock = ing.itemId ? stockLevels.filter(l => l.itemId === ing.itemId).reduce((acc, curr) => acc + curr.currentQuantity, 0) : null;
+                                  const isOutOfStock = ing.itemId && stock <= 0;
+
+                                  return (
+                                      <li key={i} className={`flex justify-between items-center text-sm font-bold p-2 rounded-lg ${isOutOfStock ? 'bg-rose-50 text-rose-700 border border-rose-100' : 'text-slate-700'}`}>
+                                          <span className="flex items-center gap-2">
+                                              {isOutOfStock && <span className="text-rose-500 animate-pulse">⚠️</span>}
+                                              {item?.name || ing.tempName}
+                                          </span>
+                                          <span className="bg-slate-100 px-2 py-1 rounded text-slate-900">{ing.quantity} {ing.unit}</span>
+                                      </li>
+                                  );
+                              })}
                           </ul>
                           {selectedCocktailRecipe.decoration && (
                               <p className="mt-4 text-xs font-bold text-slate-500 italic">Garnish: {selectedCocktailRecipe.decoration}</p>
                           )}
                       </div>
                       {selectedCocktailRecipe.description && (
-                          <div className="bg-indigo-50 p-4 rounded-xl text-indigo-900 text-xs leading-relaxed border border-indigo-100">
+                          <div className="bg-indigo-50 p-4 rounded-xl text-indigo-900 text-xs leading-relaxed border border-indigo-100 no-print-bg">
                               <p>{selectedCocktailRecipe.description}</p>
                           </div>
                       )}
                   </div>
-                  <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-center">
+                  <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-center no-print">
                         <button 
                             onClick={() => onNavigate('daily_life:COCKTAILS')} 
                             className="text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-700 flex items-center gap-2"
@@ -485,6 +513,61 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
               </div>
           </div>
         </div>
+      </div>
+
+      {/* BIBLIOTHEQUE DE RECETTES */}
+      <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                  <span className="w-1.5 h-4 bg-pink-500 rounded-full"></span>
+                  Bibliothèque de Recettes
+              </h3>
+              <div className="relative w-full md:w-64">
+                  <input 
+                    type="text" 
+                    placeholder="Rechercher une recette..." 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-pink-100"
+                    value={recipeSearch}
+                    onChange={e => setRecipeSearch(e.target.value)}
+                  />
+                  <svg className="w-4 h-4 text-slate-400 absolute right-3 top-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </div>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {filteredRecipes.map(r => {
+                  const hasOutOfStock = r.ingredients.some(ing => {
+                      if (!ing.itemId) return false;
+                      const stock = stockLevels.filter(l => l.itemId === ing.itemId).reduce((acc, curr) => acc + curr.currentQuantity, 0);
+                      return stock <= 0;
+                  });
+
+                  return (
+                      <div 
+                        key={r.id} 
+                        onClick={() => setSelectedCocktailRecipe(r)}
+                        className={`bg-slate-50 p-4 rounded-2xl border transition-all group cursor-pointer ${hasOutOfStock ? 'border-rose-100 hover:border-rose-300 hover:bg-rose-50/30' : 'border-slate-100 hover:border-pink-200 hover:bg-pink-50/30'}`}
+                      >
+                          <div className="flex justify-between items-start mb-1">
+                              <span className="text-[8px] font-black text-pink-500 uppercase tracking-widest">{r.category}</span>
+                              {hasOutOfStock && <span className="text-rose-500 animate-pulse text-[10px]" title="Ingrédient en rupture">⚠️</span>}
+                          </div>
+                          <p className={`font-bold text-xs transition-colors truncate ${hasOutOfStock ? 'text-rose-800 group-hover:text-rose-900' : 'text-slate-800 group-hover:text-pink-700'}`}>{r.name}</p>
+                          <div className="mt-3 flex justify-between items-center">
+                              <span className="text-[8px] font-bold text-slate-400 uppercase">{r.technique}</span>
+                              <span className="text-[10px] font-black text-slate-900">{r.sellingPrice?.toFixed(2)}€</span>
+                          </div>
+                      </div>
+                  );
+              })}
+              {filteredRecipes.length === 0 && (
+                  <p className="col-span-full text-center py-10 text-slate-400 italic text-xs">Aucune recette trouvée.</p>
+              )}
+          </div>
+          
+          <div className="mt-6 pt-6 border-t border-slate-100 flex justify-center">
+              <button onClick={() => onNavigate('recipes')} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-pink-500 transition-colors">Voir toute la bibliothèque</button>
+          </div>
       </div>
     </div>
   );
