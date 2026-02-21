@@ -63,7 +63,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     if (isNaN(quantity) || quantity <= 0) quantity = 1;
 
     // Logique DLC
-    if (item.isDLC && dlcProfiles && onDlcEntry) {
+    if ((item.isDLC || item.dlcProfileId) && dlcProfiles && onDlcEntry) {
         setPendingDlcItem(item);
         setPendingDlcAction(type);
         setDlcModalOpen(true);
@@ -99,7 +99,13 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       if (!pendingDlcItem) return;
       let quantity = parseInt(qty, 10) || 1;
       onTransaction(pendingDlcItem.id, pendingDlcAction, quantity, isServiceTransfer);
-      if (onDlcEntry && pendingDlcAction === 'IN') onDlcEntry(pendingDlcItem.id, 's_global', 'OPENING');
+      
+      // Trigger DLC entry for both IN (Production) and OUT (Opening for service)
+      if (onDlcEntry) {
+          const storageId = storages[0]?.id || 's0';
+          onDlcEntry(pendingDlcItem.id, storageId, 'OPENING');
+      }
+      
       setDlcModalOpen(false);
       setPendingDlcItem(null);
       setSearch('');

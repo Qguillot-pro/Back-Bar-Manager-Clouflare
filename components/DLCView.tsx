@@ -111,13 +111,28 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
 
   const handleAddDlc = () => {
       if (onAddDlc && newItemId && newStorageId && newDate && newTime) {
-          const openedAt = new Date(`${newDate}T${newTime}`).toISOString();
-          onAddDlc(newItemId, newStorageId, openedAt);
-          setAddModalOpen(false);
-          setNewItemId('');
-          setNewStorageId('');
-          setNewDate('');
-          setNewTime('');
+          try {
+              // Ensure we have a valid date construction
+              const dateStr = `${newDate}T${newTime}:00`;
+              const dateObj = new Date(dateStr);
+              
+              if (isNaN(dateObj.getTime())) {
+                  alert("La date ou l'heure saisie est invalide.");
+                  return;
+              }
+
+              const openedAt = dateObj.toISOString();
+              onAddDlc(newItemId, newStorageId, openedAt);
+              
+              setAddModalOpen(false);
+              setNewItemId('');
+              setNewStorageId('');
+              setNewDate('');
+              setNewTime('');
+          } catch (error) {
+              console.error("Error adding DLC:", error);
+              alert("Une erreur est survenue lors de l'ajout de la DLC.");
+          }
       }
   };
 
@@ -147,7 +162,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit</label>
                           <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={newItemId} onChange={e => setNewItemId(e.target.value)}>
                               <option value="">Sélectionner...</option>
-                              {items.filter(i => i.isDLC).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                              {items.filter(i => i.isDLC || i.dlcProfileId).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                           </select>
                       </div>
                       <div>
@@ -239,7 +254,19 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
         </h2>
         <div className="flex items-center gap-3">
             {userRole === 'ADMIN' && (
-                <button onClick={() => setAddModalOpen(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all shadow-lg">+ Ajouter Manuel</button>
+                <button 
+                  onClick={() => {
+                    const now = new Date();
+                    setNewDate(now.toISOString().split('T')[0]);
+                    const hours = now.getHours().toString().padStart(2, '0');
+                    const minutes = now.getMinutes().toString().padStart(2, '0');
+                    setNewTime(`${hours}:${minutes}`);
+                    setAddModalOpen(true);
+                  }} 
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all shadow-lg"
+                >
+                    + Ajouter Manuel
+                </button>
             )}
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeDlcs.length} lots actifs</span>
             <div className={`w-3 h-3 rounded-full ${expiredCount > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`}></div>
