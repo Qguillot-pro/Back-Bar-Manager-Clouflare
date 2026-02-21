@@ -24,8 +24,16 @@ export interface AppConfig {
   tempItemDuration: '3_DAYS' | '7_DAYS' | '14_DAYS' | '1_MONTH' | '3_MONTHS' | 'INFINITE';
   defaultMargin?: number; // Pourcentage (ex: 82)
   programMapping?: Record<string, string[]>; // Map ProgramType (OF_THE_DAY...) -> Array of Category Names
+  mealReminderTimes?: string[]; // ["10:00", "17:00"]
   // Stockage des configurations de cycles en JSON string dans la DB, mais typé ici si besoin
   [key: string]: any; 
+}
+
+export interface MealReservation {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  slot: 'LUNCH' | 'DINNER';
 }
 
 export interface User {

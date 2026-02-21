@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig, CocktailCategory } from '../types';
+import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig, CocktailCategory, MealReservation } from '../types';
 
 interface DailyLifeProps {
   tasks: Task[];
@@ -24,6 +24,9 @@ interface DailyLifeProps {
   initialTab?: string;
   cocktailCategories?: CocktailCategory[];
   onEditTask?: (task: Task) => void;
+  mealReservations?: MealReservation[];
+  setMealReservations?: React.Dispatch<React.SetStateAction<MealReservation[]>>;
+  users?: User[];
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -37,9 +40,9 @@ const getBarDateStr = (d: Date = new Date()) => {
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
-    appConfig, saveConfig, initialTab, cocktailCategories = [], onEditTask
+    appConfig, saveConfig, initialTab, cocktailCategories = [], onEditTask, mealReservations = [], setMealReservations, users = []
 }) => {
-  const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS'>('TASKS');
+  const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS' | 'MEALS'>('TASKS');
   const [configCycleType, setConfigCycleType] = useState<DailyCocktailType | null>(null); 
   
   // Task Filters
@@ -49,7 +52,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const [editTaskContent, setEditTaskContent] = useState('');
 
   useEffect(() => {
-      if (initialTab && (initialTab === 'TASKS' || initialTab === 'CALENDAR' || initialTab === 'COCKTAILS')) {
+      if (initialTab && (initialTab === 'TASKS' || initialTab === 'CALENDAR' || initialTab === 'COCKTAILS' || initialTab === 'MEALS')) {
           setActiveTab(initialTab as any);
       }
   }, [initialTab]);
@@ -461,6 +464,43 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       }
   };
 
+  const handleToggleMeal = (userId: string, date: string, slot: 'LUNCH' | 'DINNER') => {
+      if (!setMealReservations) return;
+      
+      const existing = mealReservations.find(r => r.userId === userId && r.date === date && r.slot === slot);
+      
+      if (existing) {
+          // Remove
+          setMealReservations(prev => prev.filter(r => r.id !== existing.id));
+          onSync('DELETE_MEAL_RESERVATION', { id: existing.id });
+      } else {
+          // Add
+          const newReservation: MealReservation = {
+              id: 'meal_' + Date.now() + Math.random(),
+              userId,
+              date,
+              slot
+          };
+          setMealReservations(prev => [...prev, newReservation]);
+          onSync('SAVE_MEAL_RESERVATION', newReservation);
+      }
+  };
+
+  const weekDays = useMemo(() => {
+      const today = new Date();
+      const currentDay = today.getDay(); // 0=Sun, 1=Mon...
+      const diff = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1); // Adjust to get Monday
+      
+      const monday = new Date(today.setDate(diff));
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+          const d = new Date(monday);
+          d.setDate(monday.getDate() + i);
+          days.push(d.toISOString().split('T')[0]);
+      }
+      return days;
+  }, []);
+
   const daysLabels = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 
   return (
@@ -532,13 +572,81 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       )}
 
       {/* TABS */}
-      <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-          {['TASKS', 'CALENDAR', 'COCKTAILS'].map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === tab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>
-                  {tab === 'TASKS' ? 'Tâches' : tab === 'CALENDAR' ? 'Agenda' : 'Cocktails du Jour'}
+      <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+          {['TASKS', 'CALENDAR', 'COCKTAILS', 'MEALS'].map((tab) => (
+              <button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex-1 py-3 px-4 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all whitespace-nowrap ${activeTab === tab ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>
+                  {tab === 'TASKS' ? 'Tâches' : tab === 'CALENDAR' ? 'Agenda' : tab === 'COCKTAILS' ? 'Cocktails du Jour' : 'Repas Staff'}
               </button>
           ))}
       </div>
+
+      {activeTab === 'MEALS' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-x-auto">
+              <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6"><span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>Réservation Repas Personnel (Semaine en cours)</h3>
+              
+              <table className="w-full text-left border-collapse">
+                  <thead>
+                      <tr>
+                          <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 min-w-[150px]">Nom</th>
+                          {weekDays.map(dateStr => {
+                              const d = new Date(dateStr);
+                              const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short' });
+                              const dayNum = d.getDate();
+                              const isToday = dateStr === getBarDateStr();
+                              return (
+                                  <th key={dateStr} className={`p-2 text-center border-b border-slate-100 ${isToday ? 'bg-indigo-50 text-indigo-700 rounded-t-lg' : ''}`}>
+                                      <div className="flex flex-col items-center">
+                                          <span className="text-[9px] font-black uppercase tracking-widest opacity-60">{dayName}</span>
+                                          <span className="text-lg font-black">{dayNum}</span>
+                                      </div>
+                                  </th>
+                              );
+                          })}
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                      {users.filter(u => u.role === 'BARMAN' || u.role === 'ADMIN').map(user => (
+                          <tr key={user.id} className="hover:bg-slate-50/50">
+                              <td className="p-4 font-bold text-slate-800 text-sm">{user.name}</td>
+                              {weekDays.map(dateStr => {
+                                  const isLunchReserved = mealReservations.some(r => r.userId === user.id && r.date === dateStr && r.slot === 'LUNCH');
+                                  const isDinnerReserved = mealReservations.some(r => r.userId === user.id && r.date === dateStr && r.slot === 'DINNER');
+                                  const isCurrentUser = user.id === currentUser.id;
+                                  const isToday = dateStr === getBarDateStr();
+
+                                  return (
+                                      <td key={dateStr} className={`p-2 text-center border-l border-slate-50 ${isToday ? 'bg-indigo-50/30' : ''}`}>
+                                          <div className="flex flex-col gap-2 items-center justify-center">
+                                              <label className={`cursor-pointer flex items-center gap-1 px-2 py-1 rounded-md transition-all ${isLunchReserved ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'}`}>
+                                                  <input 
+                                                      type="checkbox" 
+                                                      className="hidden" 
+                                                      checked={isLunchReserved} 
+                                                      onChange={() => handleToggleMeal(user.id, dateStr, 'LUNCH')}
+                                                      disabled={!isCurrentUser && currentUser.role !== 'ADMIN'}
+                                                  />
+                                                  <span className="text-[9px] font-black uppercase">Midi</span>
+                                              </label>
+                                              <label className={`cursor-pointer flex items-center gap-1 px-2 py-1 rounded-md transition-all ${isDinnerReserved ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'}`}>
+                                                  <input 
+                                                      type="checkbox" 
+                                                      className="hidden" 
+                                                      checked={isDinnerReserved} 
+                                                      onChange={() => handleToggleMeal(user.id, dateStr, 'DINNER')}
+                                                      disabled={!isCurrentUser && currentUser.role !== 'ADMIN'}
+                                                  />
+                                                  <span className="text-[9px] font-black uppercase">Soir</span>
+                                              </label>
+                                          </div>
+                                      </td>
+                                  );
+                              })}
+                          </tr>
+                      ))}
+                  </tbody>
+              </table>
+          </div>
+      )}
 
       {activeTab === 'TASKS' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">

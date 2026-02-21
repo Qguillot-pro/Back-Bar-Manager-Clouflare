@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig } from '../types';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, MealReservation, User } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -23,10 +23,12 @@ interface DashboardProps {
   recipes?: Recipe[];
   glassware?: Glassware[];
   onUpdateDailyCocktail?: (cocktail: DailyCocktail) => void;
-  appConfig: AppConfig; // AJOUT
+  appConfig: AppConfig;
+  mealReservations?: MealReservation[];
+  users?: User[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, mealReservations = [], users = [] }) => {
   const [newMessageText, setNewMessageText] = useState('');
   const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
@@ -195,6 +197,14 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       
       return { name, recipe, hasWarning: isManual };
   };
+
+  // 6. Meal Reservations Data
+  const todaysMeals = useMemo(() => {
+      const today = currentBarDate;
+      const lunch = mealReservations.filter(r => r.date === today && r.slot === 'LUNCH');
+      const dinner = mealReservations.filter(r => r.date === today && r.slot === 'DINNER');
+      return { lunch, dinner };
+  }, [mealReservations, currentBarDate]);
 
   const handlePostMessage = () => {
       if (newMessageText.length > 0 && newMessageText.length <= 300) {
@@ -411,7 +421,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       </div>
 
       {/* VIE QUOTIDIENNE WIDGETS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div onClick={() => onNavigate('daily_life:CALENDAR')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-indigo-300 transition-all relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-50 rounded-bl-[4rem] -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
               <h3 className="font-black text-sm uppercase tracking-widest text-indigo-900 mb-4 relative z-10 flex items-center gap-2">
@@ -445,6 +455,38 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">En attente</p>
                   </div>
                   <button className="bg-amber-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-amber-600 shadow-lg shadow-amber-200">Voir</button>
+              </div>
+          </div>
+
+          <div onClick={() => onNavigate('daily_life:MEALS')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-emerald-300 transition-all relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-50 rounded-bl-[4rem] -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+              <h3 className="font-black text-sm uppercase tracking-widest text-emerald-800 mb-4 relative z-10 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                  Repas Staff (Aujourd'hui)
+              </h3>
+              <div className="space-y-4 relative z-10">
+                  <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Midi ({todaysMeals.lunch.length})</span>
+                      <div className="flex -space-x-2">
+                          {todaysMeals.lunch.slice(0, 4).map(r => (
+                              <div key={r.id} className="w-6 h-6 rounded-full bg-amber-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-amber-700" title={users.find(u => u.id === r.userId)?.name}>
+                                  {users.find(u => u.id === r.userId)?.name.charAt(0)}
+                              </div>
+                          ))}
+                          {todaysMeals.lunch.length > 4 && <div className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500">+{todaysMeals.lunch.length - 4}</div>}
+                      </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Soir ({todaysMeals.dinner.length})</span>
+                      <div className="flex -space-x-2">
+                          {todaysMeals.dinner.slice(0, 4).map(r => (
+                              <div key={r.id} className="w-6 h-6 rounded-full bg-indigo-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-indigo-700" title={users.find(u => u.id === r.userId)?.name}>
+                                  {users.find(u => u.id === r.userId)?.name.charAt(0)}
+                              </div>
+                          ))}
+                          {todaysMeals.dinner.length > 4 && <div className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500">+{todaysMeals.dinner.length - 4}</div>}
+                      </div>
+                  </div>
               </div>
           </div>
       </div>

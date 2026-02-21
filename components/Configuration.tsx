@@ -306,6 +306,39 @@ const Configuration: React.FC<ConfigProps> = ({
                         <p className="text-[9px] text-slate-400 ml-1">Utilisé pour calculer le prix de vente suggéré des recettes.</p>
                     </div>
                 </div>
+                
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                    <h4 className="font-black text-xs uppercase text-slate-500 tracking-widest mb-4">Rappels Repas Personnel</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Rappel 1 (Matin)</label>
+                            <input 
+                                type="time" 
+                                className="w-full bg-slate-50 p-4 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                                value={appConfig.mealReminderTimes?.[0] || ''}
+                                onChange={e => {
+                                    const times = [...(appConfig.mealReminderTimes || ['', ''])];
+                                    times[0] = e.target.value;
+                                    handleConfigChange('mealReminderTimes', times);
+                                }}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Rappel 2 (Après-midi)</label>
+                            <input 
+                                type="time" 
+                                className="w-full bg-slate-50 p-4 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                                value={appConfig.mealReminderTimes?.[1] || ''}
+                                onChange={e => {
+                                    const times = [...(appConfig.mealReminderTimes || ['', ''])];
+                                    times[1] = e.target.value;
+                                    handleConfigChange('mealReminderTimes', times);
+                                }}
+                            />
+                        </div>
+                    </div>
+                    <p className="text-[9px] text-slate-400 mt-2 ml-1">Une notification sera envoyée aux heures programmées pour rappeler de réserver les repas.</p>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

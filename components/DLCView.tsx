@@ -9,17 +9,25 @@ interface DLCViewProps {
   storages: StorageSpace[];
   onDelete: (id: string, qtyLostPercent?: number) => void;
   onUpdateDlc?: (dlc: DLCHistory) => void;
+  onAddDlc?: (itemId: string, storageId: string, openedAt: string) => void;
   userRole?: string;
 }
 
-const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete, onUpdateDlc, userRole }) => {
+const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete, onUpdateDlc, onAddDlc, userRole }) => {
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
   const [selectedDlcId, setSelectedDlcId] = useState<string | null>(null);
   const [percentLost, setPercentLost] = useState<number>(0);
   
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
+
+  // Add Modal State
+  const [newItemId, setNewItemId] = useState('');
+  const [newStorageId, setNewStorageId] = useState('');
+  const [newDate, setNewDate] = useState('');
+  const [newTime, setNewTime] = useState('');
 
   const activeDlcs = useMemo(() => {
     if (!dlcHistory || !items) return [];
@@ -101,6 +109,18 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       }
   };
 
+  const handleAddDlc = () => {
+      if (onAddDlc && newItemId && newStorageId && newDate && newTime) {
+          const openedAt = new Date(`${newDate}T${newTime}`).toISOString();
+          onAddDlc(newItemId, newStorageId, openedAt);
+          setAddModalOpen(false);
+          setNewItemId('');
+          setNewStorageId('');
+          setNewDate('');
+          setNewTime('');
+      }
+  };
+
   const safeDateString = (date: Date) => {
       return !isNaN(date.getTime()) 
         ? date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
@@ -115,6 +135,44 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
           <div className="bg-rose-500 text-white p-4 text-center font-black uppercase text-xs tracking-widest animate-pulse flex items-center justify-center gap-2">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
               Attention : {expiredCount} produit(s) expiré(s) détecté(s) !
+          </div>
+      )}
+
+      {addModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl text-center space-y-6">
+                  <h3 className="text-xl font-black text-slate-900 uppercase">Ajout Manuel DLC</h3>
+                  <div className="space-y-4 text-left">
+                      <div>
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit</label>
+                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={newItemId} onChange={e => setNewItemId(e.target.value)}>
+                              <option value="">Sélectionner...</option>
+                              {items.filter(i => i.isDLC).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Lieu de Stockage</label>
+                          <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={newStorageId} onChange={e => setNewStorageId(e.target.value)}>
+                              <option value="">Sélectionner...</option>
+                              {storages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                          <div>
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Date</label>
+                              <input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={newDate} onChange={e => setNewDate(e.target.value)} />
+                          </div>
+                          <div>
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Heure</label>
+                              <input type="time" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={newTime} onChange={e => setNewTime(e.target.value)} />
+                          </div>
+                      </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                      <button onClick={() => setAddModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Annuler</button>
+                      <button onClick={handleAddDlc} disabled={!newItemId || !newStorageId || !newDate || !newTime} className="py-3 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg disabled:opacity-50">Ajouter</button>
+                  </div>
+              </div>
           </div>
       )}
 
@@ -180,6 +238,9 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
             Suivi des DLC en cours
         </h2>
         <div className="flex items-center gap-3">
+            {userRole === 'ADMIN' && (
+                <button onClick={() => setAddModalOpen(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all shadow-lg">+ Ajouter Manuel</button>
+            )}
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeDlcs.length} lots actifs</span>
             <div className={`w-3 h-3 rounded-full ${expiredCount > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`}></div>
         </div>
