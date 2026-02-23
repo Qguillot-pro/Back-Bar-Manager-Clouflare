@@ -138,6 +138,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'tasks', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200) t),
                     'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500) t),
                     'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'PENDING' OR status = 'ORDERED') t),
+                    'mealReservations', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM meal_reservations WHERE date >= NOW() - INTERVAL '30 days') t),
                     'adminNotes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM admin_notes ORDER BY created_at DESC LIMIT 50) t)
                 ) as data;
             `;

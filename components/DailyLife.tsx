@@ -475,9 +475,10 @@ const DailyLife: React.FC<DailyLifeProps> = ({
           setMealReservations(prev => prev.filter(r => r.id !== existing.id));
           onSync('DELETE_MEAL_RESERVATION', { id: existing.id });
       } else {
-          // Add
+          // Add - Use deterministic ID to prevent duplicates
+          const deterministicId = `meal_${userId}_${date}_${slot}`;
           const newReservation: MealReservation = {
-              id: 'meal_' + Date.now() + Math.random(),
+              id: deterministicId,
               userId,
               date,
               slot

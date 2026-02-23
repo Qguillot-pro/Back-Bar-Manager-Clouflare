@@ -399,7 +399,34 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
 
       return (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
-              <div className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh] print-section">
+              <style>{`
+                  @media print {
+                      body * { visibility: hidden; }
+                      #recipe-print-container, #recipe-print-container * { visibility: visible; }
+                      #recipe-print-container {
+                          position: absolute;
+                          left: 0;
+                          top: 0;
+                          width: 100%;
+                          height: auto;
+                          margin: 0;
+                          padding: 20px;
+                          background: white !important;
+                          color: black !important;
+                          overflow: visible !important;
+                          max-height: none !important;
+                          border: none !important;
+                          box-shadow: none !important;
+                          z-index: 9999;
+                      }
+                      .no-print { display: none !important; }
+                      .no-print-bg { background: transparent !important; border: 1px solid #ddd !important; }
+                      /* Force black text for print */
+                      #recipe-print-container .text-white { color: black !important; }
+                      #recipe-print-container .bg-slate-900 { background: white !important; color: black !important; border-bottom: 2px solid #000; }
+                  }
+              `}</style>
+              <div id="recipe-print-container" className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh] print-section">
                   <div className="bg-slate-900 text-white p-10 relative shrink-0 no-print-bg">
                       <div className="flex justify-between items-start">
                           <div>
