@@ -80,6 +80,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
             }
             if (row.key === 'email_sender') configMap.emailSender = row.value;
+            if (row.key === 'meal_reminder_times') {
+                try {
+                    configMap.mealReminderTimes = JSON.parse(row.value);
+                } catch (e) {
+                    configMap.mealReminderTimes = [];
+                }
+            }
         });
 
         // Les configurations de cycles
@@ -132,6 +139,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'tasks', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200) t),
                     'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500) t),
                     'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'PENDING' OR status = 'ORDERED') t),
+                    'mealReservations', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM meal_reservations WHERE date >= NOW() - INTERVAL '7 days') t),
                     'adminNotes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM admin_notes ORDER BY created_at DESC LIMIT 50) t)
                 ) as data;
             `;
@@ -217,6 +225,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
         if (rawData.orders) responseBody.orders = rawData.orders.map(orderMapper);
         if (rawData.archivedOrders) responseBody.orders = (responseBody.orders || []).concat(rawData.archivedOrders.map(orderMapper));
+        
+        if (rawData.mealReservations) responseBody.mealReservations = rawData.mealReservations.map((r: any) => ({
+            id: r.id, userId: r.user_id, date: r.date, slot: r.slot
+        }));
 
         // --- HISTORY ---
         if (rawData.transactions) responseBody.transactions = rawData.transactions.map((t: any) => ({
@@ -289,6 +301,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'VALIDATE_RECIPE': { await pool.query('UPDATE recipes SET status = $2 WHERE id = $1', [payload.id, 'VALIDATED']); break; }
         case 'SAVE_EMAIL_TEMPLATE': { await pool.query(`INSERT INTO email_templates (id, name, subject, body) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subject = EXCLUDED.subject, body = EXCLUDED.body`, [payload.id, payload.name, payload.subject, payload.body]); break; }
         case 'DELETE_EMAIL_TEMPLATE': { await pool.query('DELETE FROM email_templates WHERE id = $1', [payload.id]); break; }
+        
+        case 'SAVE_MEAL_RESERVATION': {
+            await pool.query(`INSERT INTO meal_reservations (id, user_id, date, slot) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date, payload.slot]);
+            break;
+        }
+        case 'DELETE_MEAL_RESERVATION': {
+            await pool.query('DELETE FROM meal_reservations WHERE id = $1', [payload.id]);
+            break;
+        }
         
         // --- UPDATES V1.3 ---
         case 'SAVE_NOTE': {
