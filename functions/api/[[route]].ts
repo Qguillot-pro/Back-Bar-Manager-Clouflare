@@ -50,6 +50,39 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   // --- AUTO-MIGRATION : ASSURE QUE LES NOUVELLES TABLES EXISTENT ---
   try {
       await pool.query(`
+          CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY, article_code TEXT, name TEXT, category TEXT, format_id TEXT, price_per_unit NUMERIC, is_dlc BOOLEAN, dlc_profile_id TEXT, is_consigne BOOLEAN, sort_order INTEGER, is_draft BOOLEAN, is_temporary BOOLEAN, is_inventory_only BOOLEAN, created_at TIMESTAMPTZ, last_updated TIMESTAMPTZ);
+          CREATE TABLE IF NOT EXISTS storage_spaces (id TEXT PRIMARY KEY, name TEXT, sort_order INTEGER);
+          CREATE TABLE IF NOT EXISTS formats (id TEXT PRIMARY KEY, name TEXT, value NUMERIC, sort_order INTEGER);
+          CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY, sort_order INTEGER);
+          
+          CREATE TABLE IF NOT EXISTS stock_levels (item_id TEXT, storage_id TEXT, quantity NUMERIC, PRIMARY KEY (item_id, storage_id));
+          CREATE TABLE IF NOT EXISTS stock_consignes (item_id TEXT, storage_id TEXT, min_quantity NUMERIC, max_capacity NUMERIC, PRIMARY KEY (item_id, storage_id));
+          CREATE TABLE IF NOT EXISTS stock_priorities (item_id TEXT, storage_id TEXT, priority INTEGER, PRIMARY KEY (item_id, storage_id));
+          
+          CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, item_id TEXT, storage_id TEXT, type TEXT, quantity NUMERIC, date TIMESTAMPTZ, note TEXT, is_cave_transfer BOOLEAN, user_name TEXT, is_service_transfer BOOLEAN);
+          CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, item_id TEXT, quantity NUMERIC, initial_quantity NUMERIC, date TIMESTAMPTZ, status TEXT, user_name TEXT, rupture_date TIMESTAMPTZ, ordered_at TIMESTAMPTZ, received_at TIMESTAMPTZ);
+          CREATE TABLE IF NOT EXISTS unfulfilled_orders (id TEXT PRIMARY KEY, item_id TEXT, date TIMESTAMPTZ, user_name TEXT, quantity NUMERIC);
+          
+          CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT, role TEXT, pin TEXT);
+          CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT);
+          
+          CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, title TEXT, start_time TIMESTAMPTZ, end_time TIMESTAMPTZ, location TEXT, guests_count INTEGER, description TEXT, products_json TEXT, glassware_json TEXT, created_at TIMESTAMPTZ);
+          CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, content TEXT, created_by TEXT, is_done BOOLEAN, done_by TEXT, done_at TIMESTAMPTZ, recurrence TEXT, created_at TIMESTAMPTZ);
+          CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, content TEXT, user_name TEXT, date TIMESTAMPTZ, is_archived BOOLEAN, read_by TEXT, admin_reply TEXT, reply_date TIMESTAMPTZ);
+          
+          CREATE TABLE IF NOT EXISTS dlc_profiles (id TEXT PRIMARY KEY, name TEXT, duration_hours INTEGER, type TEXT);
+          CREATE TABLE IF NOT EXISTS dlc_history (id TEXT PRIMARY KEY, item_id TEXT, storage_id TEXT, opened_at TIMESTAMPTZ, user_name TEXT);
+          CREATE TABLE IF NOT EXISTS losses (id TEXT PRIMARY KEY, item_id TEXT, opened_at TIMESTAMPTZ, discarded_at TIMESTAMPTZ, quantity NUMERIC, user_name TEXT);
+          
+          CREATE TABLE IF NOT EXISTS event_comments (id TEXT PRIMARY KEY, event_id TEXT, user_name TEXT, content TEXT, created_at TIMESTAMPTZ);
+          CREATE TABLE IF NOT EXISTS user_logs (id TEXT PRIMARY KEY, user_name TEXT, action TEXT, details TEXT, timestamp TIMESTAMPTZ);
+          
+          CREATE TABLE IF NOT EXISTS glassware (id TEXT PRIMARY KEY, name TEXT, capacity NUMERIC, image_url TEXT, quantity INTEGER, last_updated TIMESTAMPTZ);
+          CREATE TABLE IF NOT EXISTS techniques (id TEXT PRIMARY KEY, name TEXT);
+          CREATE TABLE IF NOT EXISTS cocktail_categories (id TEXT PRIMARY KEY, name TEXT);
+          CREATE TABLE IF NOT EXISTS recipes (id TEXT PRIMARY KEY, name TEXT, category TEXT, glassware_id TEXT, technique TEXT, technical_details TEXT, description TEXT, history TEXT, decoration TEXT, selling_price NUMERIC, cost_price NUMERIC, status TEXT, created_by TEXT, created_at TIMESTAMPTZ, ingredients TEXT);
+          CREATE TABLE IF NOT EXISTS daily_cocktails (id TEXT PRIMARY KEY, date DATE, type TEXT, recipe_id TEXT, custom_name TEXT, custom_description TEXT);
+          
           CREATE TABLE IF NOT EXISTS meal_reservations (id TEXT PRIMARY KEY, user_id TEXT, date DATE, slot TEXT);
           CREATE TABLE IF NOT EXISTS admin_notes (id TEXT PRIMARY KEY, content TEXT, created_at TIMESTAMPTZ, user_name TEXT);
           CREATE TABLE IF NOT EXISTS product_sheets (id TEXT PRIMARY KEY, item_id TEXT, full_name TEXT, type TEXT, region TEXT, country TEXT, tasting_notes TEXT, custom_fields TEXT, food_pairing TEXT, serving_temp TEXT, allergens TEXT, description TEXT, status TEXT, updated_at TIMESTAMPTZ);
@@ -57,6 +90,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           CREATE TABLE IF NOT EXISTS email_templates (id TEXT PRIMARY KEY, name TEXT, subject TEXT, body TEXT);
       `);
   } catch (e) { console.error("Migration Error (Non-blocking):", e); }
+
+  // --- FIX: AJOUT DES CLÉS PRIMAIRES SI MANQUANTES (POUR ON CONFLICT) ---
+  try { await pool.query(`ALTER TABLE stock_levels ADD PRIMARY KEY (item_id, storage_id)`); } catch (e) {}
+  try { await pool.query(`ALTER TABLE stock_consignes ADD PRIMARY KEY (item_id, storage_id)`); } catch (e) {}
+  try { await pool.query(`ALTER TABLE stock_priorities ADD PRIMARY KEY (item_id, storage_id)`); } catch (e) {}
 
   try {
     const url = new URL(request.url);
