@@ -88,7 +88,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
 
         const responseBody = {
-            users: users.rows,
+            users: users.rows.map((u: any) => ({
+                id: u.id,
+                name: u.name,
+                role: u.role,
+                pin: u.pin,
+                showInMealPlanning: u.show_in_meal_planning !== false // Default true if null/undefined
+            })),
             appConfig: configMap
         };
 
@@ -210,6 +216,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         if (rawData.unfulfilledOrders) responseBody.unfulfilledOrders = rawData.unfulfilledOrders.map((u: any) => ({ 
             id: u.id, itemId: u.item_id, date: u.date, userName: u.user_name, quantity: parseFloat(u.quantity || '1') 
         }));
+        if (rawData.mealReservations) responseBody.mealReservations = rawData.mealReservations.map((r: any) => ({ 
+            id: r.id, userId: r.user_id, date: r.date, slot: r.slot 
+        }));
         
         const orderMapper = (row: any) => ({ 
             id: row.id, itemId: row.item_id, quantity: parseFloat(row.quantity || '0'), initialQuantity: row.initial_quantity ? parseFloat(row.initial_quantity) : null,
@@ -260,7 +269,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_DLC_HISTORY': { await pool.query(`INSERT INTO dlc_history (id, item_id, storage_id, opened_at, user_name) VALUES ($1, $2, $3, $4, $5)`, [payload.id, payload.itemId, payload.storageId, payload.openedAt, payload.userName]); break; }
         case 'DELETE_DLC_HISTORY': { await pool.query('DELETE FROM dlc_history WHERE id = $1', [payload.id]); break; }
         case 'SAVE_LOSS': { await pool.query(`INSERT INTO losses (id, item_id, opened_at, discarded_at, quantity, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [payload.id, payload.itemId, payload.openedAt, payload.discardedAt, payload.quantity, payload.userName]); break; }
-        case 'SAVE_USER': { await pool.query(`INSERT INTO users (id, name, role, pin) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, pin = EXCLUDED.pin`, [payload.id, payload.name, payload.role, payload.pin]); break; }
+        case 'SAVE_USER': { await pool.query(`INSERT INTO users (id, name, role, pin, show_in_meal_planning) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, pin = EXCLUDED.pin, show_in_meal_planning = EXCLUDED.show_in_meal_planning`, [payload.id, payload.name, payload.role, payload.pin, payload.showInMealPlanning]); break; }
         case 'SAVE_STORAGE': { await pool.query(`INSERT INTO storage_spaces (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [payload.id, payload.name]); break; }
         case 'SAVE_STORAGE_ORDER': { await pool.query(`UPDATE storage_spaces SET sort_order = $2 WHERE id = $1`, [payload.id, payload.order]); break; }
         case 'DELETE_STORAGE': { await pool.query('DELETE FROM storage_spaces WHERE id = $1', [payload.id]); break; }
@@ -290,6 +299,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_EMAIL_TEMPLATE': { await pool.query(`INSERT INTO email_templates (id, name, subject, body) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subject = EXCLUDED.subject, body = EXCLUDED.body`, [payload.id, payload.name, payload.subject, payload.body]); break; }
         case 'DELETE_EMAIL_TEMPLATE': { await pool.query('DELETE FROM email_templates WHERE id = $1', [payload.id]); break; }
         
+        case 'SAVE_MEAL_RESERVATION': { await pool.query(`INSERT INTO meal_reservations (id, user_id, date, slot) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date, payload.slot]); break; }
+        case 'DELETE_MEAL_RESERVATION': { await pool.query('DELETE FROM meal_reservations WHERE id = $1', [payload.id]); break; }
+
         // --- UPDATES V1.3 ---
         case 'SAVE_NOTE': {
             await pool.query(`INSERT INTO admin_notes (id, content, created_at, user_name) VALUES ($1, $2, NOW(), $3)`, [payload.id, payload.content, payload.userName]);
