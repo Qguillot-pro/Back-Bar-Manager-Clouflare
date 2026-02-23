@@ -205,14 +205,32 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             itemId: row.item_id, storageId: row.storage_id, minQuantity: parseFloat(row.min_quantity || '0'), maxCapacity: row.max_capacity ? parseFloat(row.max_capacity) : undefined 
         }));
         if (rawData.dailyCocktails) responseBody.dailyCocktails = rawData.dailyCocktails.map((d: any) => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description }));
-        if (rawData.events) responseBody.events = rawData.events.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, glasswareJson: e.glassware_json, createdAt: e.created_at }));
+        if (rawData.events) responseBody.events = rawData.events.map((e: any) => ({ 
+            id: e.id, 
+            title: e.title, 
+            startTime: e.start_time, 
+            endTime: e.end_time, 
+            location: e.location, 
+            guestsCount: e.guests_count, 
+            description: e.description, 
+            productsJson: typeof e.products_json === 'object' ? JSON.stringify(e.products_json) : e.products_json, 
+            glasswareJson: typeof e.glassware_json === 'object' ? JSON.stringify(e.glassware_json) : e.glassware_json, 
+            createdAt: e.created_at 
+        }));
         // UPDATE: Admin Notes List (History)
         if (rawData.adminNotes) responseBody.adminNotes = rawData.adminNotes.map((n: any) => ({ 
             id: n.id, content: n.content, createdAt: n.created_at || n.updated_at, userName: n.user_name 
         }));
         
         if (rawData.tasks) responseBody.tasks = rawData.tasks.map((t: any) => ({ 
-            id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at, recurrence: t.recurrence ? JSON.parse(t.recurrence) : undefined
+            id: t.id, 
+            content: t.content, 
+            createdBy: t.created_by, 
+            createdAt: t.created_at, 
+            isDone: t.is_done, 
+            doneBy: t.done_by, 
+            doneAt: t.done_at, 
+            recurrence: t.recurrence ? (typeof t.recurrence === 'string' ? JSON.parse(t.recurrence) : t.recurrence) : undefined
         }));
 
         if (rawData.unfulfilledOrders) responseBody.unfulfilledOrders = rawData.unfulfilledOrders.map((u: any) => ({ 
