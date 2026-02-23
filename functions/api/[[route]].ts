@@ -47,6 +47,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     max: 6 
   });
 
+  // --- AUTO-MIGRATION : ASSURE QUE LES NOUVELLES TABLES EXISTENT ---
+  try {
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS meal_reservations (id TEXT PRIMARY KEY, user_id TEXT, date DATE, slot TEXT);
+          CREATE TABLE IF NOT EXISTS admin_notes (id TEXT PRIMARY KEY, content TEXT, created_at TIMESTAMPTZ, user_name TEXT);
+          CREATE TABLE IF NOT EXISTS product_sheets (id TEXT PRIMARY KEY, item_id TEXT, full_name TEXT, type TEXT, region TEXT, country TEXT, tasting_notes TEXT, custom_fields TEXT, food_pairing TEXT, serving_temp TEXT, allergens TEXT, description TEXT, status TEXT, updated_at TIMESTAMPTZ);
+          CREATE TABLE IF NOT EXISTS product_types (id TEXT PRIMARY KEY, name TEXT, fields TEXT);
+          CREATE TABLE IF NOT EXISTS email_templates (id TEXT PRIMARY KEY, name TEXT, subject TEXT, body TEXT);
+      `);
+  } catch (e) { console.error("Migration Error (Non-blocking):", e); }
+
   try {
     const url = new URL(request.url);
     const path = url.pathname; 
