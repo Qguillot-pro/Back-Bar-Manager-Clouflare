@@ -300,7 +300,34 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       {/* COCKTAIL DETAIL MODAL (READ ONLY) */}
       {selectedCocktailRecipe && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300 no-print">
-              <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] print-section">
+              <style>{`
+                  @media print {
+                      body * { visibility: hidden; }
+                      #recipe-print-container, #recipe-print-container * { visibility: visible; }
+                      #recipe-print-container {
+                          position: absolute;
+                          left: 0;
+                          top: 0;
+                          width: 100%;
+                          height: auto;
+                          margin: 0;
+                          padding: 20px;
+                          background: white !important;
+                          color: black !important;
+                          overflow: visible !important;
+                          max-height: none !important;
+                          border: none !important;
+                          box-shadow: none !important;
+                          z-index: 9999;
+                      }
+                      .no-print { display: none !important; }
+                      .no-print-bg { background: transparent !important; border: 1px solid #ddd !important; }
+                      /* Force black text for print */
+                      #recipe-print-container .text-white { color: black !important; }
+                      #recipe-print-container .bg-slate-900 { background: white !important; color: black !important; border-bottom: 2px solid #000; }
+                  }
+              `}</style>
+              <div id="recipe-print-container" className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] print-section">
                   <div className="relative h-24 bg-slate-900 flex items-center justify-center p-6 shrink-0 no-print-bg">
                       <h2 className="text-2xl font-black text-white uppercase tracking-tighter text-center">{selectedCocktailRecipe.name}</h2>
                       {(() => {
