@@ -103,16 +103,8 @@ const Configuration: React.FC<ConfigProps> = ({
 
   const handleConfigChange = (field: keyof AppConfig, value: any) => {
       setAppConfig(prev => ({ ...prev, [field]: value }));
-      
-      let key = '';
-      if (field === 'tempItemDuration') key = 'temp_item_duration';
-      else if (field === 'defaultMargin') key = 'default_margin';
-      else if (field === 'mealReminderTimes') key = 'meal_reminder_times';
-      else if (field === 'emailSender') key = 'email_sender';
-      else if (field === 'programMapping') key = 'program_mapping';
-      else key = field; // Fallback
-
-      onSync('SAVE_CONFIG', { key, value: typeof value === 'object' ? JSON.stringify(value) : value });
+      const key = field === 'tempItemDuration' ? 'temp_item_duration' : 'default_margin';
+      onSync('SAVE_CONFIG', { key, value });
   };
 
   const addProduct = () => { if (!itemName) return; const newItem: StockItem = { id: Math.random().toString(36).substr(2, 9), articleCode: itemArticleCode, name: itemName, category: itemCat, formatId: itemFormat, pricePerUnit: 0, lastUpdated: new Date().toISOString(), isDLC: itemIsDlc, dlcProfileId: itemIsDlc ? itemDlcProfile : undefined, isConsigne: itemIsConsigne, order: items.length, isDraft: true }; setItems(prev => [...prev, newItem]); onSync('SAVE_ITEM', newItem); setItemName(''); setItemArticleCode(''); setItemIsDlc(false); };

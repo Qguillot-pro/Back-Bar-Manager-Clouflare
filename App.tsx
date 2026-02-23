@@ -72,7 +72,6 @@ const App: React.FC = () => {
   const [productSheets, setProductSheets] = useState<ProductSheet[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
-  const [dailyAlerts, setDailyAlerts] = useState<DailyAlert[]>([]);
 
   const syncData = async (action: string, payload: any) => {
     // BLOCK SYNC IN TEST MODE
@@ -140,9 +139,7 @@ const App: React.FC = () => {
           if (dataH.messages) setMessages(dataH.messages);
           if (dataH.losses) setLosses(dataH.losses);
           if (dataH.userLogs) setUserLogs(dataH.userLogs);
-          if (dataH.dailyAlerts) setDailyAlerts(dataH.dailyAlerts);
-          if (dataH.eventComments) setEventComments(dataH.eventComments);
-      } catch (e) { console.error("Fetch Error", e); } finally {
+      } catch (e) {} finally {
           setDataSyncing(false);
           setLoading(false);
       }

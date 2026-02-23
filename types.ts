@@ -305,15 +305,6 @@ export interface ProductType {
     fields: string[]; // List of custom field names
 }
 
-export interface DailyAlert {
-    id: string;
-    date: string; // YYYY-MM-DD
-    type: 'RUPTURE' | 'TENSION';
-    itemId: string;
-    quantity: number;
-    consigne: number;
-}
-
 export interface ProductSheet {
     id: string;
     itemId: string; // Link to StockItem
@@ -327,7 +318,6 @@ export interface ProductSheet {
     servingTemp?: string;
     allergens?: string;
     description: string;
-    glasswareId?: string;
     status: 'DRAFT' | 'VALIDATED';
     updatedAt: string;
 }

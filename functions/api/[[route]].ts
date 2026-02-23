@@ -47,55 +47,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     max: 6 
   });
 
-  // --- AUTO-MIGRATION : ASSURE QUE LES NOUVELLES TABLES EXISTENT ---
-  try {
-      await pool.query(`
-          CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY, article_code TEXT, name TEXT, category TEXT, format_id TEXT, price_per_unit NUMERIC, is_dlc BOOLEAN, dlc_profile_id TEXT, is_consigne BOOLEAN, sort_order INTEGER, is_draft BOOLEAN, is_temporary BOOLEAN, is_inventory_only BOOLEAN, created_at TIMESTAMPTZ, last_updated TIMESTAMPTZ);
-          CREATE TABLE IF NOT EXISTS storage_spaces (id TEXT PRIMARY KEY, name TEXT, sort_order INTEGER);
-          CREATE TABLE IF NOT EXISTS formats (id TEXT PRIMARY KEY, name TEXT, value NUMERIC, sort_order INTEGER);
-          CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY, sort_order INTEGER);
-          
-          CREATE TABLE IF NOT EXISTS stock_levels (item_id TEXT, storage_id TEXT, quantity NUMERIC, PRIMARY KEY (item_id, storage_id));
-          CREATE TABLE IF NOT EXISTS stock_consignes (item_id TEXT, storage_id TEXT, min_quantity NUMERIC, max_capacity NUMERIC, PRIMARY KEY (item_id, storage_id));
-          CREATE TABLE IF NOT EXISTS stock_priorities (item_id TEXT, storage_id TEXT, priority INTEGER, PRIMARY KEY (item_id, storage_id));
-          
-          CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, item_id TEXT, storage_id TEXT, type TEXT, quantity NUMERIC, date TIMESTAMPTZ, note TEXT, is_cave_transfer BOOLEAN, user_name TEXT, is_service_transfer BOOLEAN);
-          CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, item_id TEXT, quantity NUMERIC, initial_quantity NUMERIC, date TIMESTAMPTZ, status TEXT, user_name TEXT, rupture_date TIMESTAMPTZ, ordered_at TIMESTAMPTZ, received_at TIMESTAMPTZ);
-          CREATE TABLE IF NOT EXISTS unfulfilled_orders (id TEXT PRIMARY KEY, item_id TEXT, date TIMESTAMPTZ, user_name TEXT, quantity NUMERIC);
-          
-          CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT, role TEXT, pin TEXT);
-          CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT);
-          
-          CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, title TEXT, start_time TIMESTAMPTZ, end_time TIMESTAMPTZ, location TEXT, guests_count INTEGER, description TEXT, products_json TEXT, glassware_json TEXT, created_at TIMESTAMPTZ);
-          CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, content TEXT, created_by TEXT, is_done BOOLEAN, done_by TEXT, done_at TIMESTAMPTZ, recurrence TEXT, created_at TIMESTAMPTZ);
-          CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, content TEXT, user_name TEXT, date TIMESTAMPTZ, is_archived BOOLEAN, read_by TEXT, admin_reply TEXT, reply_date TIMESTAMPTZ);
-          
-          CREATE TABLE IF NOT EXISTS dlc_profiles (id TEXT PRIMARY KEY, name TEXT, duration_hours INTEGER, type TEXT);
-          CREATE TABLE IF NOT EXISTS dlc_history (id TEXT PRIMARY KEY, item_id TEXT, storage_id TEXT, opened_at TIMESTAMPTZ, user_name TEXT);
-          CREATE TABLE IF NOT EXISTS losses (id TEXT PRIMARY KEY, item_id TEXT, opened_at TIMESTAMPTZ, discarded_at TIMESTAMPTZ, quantity NUMERIC, user_name TEXT);
-          
-          CREATE TABLE IF NOT EXISTS event_comments (id TEXT PRIMARY KEY, event_id TEXT, user_name TEXT, content TEXT, created_at TIMESTAMPTZ);
-          CREATE TABLE IF NOT EXISTS user_logs (id TEXT PRIMARY KEY, user_name TEXT, action TEXT, details TEXT, timestamp TIMESTAMPTZ);
-          
-          CREATE TABLE IF NOT EXISTS glassware (id TEXT PRIMARY KEY, name TEXT, capacity NUMERIC, image_url TEXT, quantity INTEGER, last_updated TIMESTAMPTZ);
-          CREATE TABLE IF NOT EXISTS techniques (id TEXT PRIMARY KEY, name TEXT);
-          CREATE TABLE IF NOT EXISTS cocktail_categories (id TEXT PRIMARY KEY, name TEXT);
-          CREATE TABLE IF NOT EXISTS recipes (id TEXT PRIMARY KEY, name TEXT, category TEXT, glassware_id TEXT, technique TEXT, technical_details TEXT, description TEXT, history TEXT, decoration TEXT, selling_price NUMERIC, cost_price NUMERIC, status TEXT, created_by TEXT, created_at TIMESTAMPTZ, ingredients TEXT);
-          CREATE TABLE IF NOT EXISTS daily_cocktails (id TEXT PRIMARY KEY, date DATE, type TEXT, recipe_id TEXT, custom_name TEXT, custom_description TEXT);
-          
-          CREATE TABLE IF NOT EXISTS meal_reservations (id TEXT PRIMARY KEY, user_id TEXT, date DATE, slot TEXT);
-          CREATE TABLE IF NOT EXISTS admin_notes (id TEXT PRIMARY KEY, content TEXT, created_at TIMESTAMPTZ, user_name TEXT);
-          CREATE TABLE IF NOT EXISTS product_sheets (id TEXT PRIMARY KEY, item_id TEXT, full_name TEXT, type TEXT, region TEXT, country TEXT, tasting_notes TEXT, custom_fields TEXT, food_pairing TEXT, serving_temp TEXT, allergens TEXT, description TEXT, status TEXT, updated_at TIMESTAMPTZ);
-          CREATE TABLE IF NOT EXISTS product_types (id TEXT PRIMARY KEY, name TEXT, fields TEXT);
-          CREATE TABLE IF NOT EXISTS email_templates (id TEXT PRIMARY KEY, name TEXT, subject TEXT, body TEXT);
-      `);
-  } catch (e) { console.error("Migration Error (Non-blocking):", e); }
-
-  // --- FIX: AJOUT DES CLÉS PRIMAIRES SI MANQUANTES (POUR ON CONFLICT) ---
-  try { await pool.query(`ALTER TABLE stock_levels ADD PRIMARY KEY (item_id, storage_id)`); } catch (e) {}
-  try { await pool.query(`ALTER TABLE stock_consignes ADD PRIMARY KEY (item_id, storage_id)`); } catch (e) {}
-  try { await pool.query(`ALTER TABLE stock_priorities ADD PRIMARY KEY (item_id, storage_id)`); } catch (e) {}
-
   try {
     const url = new URL(request.url);
     const path = url.pathname; 
@@ -129,13 +80,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
             }
             if (row.key === 'email_sender') configMap.emailSender = row.value;
-            if (row.key === 'meal_reminder_times') {
-                try {
-                    configMap.mealReminderTimes = JSON.parse(row.value);
-                } catch (e) {
-                    configMap.mealReminderTimes = [];
-                }
-            }
         });
 
         // Les configurations de cycles
@@ -188,7 +132,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'tasks', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200) t),
                     'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500) t),
                     'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'PENDING' OR status = 'ORDERED') t),
-                    'mealReservations', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM meal_reservations WHERE date >= NOW() - INTERVAL '7 days') t),
                     'adminNotes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM admin_notes ORDER BY created_at DESC LIMIT 50) t)
                 ) as data;
             `;
@@ -254,32 +197,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             itemId: row.item_id, storageId: row.storage_id, minQuantity: parseFloat(row.min_quantity || '0'), maxCapacity: row.max_capacity ? parseFloat(row.max_capacity) : undefined 
         }));
         if (rawData.dailyCocktails) responseBody.dailyCocktails = rawData.dailyCocktails.map((d: any) => ({ id: d.id, date: d.date, type: d.type, recipeId: d.recipe_id, customName: d.custom_name, customDescription: d.custom_description }));
-        if (rawData.events) responseBody.events = rawData.events.map((e: any) => ({ 
-            id: e.id, 
-            title: e.title, 
-            startTime: e.start_time, 
-            endTime: e.end_time, 
-            location: e.location, 
-            guestsCount: e.guests_count, 
-            description: e.description, 
-            productsJson: typeof e.products_json === 'object' ? JSON.stringify(e.products_json) : e.products_json, 
-            glasswareJson: typeof e.glassware_json === 'object' ? JSON.stringify(e.glassware_json) : e.glassware_json, 
-            createdAt: e.created_at 
-        }));
+        if (rawData.events) responseBody.events = rawData.events.map((e: any) => ({ id: e.id, title: e.title, startTime: e.start_time, endTime: e.end_time, location: e.location, guestsCount: e.guests_count, description: e.description, productsJson: e.products_json, glasswareJson: e.glassware_json, createdAt: e.created_at }));
         // UPDATE: Admin Notes List (History)
         if (rawData.adminNotes) responseBody.adminNotes = rawData.adminNotes.map((n: any) => ({ 
             id: n.id, content: n.content, createdAt: n.created_at || n.updated_at, userName: n.user_name 
         }));
         
         if (rawData.tasks) responseBody.tasks = rawData.tasks.map((t: any) => ({ 
-            id: t.id, 
-            content: t.content, 
-            createdBy: t.created_by, 
-            createdAt: t.created_at, 
-            isDone: t.is_done, 
-            doneBy: t.done_by, 
-            doneAt: t.done_at, 
-            recurrence: t.recurrence ? (typeof t.recurrence === 'string' ? JSON.parse(t.recurrence) : t.recurrence) : undefined
+            id: t.id, content: t.content, createdBy: t.created_by, createdAt: t.created_at, isDone: t.is_done, doneBy: t.done_by, doneAt: t.done_at, recurrence: t.recurrence ? JSON.parse(t.recurrence) : undefined
         }));
 
         if (rawData.unfulfilledOrders) responseBody.unfulfilledOrders = rawData.unfulfilledOrders.map((u: any) => ({ 
@@ -292,10 +217,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
         if (rawData.orders) responseBody.orders = rawData.orders.map(orderMapper);
         if (rawData.archivedOrders) responseBody.orders = (responseBody.orders || []).concat(rawData.archivedOrders.map(orderMapper));
-        
-        if (rawData.mealReservations) responseBody.mealReservations = rawData.mealReservations.map((r: any) => ({
-            id: r.id, userId: r.user_id, date: r.date, slot: r.slot
-        }));
 
         // --- HISTORY ---
         if (rawData.transactions) responseBody.transactions = rawData.transactions.map((t: any) => ({
@@ -368,15 +289,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'VALIDATE_RECIPE': { await pool.query('UPDATE recipes SET status = $2 WHERE id = $1', [payload.id, 'VALIDATED']); break; }
         case 'SAVE_EMAIL_TEMPLATE': { await pool.query(`INSERT INTO email_templates (id, name, subject, body) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subject = EXCLUDED.subject, body = EXCLUDED.body`, [payload.id, payload.name, payload.subject, payload.body]); break; }
         case 'DELETE_EMAIL_TEMPLATE': { await pool.query('DELETE FROM email_templates WHERE id = $1', [payload.id]); break; }
-        
-        case 'SAVE_MEAL_RESERVATION': {
-            await pool.query(`INSERT INTO meal_reservations (id, user_id, date, slot) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date, payload.slot]);
-            break;
-        }
-        case 'DELETE_MEAL_RESERVATION': {
-            await pool.query('DELETE FROM meal_reservations WHERE id = $1', [payload.id]);
-            break;
-        }
         
         // --- UPDATES V1.3 ---
         case 'SAVE_NOTE': {
