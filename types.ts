@@ -319,6 +319,7 @@ export interface DailyAlert {
 export interface SuggestedPrice {
     label: string;
     price: string;
+    volume?: number;
 }
 
 export interface ProductSheet {
