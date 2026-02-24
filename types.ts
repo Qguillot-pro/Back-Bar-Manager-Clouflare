@@ -319,7 +319,6 @@ export interface DailyAlert {
 export interface SuggestedPrice {
     label: string;
     price: string;
-    volume?: number;
 }
 
 export interface ProductSheet {
@@ -340,4 +339,7 @@ export interface ProductSheet {
     glasswareId?: string; // Deprecated but kept for compatibility if needed, or removed
     status: 'DRAFT' | 'VALIDATED';
     updatedAt: string;
+    salesFormat?: number; // Format de vente (valeur)
+    actualPrice?: number; // Prix de vente actuel
+    marginRate?: number; // Taux de marge spécifique
 }

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice, AppConfig } from '../types';
+import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice } from '../types';
 import { generateProductSheetWithAI } from '../services/geminiService';
 
 interface ProductKnowledgeProps {
@@ -11,10 +11,9 @@ interface ProductKnowledgeProps {
   productTypes?: ProductType[];
   glassware?: Glassware[];
   formats?: Format[];
-  appConfig?: AppConfig;
 }
 
-const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [], appConfig }) => {
+const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<ProductSheet | null>(null);
@@ -32,7 +31,8 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
   const [temp, setTemp] = useState('');
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [glasswareIds, setGlasswareIds] = useState<string[]>([]);
-  const [suggestedPrices, setSuggestedPrices] = useState<SuggestedPrice[]>([]);
+  const [salesFormat, setSalesFormat] = useState<number>(0);
+  const [actualPrice, setActualPrice] = useState<number>(0);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const linkedItem = items.find(i => i.id === selectedSheet?.itemId);
@@ -71,7 +71,8 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
           allergens: '',
           description: desc,
           glasswareIds,
-          suggestedPrices,
+          salesFormat,
+          actualPrice,
           status: currentUserRole === 'ADMIN' ? 'VALIDATED' : 'DRAFT',
           updatedAt: new Date().toISOString()
       };
@@ -91,7 +92,8 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
       setTemp('');
       setCustomFields({});
       setGlasswareIds([]);
-      setSuggestedPrices([]);
+      setSalesFormat(0);
+      setActualPrice(0);
       setSelectedSheet(null);
   };
 
@@ -288,86 +290,43 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                           <div className="flex justify-between items-center">
                               <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Prix Conseillés (Admin)</p>
                               <button 
-                                  onClick={() => setSuggestedPrices([...suggestedPrices, { label: '', price: '', volume: undefined }])}
+                                  onClick={() => setSuggestedPrices([...suggestedPrices, { label: '', price: '' }])}
                                   className="text-[9px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-800"
                               >
                                   + Ajouter
                               </button>
                           </div>
                           <div className="space-y-2">
-                              {suggestedPrices.map((price, idx) => {
-                                  const item = items.find(i => i.id === selectedItemId);
-                                  const format = formats.find(f => f.id === item?.formatId);
-                                  const itemPrice = item?.pricePerUnit || 0;
-                                  const itemFormatValue = format?.value || 0;
-                                  const margin = appConfig?.defaultMargin || 0;
-                                  
-                                  let calculatedPrice = 0;
-                                  if (itemPrice > 0 && itemFormatValue > 0 && price.volume && price.volume > 0) {
-                                      const cost = (itemPrice / itemFormatValue) * price.volume;
-                                      if (margin < 100) {
-                                          calculatedPrice = cost / (1 - (margin / 100));
-                                      }
-                                  }
-
-                                  return (
-                                  <div key={idx} className="flex flex-col gap-2 bg-white border border-emerald-200 rounded-lg p-2">
-                                      <div className="flex gap-2 items-center">
-                                          <input 
-                                              className="flex-1 bg-slate-50 border border-emerald-100 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" 
-                                              placeholder="Label (ex: Verre)" 
-                                              value={price.label} 
-                                              onChange={e => {
-                                                  const newPrices = [...suggestedPrices];
-                                                  newPrices[idx].label = e.target.value;
-                                                  setSuggestedPrices(newPrices);
-                                              }} 
-                                          />
-                                          <div className="flex items-center gap-1">
-                                              <input 
-                                                  type="number"
-                                                  className="w-16 bg-slate-50 border border-emerald-100 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800 text-center" 
-                                                  placeholder="Vol." 
-                                                  value={price.volume || ''} 
-                                                  onChange={e => {
-                                                      const newPrices = [...suggestedPrices];
-                                                      newPrices[idx].volume = parseFloat(e.target.value);
-                                                      setSuggestedPrices(newPrices);
-                                                  }} 
-                                              />
-                                              <span className="text-[9px] font-black text-emerald-400">cl</span>
-                                          </div>
-                                          <button 
-                                              onClick={() => setSuggestedPrices(suggestedPrices.filter((_, i) => i !== idx))}
-                                              className="text-emerald-400 hover:text-emerald-600 font-bold px-2"
-                                          >
-                                              ✕
-                                          </button>
-                                      </div>
-                                      <div className="flex justify-between items-center px-1">
-                                          <div className="flex items-center gap-2">
-                                              <span className="text-[9px] font-black text-emerald-400 uppercase">Prix Réel:</span>
-                                              <input 
-                                                  className="w-20 bg-slate-50 border border-emerald-100 rounded-lg p-1 text-xs outline-none font-bold text-emerald-800 text-right" 
-                                                  placeholder="0.00 €" 
-                                                  value={price.price} 
-                                                  onChange={e => {
-                                                      const newPrices = [...suggestedPrices];
-                                                      newPrices[idx].price = e.target.value;
-                                                      setSuggestedPrices(newPrices);
-                                                  }} 
-                                              />
-                                          </div>
-                                          {calculatedPrice > 0 && (
-                                              <div className="text-right">
-                                                  <span className="block text-[8px] font-black text-emerald-400 uppercase">Conseillé ({margin}%)</span>
-                                                  <span className="text-xs font-black text-emerald-600">{calculatedPrice.toFixed(2)} €</span>
-                                              </div>
-                                          )}
-                                      </div>
+                              {suggestedPrices.map((price, idx) => (
+                                  <div key={idx} className="flex gap-2 items-center">
+                                      <input 
+                                          className="flex-1 bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" 
+                                          placeholder="Format (ex: 25cl)" 
+                                          value={price.label} 
+                                          onChange={e => {
+                                              const newPrices = [...suggestedPrices];
+                                              newPrices[idx].label = e.target.value;
+                                              setSuggestedPrices(newPrices);
+                                          }} 
+                                      />
+                                      <input 
+                                          className="w-24 bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800 text-right" 
+                                          placeholder="Prix €" 
+                                          value={price.price} 
+                                          onChange={e => {
+                                              const newPrices = [...suggestedPrices];
+                                              newPrices[idx].price = e.target.value;
+                                              setSuggestedPrices(newPrices);
+                                          }} 
+                                      />
+                                      <button 
+                                          onClick={() => setSuggestedPrices(suggestedPrices.filter((_, i) => i !== idx))}
+                                          className="text-emerald-400 hover:text-emerald-600 font-bold px-2"
+                                      >
+                                          ✕
+                                      </button>
                                   </div>
-                                  );
-                              })}
+                              ))}
                               {suggestedPrices.length === 0 && <p className="text-xs text-emerald-400 italic text-center">Aucun prix conseillé.</p>}
                           </div>
                       </div>
@@ -443,42 +402,13 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                       {currentUserRole === 'ADMIN' && selectedSheet.suggestedPrices && selectedSheet.suggestedPrices.length > 0 && (
                           <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
                               <h3 className="font-black text-sm uppercase text-emerald-600 tracking-widest border-b border-emerald-200 pb-2 mb-4">Prix Conseillés (Admin)</h3>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  {selectedSheet.suggestedPrices.map((sp, idx) => {
-                                      const item = items.find(i => i.id === selectedSheet.itemId);
-                                      const format = formats.find(f => f.id === item?.formatId);
-                                      const itemPrice = item?.pricePerUnit || 0;
-                                      const itemFormatValue = format?.value || 0;
-                                      const margin = appConfig?.defaultMargin || 0;
-                                      
-                                      let calculatedPrice = 0;
-                                      if (itemPrice > 0 && itemFormatValue > 0 && sp.volume && sp.volume > 0) {
-                                          const cost = (itemPrice / itemFormatValue) * sp.volume;
-                                          if (margin < 100) {
-                                              calculatedPrice = cost / (1 - (margin / 100));
-                                          }
-                                      }
-                                      
-                                      const actualPrice = parseFloat(sp.price.replace(',', '.') || '0');
-                                      const isGood = actualPrice >= calculatedPrice;
-
-                                      return (
-                                      <div key={idx} className="bg-white p-3 rounded-xl border border-emerald-100 flex justify-between items-center">
-                                          <div>
-                                              <span className="block font-black text-emerald-800 text-xs uppercase">{sp.label} {sp.volume ? `(${sp.volume}cl)` : ''}</span>
-                                              <span className="text-[10px] text-emerald-500 font-bold">Prix Actuel: {sp.price} €</span>
-                                          </div>
-                                          {calculatedPrice > 0 && (
-                                              <div className="text-right">
-                                                  <span className="block text-[9px] font-black text-emerald-400 uppercase">Conseillé ({margin}%)</span>
-                                                  <span className={`text-sm font-black ${isGood ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                                      {calculatedPrice.toFixed(2)} €
-                                                  </span>
-                                              </div>
-                                          )}
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
+                                  {selectedSheet.suggestedPrices.map((sp, idx) => (
+                                      <div key={idx}>
+                                          <span className="block font-black text-emerald-400 text-xs uppercase mb-1">{sp.label}</span>
+                                          <span className="text-emerald-800 font-bold text-lg">{sp.price} €</span>
                                       </div>
-                                      );
-                                  })}
+                                  ))}
                               </div>
                           </div>
                       )}
