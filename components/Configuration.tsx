@@ -109,6 +109,7 @@ const Configuration: React.FC<ConfigProps> = ({
       else if (field === 'defaultMargin') key = 'default_margin';
       else if (field === 'mealReminderTimes') key = 'meal_reminder_times';
       else if (field === 'emailSender') key = 'email_sender';
+      else if (field === 'barDayStart') key = 'bar_day_start';
       else if (field === 'programMapping') key = 'program_mapping';
       else key = field; // Fallback
 
@@ -308,14 +309,14 @@ const Configuration: React.FC<ConfigProps> = ({
                         <p className="text-[9px] text-slate-400 ml-1">Les produits temporaires seront masqués après cette période.</p>
                     </div>
                     <div className="space-y-2">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Taux de Marge par Défaut (%)</label>
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Heure Début Journée Bar</label>
                         <input 
-                            type="number"
+                            type="time"
                             className="w-full bg-slate-50 p-4 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
-                            value={appConfig.defaultMargin || 82}
-                            onChange={e => handleConfigChange('defaultMargin', parseFloat(e.target.value))}
+                            value={appConfig.barDayStart || '04:00'}
+                            onChange={e => handleConfigChange('barDayStart', e.target.value)}
                         />
-                        <p className="text-[9px] text-slate-400 ml-1">Utilisé pour calculer le prix de vente suggéré des recettes.</p>
+                        <p className="text-[9px] text-slate-400 ml-1">Heure à laquelle la journée "logique" change (ex: 04:00 pour inclure la nuit).</p>
                     </div>
                 </div>
                 

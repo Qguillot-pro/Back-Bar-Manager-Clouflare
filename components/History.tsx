@@ -12,12 +12,13 @@ interface HistoryProps {
   formats: Format[];
   losses?: Loss[];
   dailyStockAlerts?: DailyStockAlert[];
+  appConfig?: AppConfig;
 }
 
 type PeriodFilter = 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
 type Tab = 'MOVEMENTS' | 'LOSSES' | 'CLIENT_RUPTURE' | 'STOCK_TENSION' | 'STOCK_RUPTURE' | 'RECEIVED';
 
-const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, formats = [], losses = [], dailyStockAlerts = [] }) => {
+const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, formats = [], losses = [], dailyStockAlerts = [], appConfig }) => {
   const [activeTab, setActiveTab] = useState<Tab>('MOVEMENTS');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('MONTH');
   
@@ -72,13 +73,19 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
       return isNaN(d.getTime()) ? new Date() : d;
   };
 
-  const checkDateInFilter = (dateStr: string) => {
+  const checkDateInFilter = (dateStr: string, isPreCalculatedBarDate = false) => {
       if (!dateStr) return false;
       const date = safeDate(dateStr);
-      // Adjust for bar day (starts at 6AM)
+      // Adjust for bar day
       const barDate = new Date(date);
-      if (barDate.getHours() < 6) {
-          barDate.setDate(barDate.getDate() - 1);
+      
+      if (!isPreCalculatedBarDate) {
+          const barDayStart = appConfig?.barDayStart || '04:00';
+          const [startHour, startMin] = barDayStart.split(':').map(Number);
+          
+          if (barDate.getHours() < startHour || (barDate.getHours() === startHour && barDate.getMinutes() < startMin)) {
+              barDate.setDate(barDate.getDate() - 1);
+          }
       }
 
       if (periodFilter === 'DAY') {
@@ -116,9 +123,9 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           case 'CLIENT_RUPTURE':
               return orders.filter(o => o.ruptureDate && checkDateInFilter(o.ruptureDate));
           case 'STOCK_TENSION':
-              return dailyStockAlerts.filter(a => a.type === 'TENSION' && checkDateInFilter(a.date));
+              return dailyStockAlerts.filter(a => a.type === 'TENSION' && checkDateInFilter(a.date, true));
           case 'STOCK_RUPTURE':
-              return dailyStockAlerts.filter(a => a.type === 'RUPTURE' && checkDateInFilter(a.date));
+              return dailyStockAlerts.filter(a => a.type === 'RUPTURE' && checkDateInFilter(a.date, true));
           case 'RECEIVED':
               return orders.filter(o => o.status === 'RECEIVED' && o.receivedAt && checkDateInFilter(o.receivedAt));
           default:
@@ -170,7 +177,8 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           csvContent += "Produit;Quantité Totale;Occurrences;Dates\n";
           (aggregatedData as any[]).forEach(g => {
               const datesStr = g.dates.map((d: string) => safeDate(d).toLocaleDateString()).join(', ');
-              csvContent += `${g.item.name};${g.quantity.toFixed(2)};${g.count};"${datesStr}"\n`;
+              const qtyDisplay = activeTab === 'LOSSES' ? (g.quantity * 100).toFixed(2) : g.quantity.toFixed(2);
+              csvContent += `${g.item.name};${qtyDisplay};${g.count};"${datesStr}"\n`;
           });
       }
 
@@ -201,7 +209,8 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
               <button onClick={() => setActiveTab('MOVEMENTS')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Mouvements</button>
               <button onClick={() => setActiveTab('LOSSES')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'LOSSES' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Pertes & Gaspillage</button>
               <button onClick={() => setActiveTab('CLIENT_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'CLIENT_RUPTURE' ? 'bg-rose-400 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Ruptures Clients</button>
-              <button onClick={() => setActiveTab('STOCK_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'STOCK_RUPTURE' ? 'bg-amber-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Sous Tension</button>
+              <button onClick={() => setActiveTab('STOCK_TENSION')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'STOCK_TENSION' ? 'bg-amber-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Sous Tension</button>
+              <button onClick={() => setActiveTab('STOCK_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'STOCK_RUPTURE' ? 'bg-red-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Rupture Produit</button>
               <button onClick={() => setActiveTab('RECEIVED')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'RECEIVED' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Reçus</button>
           </div>
 
@@ -301,7 +310,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                           <tr>
                               <th className="p-4">Produit</th>
                               <th className="p-4 text-right">
-                                  {activeTab === 'LOSSES' ? 'Quantité Perdue (Btl)' : 
+                                  {activeTab === 'LOSSES' ? 'Quantité Perdue (Unit)' : 
                                    activeTab === 'RECEIVED' ? 'Quantité Reçue' : 
                                    'Occurrences / Jours'}
                               </th>
@@ -316,8 +325,8 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                                       <span className="block text-[9px] text-slate-400 font-normal uppercase tracking-wider mt-0.5">{g.item.category}</span>
                                   </td>
                                   <td className="p-4 text-right font-black text-slate-800">
-                                      {activeTab === 'LOSSES' ? g.quantity.toFixed(2) : g.quantity}
-                                      {activeTab === 'LOSSES' && <span className="text-[9px] text-slate-400 font-normal ml-1">btl</span>}
+                                      {activeTab === 'LOSSES' ? (g.quantity * 100).toFixed(2) : g.quantity}
+                                      {activeTab === 'LOSSES' && <span className="text-[9px] text-slate-400 font-normal ml-1">Unit</span>}
                                   </td>
                                   <td className="p-4 text-right">
                                       <div className="flex flex-wrap justify-end gap-1">

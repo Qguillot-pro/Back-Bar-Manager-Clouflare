@@ -31,9 +31,12 @@ interface DailyLifeProps {
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const getBarDateStr = (d: Date = new Date()) => {
+const getBarDateStr = (d: Date = new Date(), startTime: string = '04:00') => {
     const shift = new Date(d);
-    if (shift.getHours() < 4) shift.setDate(shift.getDate() - 1);
+    const [h, m] = startTime.split(':').map(Number);
+    if (shift.getHours() < h || (shift.getHours() === h && shift.getMinutes() < m)) {
+        shift.setDate(shift.getDate() - 1);
+    }
     return shift.toISOString().split('T')[0];
 };
 
@@ -89,7 +92,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const [glasswareQtyInput, setGlasswareQtyInput] = useState<string>('1');
   const [selectedGlasswareId, setSelectedGlasswareId] = useState('');
 
-  const [selectedDate, setSelectedDate] = useState<string>(getBarDateStr());
+  const [selectedDate, setSelectedDate] = useState<string>(getBarDateStr(new Date(), appConfig?.barDayStart));
 
   // --- COCKTAIL LOGIC (Configuration et cycles) ---
   const getCycleConfig = (type: DailyCocktailType): CycleConfig => {
@@ -365,10 +368,15 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   // --- TASKS LOGIC (Gestion complète) ---
   const activeTasks = useMemo(() => {
     const now = new Date();
-    // Début de la journée bar (4h du matin)
+    // Début de la journée bar
+    const barDayStart = appConfig?.barDayStart || '04:00';
+    const [startHour, startMin] = barDayStart.split(':').map(Number);
+    
     const startOfShift = new Date(now);
-    if (now.getHours() < 4) startOfShift.setDate(now.getDate() - 1);
-    startOfShift.setHours(4, 0, 0, 0);
+    if (now.getHours() < startHour || (now.getHours() === startHour && now.getMinutes() < startMin)) {
+        startOfShift.setDate(now.getDate() - 1);
+    }
+    startOfShift.setHours(startHour, startMin, 0, 0);
 
     const currentDayOfWeek = startOfShift.getDay(); // 0=Dim, 1=Lun...
 
@@ -614,9 +622,8 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                               const d = new Date(dateStr);
                               const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short' });
                               const dayNum = d.getDate();
-                              const isToday = dateStr === getBarDateStr();
                               return (
-                                  <th key={dateStr} className={`p-2 text-center border-b border-slate-100 ${isToday ? 'bg-indigo-50 text-indigo-700 rounded-t-lg' : ''}`}>
+                                  <th key={dateStr} className={`p-2 text-center border-b border-slate-100 ${dateStr === getBarDateStr(new Date(), appConfig?.barDayStart) ? 'bg-indigo-50 text-indigo-700 rounded-t-lg' : ''}`}>
                                       <div className="flex flex-col items-center">
                                           <span className="text-[9px] font-black uppercase tracking-widest opacity-60">{dayName}</span>
                                           <span className="text-lg font-black">{dayNum}</span>
@@ -634,7 +641,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                   const isLunchReserved = mealReservations.some(r => r.userId === user.id && r.date === dateStr && r.slot === 'LUNCH');
                                   const isDinnerReserved = mealReservations.some(r => r.userId === user.id && r.date === dateStr && r.slot === 'DINNER');
                                   const isCurrentUser = user.id === currentUser.id;
-                                  const isToday = dateStr === getBarDateStr();
+                                  const isToday = dateStr === getBarDateStr(new Date(), appConfig?.barDayStart);
 
                                   return (
                                       <td key={dateStr} className={`p-2 text-center border-l border-slate-50 ${isToday ? 'bg-indigo-50/30' : ''}`}>

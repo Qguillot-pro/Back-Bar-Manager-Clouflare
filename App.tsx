@@ -148,6 +148,92 @@ const App: React.FC = () => {
       }
   };
 
+  const checkDailyAlerts = useCallback(() => {
+      if (!items.length || !stockLevels.length) return;
+
+      const now = new Date();
+      const barDayStart = appConfig.barDayStart || '04:00';
+      const [startHour, startMin] = barDayStart.split(':').map(Number);
+      
+      // Calculate "Bar Date" for yesterday (the day that just finished)
+      // If now is 05:00 and start is 04:00, we are in a new bar day.
+      // We want to record stats for the *previous* bar day if not already done.
+      
+      const currentBarDate = new Date(now);
+      if (now.getHours() < startHour || (now.getHours() === startHour && now.getMinutes() < startMin)) {
+          currentBarDate.setDate(currentBarDate.getDate() - 1);
+      }
+      
+      // We want to check if alerts exist for YESTERDAY's bar date (relative to current bar date)
+      // Actually, the user says: "Les produits qui sont présents dans cette liste au moment du changement de 'jour bar', sont enregistrés dans l'historique à la date J-1."
+      // This means at the START of Day X (e.g. 04:01 on Day X), we record the state of Day X-1.
+      // So we check if we have data for (CurrentBarDate - 1 day).
+      
+      const previousBarDate = new Date(currentBarDate);
+      previousBarDate.setDate(previousBarDate.getDate() - 1);
+      const dateStr = previousBarDate.toISOString().split('T')[0];
+
+      // Check if alerts already exist for this date
+      const exists = dailyAlerts.some(a => a.date === dateStr);
+      if (exists) return;
+
+      // Generate alerts
+      const newAlerts: DailyAlert[] = [];
+
+      items.forEach(item => {
+          // 1. Rupture: Total stock across all storages is 0
+          const itemLevels = stockLevels.filter(l => l.itemId === item.id);
+          const totalQty = itemLevels.reduce((sum, l) => sum + l.currentQuantity, 0);
+          
+          if (totalQty === 0) {
+              newAlerts.push({
+                  id: `alert_${dateStr}_${item.id}_RUPTURE`,
+                  date: dateStr,
+                  type: 'RUPTURE',
+                  itemId: item.id,
+                  quantity: 0,
+                  consigne: 0
+              });
+          }
+
+          // 2. Tension: Stock < Consigne for ALL storages where consigne exists
+          const itemConsignes = consignes.filter(c => c.itemId === item.id);
+          if (itemConsignes.length > 0) {
+              const isUnderTension = itemConsignes.every(c => {
+                  const level = itemLevels.find(l => l.storageId === c.storageId)?.currentQuantity || 0;
+                  return level < c.minQuantity;
+              });
+
+              if (isUnderTension) {
+                  const totalConsigne = itemConsignes.reduce((sum, c) => sum + c.minQuantity, 0);
+                  newAlerts.push({
+                      id: `alert_${dateStr}_${item.id}_TENSION`,
+                      date: dateStr,
+                      type: 'TENSION',
+                      itemId: item.id,
+                      quantity: totalQty,
+                      consigne: totalConsigne
+                  });
+              }
+          }
+      });
+
+      if (newAlerts.length > 0) {
+          // Save all
+          // Use Promise.all to ensure all are sent, but syncData is async void.
+          // We update state locally first.
+          setDailyAlerts(prev => [...prev, ...newAlerts]);
+          newAlerts.forEach(a => syncData('SAVE_DAILY_STOCK_ALERT', a));
+      }
+
+  }, [items, stockLevels, consignes, dailyAlerts, appConfig.barDayStart]);
+
+  useEffect(() => {
+      if (!loading && !dataSyncing && items.length > 0) {
+          checkDailyAlerts();
+      }
+  }, [loading, dataSyncing, checkDailyAlerts]);
+
   useEffect(() => { fetchAuthData(); }, []);
 
   // SESSION TIMEOUT LOGIC (3 HOURS)
@@ -588,7 +674,7 @@ const App: React.FC = () => {
                   syncData('SAVE_ORDER', order); 
               }
           }} formats={formats} events={events} emailTemplates={emailTemplates} />}
-          {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={storages} unfulfilledOrders={unfulfilledOrders} formats={formats} losses={losses} onUpdateOrderQuantity={(ids, q) => { ids.forEach(id => { const o = orders.find(ord => ord.id === id); if (o) { const updated = { ...o, status: 'RECEIVED' as const, receivedAt: new Date().toISOString(), quantity: q }; setOrders(p => p.map(x => x.id === id ? updated : x)); syncData('SAVE_ORDER', updated); } }); }} />}
+          {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={storages} unfulfilledOrders={unfulfilledOrders} formats={formats} losses={losses} dailyStockAlerts={dailyAlerts} appConfig={appConfig} onUpdateOrderQuantity={(ids: string[], q: number) => { ids.forEach(id => { const o = orders.find(ord => ord.id === id); if (o) { const updated = { ...o, status: 'RECEIVED' as const, receivedAt: new Date().toISOString(), quantity: q }; setOrders(p => p.map(x => x.id === id ? updated : x)); syncData('SAVE_ORDER', updated); } }); }} />}
           {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={storages} onDelete={(id, qty) => { const target = dlcHistory.find(h => h.id === id); if(target) { const loss: Loss = { id: 'loss_'+Date.now(), itemId: target.itemId, openedAt: target.openedAt, discardedAt: new Date().toISOString(), quantity: qty || 0, userName: currentUser?.name }; setLosses(p=>[loss,...p]); syncData('SAVE_LOSS', loss); setDlcHistory(p => p.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', { id }); handleTransaction(target.itemId, 'OUT', 1, false, "Produit en perte"); } }} onUpdateDlc={handleUpdateDlc} userRole={currentUser.role} onAddDlc={handleAddDlc} />}
           {view === 'articles' && <ArticlesList items={items} setItems={setItems} formats={formats} categories={categories} onDelete={(id) => { setItems(p => p.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); }} userRole={currentUser.role} dlcProfiles={dlcProfiles} onSync={syncData} events={events} recipes={recipes} />}
           {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} stockLevels={stockLevels} formats={formats} />}

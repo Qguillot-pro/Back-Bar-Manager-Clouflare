@@ -86,6 +86,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     configMap.mealReminderTimes = [];
                 }
             }
+            if (row.key === 'bar_day_start') configMap.barDayStart = row.value;
             if (row.key === 'email_sender') configMap.emailSender = row.value;
         });
 

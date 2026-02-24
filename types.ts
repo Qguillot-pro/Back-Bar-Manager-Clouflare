@@ -25,6 +25,8 @@ export interface AppConfig {
   defaultMargin?: number; // Pourcentage (ex: 82)
   programMapping?: Record<string, string[]>; // Map ProgramType (OF_THE_DAY...) -> Array of Category Names
   mealReminderTimes?: string[]; // ["10:00", "17:00"]
+  barDayStart?: string; // "04:00"
+  emailSender?: string;
   // Stockage des configurations de cycles en JSON string dans la DB, mais typé ici si besoin
   [key: string]: any; 
 }
