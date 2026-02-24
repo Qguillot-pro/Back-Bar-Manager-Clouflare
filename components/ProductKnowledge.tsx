@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ProductSheet, StockItem, UserRole, ProductType } from '../types';
+import { ProductSheet, StockItem, UserRole, ProductType, Glassware } from '../types';
 import { generateProductSheetWithAI } from '../services/geminiService';
 
 interface ProductKnowledgeProps {
@@ -9,9 +9,10 @@ interface ProductKnowledgeProps {
   currentUserRole: UserRole;
   onSync: (action: string, payload: any) => void;
   productTypes?: ProductType[];
+  glassware?: Glassware[];
 }
 
-const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [] }) => {
+const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<ProductSheet | null>(null);
@@ -28,6 +29,8 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
   const [pairing, setPairing] = useState('');
   const [temp, setTemp] = useState('');
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
+  const [glasswareIds, setGlasswareIds] = useState<string[]>([]);
+  const [suggestedPrices, setSuggestedPrices] = useState<{ p25: string, p50: string, p70: string }>({ p25: '', p50: '', p70: '' });
   const [isGenerating, setIsGenerating] = useState(false);
 
   const linkedItem = items.find(i => i.id === selectedSheet?.itemId);
@@ -65,6 +68,8 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
           servingTemp: temp,
           allergens: '',
           description: desc,
+          glasswareIds,
+          suggestedPrices,
           status: currentUserRole === 'ADMIN' ? 'VALIDATED' : 'DRAFT',
           updatedAt: new Date().toISOString()
       };
@@ -83,6 +88,8 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
       setPairing('');
       setTemp('');
       setCustomFields({});
+      setGlasswareIds([]);
+      setSuggestedPrices({ p25: '', p50: '', p70: '' });
       setSelectedSheet(null);
   };
 
@@ -120,6 +127,14 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
   const getTastingObj = (json?: string) => { try { return JSON.parse(json || '{}'); } catch { return {}; } };
   const getCustomFieldsObj = (json?: string) => { try { return JSON.parse(json || '{}'); } catch { return {}; } };
   const selectedTypeConfig = productTypes.find(pt => pt.name === sheetType);
+
+  const getProductStatus = (itemId: string) => {
+      const item = items.find(i => i.id === itemId);
+      if (!item) return null;
+      if (item.quantity === 0) return { label: 'RUPTURE PRODUIT', color: 'bg-red-500 text-white' };
+      if (item.quantity < item.consigne) return { label: 'SOUS TENSION', color: 'bg-orange-500 text-white' };
+      return null;
+  };
 
   if (viewMode === 'LIST') {
       return (
@@ -174,7 +189,14 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                               <div key={s.id} onClick={() => openDetail(s)} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:border-cyan-200 transition-all cursor-pointer group relative overflow-hidden">
                                   <div className="flex justify-between items-start mb-2">
                                       <div>
-                                          <span className="text-[9px] font-black uppercase tracking-widest text-cyan-500">{s.type}</span>
+                                          <div className="flex gap-2 mb-1">
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-cyan-500">{s.type}</span>
+                                            {(() => {
+                                                const status = getProductStatus(s.itemId);
+                                                if (status) return <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${status.color}`}>{status.label}</span>;
+                                                return null;
+                                            })()}
+                                          </div>
                                           <h3 className="font-black text-lg text-slate-800 group-hover:text-cyan-600 transition-colors line-clamp-1">{s.fullName || item?.name || 'Inconnu'}</h3>
                                           {s.fullName && item?.name && <p className="text-[10px] text-slate-400">Ref: {item.name}</p>}
                                       </div>
@@ -220,7 +242,57 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                               {productTypes.length === 0 && <option value="Autre">Autre</option>}
                           </select>
                       </div>
-                      <button onClick={handleAI} disabled={!selectedItemId || isGenerating} className="bg-cyan-500 text-white px-6 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-cyan-600 shadow-lg disabled:opacity-50 mt-6">{isGenerating ? '...' : '✨ IA Auto-Fill'}</button>
+                      <div className="flex-1 space-y-2">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Verrerie (Max 3)</label>
+                          <div className="flex flex-wrap gap-2">
+                              {glassware.map(g => (
+                                  <button 
+                                      key={g.id} 
+                                      onClick={() => {
+                                          if (glasswareIds.includes(g.id)) {
+                                              setGlasswareIds(prev => prev.filter(id => id !== g.id));
+                                          } else if (glasswareIds.length < 3) {
+                                              setGlasswareIds(prev => [...prev, g.id]);
+                                          }
+                                      }}
+                                      className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${glasswareIds.includes(g.id) ? 'bg-cyan-500 text-white border-cyan-500' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-cyan-300'}`}
+                                  >
+                                      {g.name}
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+                      <div className="flex-1 space-y-2">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Format (Ref)</label>
+                          <input 
+                            className="w-full bg-slate-100 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none text-slate-500" 
+                            value={items.find(i => i.id === selectedItemId)?.formatId || '-'} 
+                            disabled 
+                          />
+                      </div>
+                  </div>
+                  
+                  {currentUserRole === 'ADMIN' && (
+                      <div className="bg-emerald-50 p-4 rounded-xl space-y-3 border border-emerald-100">
+                          <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Prix Conseillés (Admin)</p>
+                          <div className="grid grid-cols-3 gap-4">
+                              <div>
+                                  <label className="text-[9px] font-bold text-emerald-500 uppercase ml-1">25 cl</label>
+                                  <input className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" placeholder="€" value={suggestedPrices.p25} onChange={e => setSuggestedPrices({...suggestedPrices, p25: e.target.value})} />
+                              </div>
+                              <div>
+                                  <label className="text-[9px] font-bold text-emerald-500 uppercase ml-1">50 cl</label>
+                                  <input className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" placeholder="€" value={suggestedPrices.p50} onChange={e => setSuggestedPrices({...suggestedPrices, p50: e.target.value})} />
+                              </div>
+                              <div>
+                                  <label className="text-[9px] font-bold text-emerald-500 uppercase ml-1">70 cl</label>
+                                  <input className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" placeholder="€" value={suggestedPrices.p70} onChange={e => setSuggestedPrices({...suggestedPrices, p70: e.target.value})} />
+                              </div>
+                          </div>
+                      </div>
+                  )}
+                  <div className="flex justify-end">
+                    <button onClick={handleAI} disabled={!selectedItemId || isGenerating} className="bg-cyan-500 text-white px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-cyan-600 shadow-lg disabled:opacity-50">{isGenerating ? '...' : '✨ IA Auto-Fill'}</button>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                       <input className="bg-slate-50 border border-slate-200 rounded-xl p-3 font-medium text-sm outline-none" placeholder="Région" value={region} onChange={e => setRegion(e.target.value)} />
@@ -261,14 +333,38 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
               <div className="bg-white rounded-[2.5rem] w-full max-w-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
                   <div className="bg-slate-900 text-white p-8 flex justify-between items-start">
                       <div>
-                          <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-2 py-1 rounded text-white mb-2 inline-block">{selectedSheet.type}</span>
+                          <div className="flex gap-2 mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-2 py-1 rounded text-white inline-block">{selectedSheet.type}</span>
+                            {(() => {
+                                const status = getProductStatus(selectedSheet.itemId);
+                                if (status) return <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded ${status.color}`}>{status.label}</span>;
+                                return null;
+                            })()}
+                          </div>
                           <h2 className="text-3xl font-black uppercase tracking-tighter">{selectedSheet.fullName || linkedItem?.name}</h2>
-                          <p className="text-cyan-300 font-bold mt-1 text-sm">{selectedSheet.region} {selectedSheet.country ? `• ${selectedSheet.country}` : ''}</p>
+                          <div className="flex gap-4 mt-2 text-sm">
+                            <p className="text-cyan-300 font-bold">{selectedSheet.region} {selectedSheet.country ? `• ${selectedSheet.country}` : ''}</p>
+                            {selectedSheet.glasswareIds && selectedSheet.glasswareIds.length > 0 && (
+                                <p className="text-slate-400">Verres: {selectedSheet.glasswareIds.map(id => glassware.find(g => g.id === id)?.name).filter(Boolean).join(', ')}</p>
+                            )}
+                            {linkedItem?.formatId && <p className="text-slate-400">Format: {linkedItem.formatId}</p>}
+                          </div>
                       </div>
                       <button onClick={() => setViewMode('LIST')} className="text-white/50 hover:text-white">✕</button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-8 space-y-8">
                       <p className="text-lg text-slate-700 font-medium leading-relaxed">{selectedSheet.description}</p>
+                      
+                      {currentUserRole === 'ADMIN' && selectedSheet.suggestedPrices && (
+                          <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
+                              <h3 className="font-black text-sm uppercase text-emerald-600 tracking-widest border-b border-emerald-200 pb-2 mb-4">Prix Conseillés (Admin)</h3>
+                              <div className="grid grid-cols-3 gap-4 text-center">
+                                  <div><span className="block font-black text-emerald-400 text-xs uppercase mb-1">25 cl</span><span className="text-emerald-800 font-bold text-lg">{selectedSheet.suggestedPrices.p25 || '-'} €</span></div>
+                                  <div><span className="block font-black text-emerald-400 text-xs uppercase mb-1">50 cl</span><span className="text-emerald-800 font-bold text-lg">{selectedSheet.suggestedPrices.p50 || '-'} €</span></div>
+                                  <div><span className="block font-black text-emerald-400 text-xs uppercase mb-1">70 cl</span><span className="text-emerald-800 font-bold text-lg">{selectedSheet.suggestedPrices.p70 || '-'} €</span></div>
+                              </div>
+                          </div>
+                      )}
                       {Object.keys(custom).length > 0 && (
                           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                               {Object.entries(custom).map(([key, val]) => (<div key={key}><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{key}</p><p className="font-bold text-slate-800">{val as string}</p></div>))}

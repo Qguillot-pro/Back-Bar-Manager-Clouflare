@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Transaction, PendingOrder, StockItem, StorageSpace, UnfulfilledOrder, Format, Loss } from '../types';
+import { Transaction, PendingOrder, StockItem, StorageSpace, UnfulfilledOrder, Format, Loss, DailyStockAlert } from '../types';
 
 interface HistoryProps {
   transactions: Transaction[];
@@ -11,32 +11,34 @@ interface HistoryProps {
   onUpdateOrderQuantity?: (orderIds: string[], newQuantity: number) => void;
   formats: Format[];
   losses?: Loss[];
+  dailyStockAlerts?: DailyStockAlert[];
 }
 
 type PeriodFilter = 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
+type Tab = 'MOVEMENTS' | 'LOSSES' | 'CLIENT_RUPTURE' | 'STOCK_TENSION' | 'STOCK_RUPTURE' | 'RECEIVED';
 
-const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, formats = [], losses = [] }) => {
-  const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'CLIENT_RUPTURE' | 'STOCK_RUPTURE' | 'RECEIVED' | 'LOSSES'>('MOVEMENTS');
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('DAY');
+const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, formats = [], losses = [], dailyStockAlerts = [] }) => {
+  const [activeTab, setActiveTab] = useState<Tab>('MOVEMENTS');
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('MONTH');
   
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth()); 
   const [selectedWeek, setSelectedWeek] = useState<string>(''); 
   const [selectedDay, setSelectedDay] = useState<string>(new Date().toISOString().split('T')[0]); 
 
-  const [editedQuantities, setEditedQuantities] = useState<Record<string, number>>({});
-  const [validatedGroups, setValidatedGroups] = useState<Set<string>>(() => {
-      const saved = localStorage.getItem('barstock_validated_receipts');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-  });
-
+  // Set default filters based on active tab
   useEffect(() => {
-      localStorage.setItem('barstock_validated_receipts', JSON.stringify(Array.from(validatedGroups)));
-  }, [validatedGroups]);
+      if (activeTab === 'LOSSES' || activeTab === 'CLIENT_RUPTURE') {
+          setPeriodFilter('MONTH');
+      } else if (activeTab === 'RECEIVED') {
+          setPeriodFilter('WEEK');
+      }
+  }, [activeTab]);
 
   const availableWeeks = useMemo(() => {
       const weeks = [];
       const d = new Date(selectedYear, 0, 1);
+      // Adjust to first Monday
       while (d.getDay() !== 1) {
           d.setDate(d.getDate() + 1);
       }
@@ -70,20 +72,12 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
       return isNaN(d.getTime()) ? new Date() : d;
   };
 
-  const getBarDate = (date: Date) => {
-    const d = new Date(date);
-    if (d.getHours() < 4) {
-      d.setDate(d.getDate() - 1);
-    }
-    d.setHours(0, 0, 0, 0);
-    return d;
-  };
-
   const checkDateInFilter = (dateStr: string) => {
       if (!dateStr) return false;
       const date = safeDate(dateStr);
+      // Adjust for bar day (starts at 6AM)
       const barDate = new Date(date);
-      if (barDate.getHours() < 4) {
+      if (barDate.getHours() < 6) {
           barDate.setDate(barDate.getDate() - 1);
       }
 
@@ -111,95 +105,82 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
       return true;
   };
 
-  const filteredTransactions = useMemo(() => {
-    return transactions
-        .filter(t => checkDateInFilter(t.date))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
+  // --- DATA PREPARATION ---
 
-  const filteredUnfulfilled = useMemo(() => {
-      return unfulfilledOrders
-        .filter(u => checkDateInFilter(u.date))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [unfulfilledOrders, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
-  
-  const filteredReceived = useMemo(() => {
-      return orders.filter(o => o.status === 'RECEIVED' && o.receivedAt && checkDateInFilter(o.receivedAt));
-  }, [orders, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
-
-  const filteredPending = useMemo(() => {
-      return orders.filter(o => o.status !== 'RECEIVED' && o.ruptureDate && checkDateInFilter(o.ruptureDate));
-  }, [orders, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
-
-  const filteredLosses = useMemo(() => {
-      return losses
-        .filter(l => checkDateInFilter(l.discardedAt))
-        .sort((a, b) => new Date(b.discardedAt).getTime() - new Date(a.discardedAt).getTime());
-  }, [losses, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, availableWeeks]);
-
-  const displayTransactions = useMemo(() => {
-    const grouped: Transaction[] = [];
-    filteredTransactions.forEach((current) => {
-        const currentQty = Number(current.quantity);
-        if (grouped.length === 0) {
-            grouped.push({ ...current, quantity: currentQty });
-            return;
-        }
-        const last = grouped[grouped.length - 1];
-        const currentDate = safeDate(current.date);
-        const lastDate = safeDate(last.date);
-        const isSameTime = Math.abs(currentDate.getTime() - lastDate.getTime()) < 60000; 
-        const isSameItem = current.itemId === last.itemId;
-        const isSameType = current.type === last.type;
-        const isSameUser = current.userName === last.userName;
-        if (isSameTime && isSameItem && isSameType && isSameUser && !current.note) {
-            last.quantity = Number(last.quantity) + currentQty;
-        } else {
-            grouped.push({ ...current, quantity: currentQty });
-        }
-    });
-    return grouped;
-  }, [filteredTransactions]);
-
-  const groupedReceivedOrders = useMemo(() => {
-    const dayGroups: Record<string, { date: Date, items: Record<string, { item: StockItem, orders: PendingOrder[], totalQty: number, initialQty: number }> }> = {};
-
-    filteredReceived.forEach(o => {
-        if (!o.receivedAt) return;
-        const item = items.find(i => i.id === o.itemId);
-        if (!item) return;
-
-        const date = safeDate(o.receivedAt);
-        const barDate = getBarDate(date);
-        const dateKey = barDate.toISOString().split('T')[0];
-
-        if (!dayGroups[dateKey]) {
-            dayGroups[dateKey] = { date: barDate, items: {} };
-        }
-
-        if (!dayGroups[dateKey].items[item.id]) {
-            dayGroups[dateKey].items[item.id] = { item, orders: [], totalQty: 0, initialQty: 0 };
-        }
-
-        dayGroups[dateKey].items[item.id].orders.push(o);
-        dayGroups[dateKey].items[item.id].totalQty += o.quantity;
-        dayGroups[dateKey].items[item.id].initialQty += (o.initialQuantity ?? o.quantity);
-    });
-    
-    return Object.entries(dayGroups)
-        .sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([key, data]) => ({
-            key,
-            dateLabel: data.date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }),
-            items: Object.values(data.items)
-        }));
-
-  }, [filteredReceived, items]);
-
-  const handleQuantityChange = (groupKey: string, val: string) => {
-      if (/^\d*$/.test(val)) {
-          setEditedQuantities(prev => ({ ...prev, [groupKey]: parseInt(val) || 0 }));
+  const filteredData = useMemo(() => {
+      switch (activeTab) {
+          case 'MOVEMENTS':
+              return transactions.filter(t => checkDateInFilter(t.date)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          case 'LOSSES':
+              return losses.filter(l => checkDateInFilter(l.discardedAt));
+          case 'CLIENT_RUPTURE':
+              return orders.filter(o => o.ruptureDate && checkDateInFilter(o.ruptureDate));
+          case 'STOCK_TENSION':
+              return dailyStockAlerts.filter(a => a.type === 'TENSION' && checkDateInFilter(a.date));
+          case 'STOCK_RUPTURE':
+              return dailyStockAlerts.filter(a => a.type === 'RUPTURE' && checkDateInFilter(a.date));
+          case 'RECEIVED':
+              return orders.filter(o => o.status === 'RECEIVED' && o.receivedAt && checkDateInFilter(o.receivedAt));
+          default:
+              return [];
       }
+  }, [activeTab, transactions, losses, orders, dailyStockAlerts, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear]);
+
+  const aggregatedData = useMemo(() => {
+      if (activeTab === 'MOVEMENTS') return filteredData;
+
+      const groups: Record<string, { item: StockItem, quantity: number, count: number, dates: string[] }> = {};
+
+      filteredData.forEach((entry: any) => {
+          const itemId = entry.itemId || entry.item_id; // Handle different shapes if needed
+          const item = items.find(i => i.id === itemId);
+          if (!item) return;
+
+          if (!groups[itemId]) {
+              groups[itemId] = { item, quantity: 0, count: 0, dates: [] };
+          }
+
+          let qty = 0;
+          if (activeTab === 'LOSSES') qty = entry.quantity; 
+          else if (activeTab === 'CLIENT_RUPTURE') qty = 1; 
+          else if (activeTab === 'STOCK_TENSION' || activeTab === 'STOCK_RUPTURE') qty = 1; 
+          else if (activeTab === 'RECEIVED') qty = entry.quantity;
+
+          groups[itemId].quantity += qty;
+          groups[itemId].count += 1;
+          const date = entry.date || entry.discardedAt || entry.ruptureDate || entry.receivedAt;
+          if (date) groups[itemId].dates.push(date);
+      });
+
+      return Object.values(groups).sort((a, b) => b.quantity - a.quantity);
+  }, [filteredData, activeTab, items]);
+
+  const handleExport = () => {
+      let csvContent = "data:text/csv;charset=utf-8,";
+      let filename = `export_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`;
+
+      if (activeTab === 'MOVEMENTS') {
+          csvContent += "Date;Heure;Utilisateur;Produit;Type;Quantité;Note\n";
+          (filteredData as Transaction[]).forEach(t => {
+              const item = items.find(i => i.id === t.itemId);
+              const d = safeDate(t.date);
+              csvContent += `${d.toLocaleDateString()};${d.toLocaleTimeString()};${t.userName || ''};${item?.name || 'Inconnu'};${t.type};${t.quantity};${t.note || ''}\n`;
+          });
+      } else {
+          csvContent += "Produit;Quantité Totale;Occurrences;Dates\n";
+          (aggregatedData as any[]).forEach(g => {
+              const datesStr = g.dates.map((d: string) => safeDate(d).toLocaleDateString()).join(', ');
+              csvContent += `${g.item.name};${g.quantity.toFixed(2)};${g.count};"${datesStr}"\n`;
+          });
+      }
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
   };
 
   const handleValidateReceipt = (groupKey: string, ids: string[], qty: number) => {
@@ -231,7 +212,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                     onChange={(e) => setPeriodFilter(e.target.value as PeriodFilter)}
                     className="bg-slate-100 border-none rounded-lg px-3 py-2 text-xs font-black uppercase text-slate-700 outline-none cursor-pointer"
                   >
-                      <option value="DAY">Par Jour</option>
+                      {activeTab === 'MOVEMENTS' && <option value="DAY">Par Jour</option>}
                       <option value="WEEK">Par Semaine</option>
                       <option value="MONTH">Par Mois</option>
                       <option value="YEAR">Par Année</option>
@@ -240,12 +221,36 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                   {periodFilter === 'DAY' && (
                       <input type="date" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none" />
                   )}
+                  {periodFilter === 'WEEK' && (
+                      <select value={selectedWeek} onChange={(e) => setSelectedWeek(e.target.value)} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                          {availableWeeks.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                      </select>
+                  )}
+                  {periodFilter === 'MONTH' && (
+                      <div className="flex gap-2">
+                          <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                              {["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"].map((m, i) => <option key={i} value={i}>{m}</option>)}
+                          </select>
+                          <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                              {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                          </select>
+                      </div>
+                  )}
+                  {periodFilter === 'YEAR' && (
+                      <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none">
+                          {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                  )}
               </div>
+              <button onClick={handleExport} className="bg-slate-900 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 shadow-lg flex items-center gap-2">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  Export CSV
+              </button>
           </div>
       </div>
 
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-          {activeTab === 'MOVEMENTS' && (
+          {activeTab === 'MOVEMENTS' ? (
             <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                 <table className="w-full text-left">
                     <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
@@ -258,7 +263,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {displayTransactions.map((t, idx) => {
+                        {(displayTransactions as Transaction[]).map((t, idx) => {
                             const item = items.find(i => i.id === t.itemId);
                             const d = safeDate(t.date);
                             return (
@@ -289,38 +294,44 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                     </tbody>
                 </table>
             </div>
-          )}
-          
-          {activeTab === 'LOSSES' && (
+          ) : (
               <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                   <table className="w-full text-left">
                       <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
                           <tr>
-                              <th className="p-4">Date</th>
-                              <th className="p-4">Utilisateur</th>
                               <th className="p-4">Produit</th>
-                              <th className="p-4 text-right">Quantité Perdue</th>
+                              <th className="p-4 text-right">
+                                  {activeTab === 'LOSSES' ? 'Quantité Perdue (Btl)' : 
+                                   activeTab === 'RECEIVED' ? 'Quantité Reçue' : 
+                                   'Occurrences / Jours'}
+                              </th>
+                              <th className="p-4 text-right">Tags (Dates)</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                          {filteredLosses.filter(l => l.quantity > 0).map((l, idx) => {
-                              const item = items.find(i => i.id === l.itemId);
-                              const d = safeDate(l.discardedAt);
-                              return (
-                                  <tr key={`${l.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
-                                      <td className="p-4 text-xs font-bold text-slate-600">
-                                          {d.toLocaleDateString('fr-FR')} <span className="text-slate-400 text-[10px]">{d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</span>
-                                      </td>
-                                      <td className="p-4 text-xs font-bold text-slate-800">{l.userName || '-'}</td>
-                                      <td className="p-4 font-black text-slate-900">{item?.name || 'Inconnu'}</td>
-                                      <td className="p-4 text-right font-black text-rose-600">
-                                          -{l.quantity}%
-                                      </td>
-                                  </tr>
-                              );
-                          })}
-                          {filteredLosses.filter(l => l.quantity > 0).length === 0 && (
-                              <tr><td colSpan={4} className="p-8 text-center text-slate-400 italic text-sm">Aucune perte enregistrée.</td></tr>
+                          {(aggregatedData as any[]).map((g, idx) => (
+                              <tr key={`${g.item.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                                  <td className="p-4 font-black text-slate-900">
+                                      {g.item.name}
+                                      <span className="block text-[9px] text-slate-400 font-normal uppercase tracking-wider mt-0.5">{g.item.category}</span>
+                                  </td>
+                                  <td className="p-4 text-right font-black text-slate-800">
+                                      {activeTab === 'LOSSES' ? g.quantity.toFixed(2) : g.quantity}
+                                      {activeTab === 'LOSSES' && <span className="text-[9px] text-slate-400 font-normal ml-1">btl</span>}
+                                  </td>
+                                  <td className="p-4 text-right">
+                                      <div className="flex flex-wrap justify-end gap-1">
+                                          {g.dates.map((d: string, i: number) => (
+                                              <span key={i} className="bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                                  {safeDate(d).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit'})}
+                                              </span>
+                                          ))}
+                                      </div>
+                                  </td>
+                              </tr>
+                          ))}
+                          {aggregatedData.length === 0 && (
+                              <tr><td colSpan={3} className="p-8 text-center text-slate-400 italic text-sm">Aucune donnée pour cette période.</td></tr>
                           )}
                       </tbody>
                   </table>

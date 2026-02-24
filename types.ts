@@ -319,6 +319,8 @@ export interface ProductSheet {
     itemId: string; // Link to StockItem
     fullName?: string; // Nom complet pour recherche
     type: string; // Correspond à ProductType.name
+    glasswareIds?: string[]; // Link to Glassware (up to 3)
+    suggestedPrices?: { p25?: string; p50?: string; p70?: string }; // Admin only
     region?: string;
     country?: string;
     tastingNotes?: string; // JSON string { nose: '', mouth: '', eye: '' }
@@ -327,7 +329,7 @@ export interface ProductSheet {
     servingTemp?: string;
     allergens?: string;
     description: string;
-    glasswareId?: string;
+    glasswareId?: string; // Deprecated but kept for compatibility if needed, or removed
     status: 'DRAFT' | 'VALIDATED';
     updatedAt: string;
 }

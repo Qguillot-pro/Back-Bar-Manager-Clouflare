@@ -185,11 +185,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             status: r.status, createdBy: r.created_by, createdAt: r.created_at, ingredients: r.ingredients
         }));
         // UPDATE: Product Sheets with new fields
-        if (rawData.productSheets) responseBody.productSheets = rawData.productSheets.map((p: any) => ({
-            id: p.id, itemId: p.item_id, fullName: p.full_name, type: p.type, region: p.region, country: p.country, 
-            tastingNotes: p.tasting_notes, customFields: p.custom_fields,
-            foodPairing: p.food_pairing, servingTemp: p.serving_temp, allergens: p.allergens, description: p.description, status: p.status, updatedAt: p.updated_at
-        }));
+        if (rawData.productSheets) responseBody.productSheets = rawData.productSheets.map((p: any) => {
+            let customFieldsObj = {};
+            try { customFieldsObj = JSON.parse(p.custom_fields || '{}'); } catch (e) {}
+            
+            return {
+                id: p.id, itemId: p.item_id, fullName: p.full_name, type: p.type, region: p.region, country: p.country, 
+                tastingNotes: p.tasting_notes, customFields: p.custom_fields,
+                foodPairing: p.food_pairing, servingTemp: p.serving_temp, allergens: p.allergens, description: p.description, status: p.status, updatedAt: p.updated_at,
+                glasswareIds: customFieldsObj['glasswareIds'] || [],
+                suggestedPrices: customFieldsObj['suggestedPrices'] || { p25: '', p50: '', p70: '' }
+            };
+        });
         // NEW: Product Types
         if (rawData.productTypes) responseBody.productTypes = rawData.productTypes.map((t: any) => ({
             id: t.id, name: t.name, fields: JSON.parse(t.fields || '[]')
@@ -309,7 +316,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'SAVE_PRODUCT_SHEET': {
-            const { id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status } = payload;
+            const { id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status, glasswareIds, suggestedPrices } = payload;
+            
+            // Merge new fields into customFields
+            let fieldsObj = {};
+            try {
+                fieldsObj = JSON.parse(customFields || '{}');
+            } catch (e) {}
+            
+            if (glasswareIds) fieldsObj['glasswareIds'] = glasswareIds;
+            if (suggestedPrices) fieldsObj['suggestedPrices'] = suggestedPrices;
+            
+            const finalCustomFields = JSON.stringify(fieldsObj);
+
             await pool.query(`
                 INSERT INTO product_sheets (id, item_id, full_name, type, region, country, tasting_notes, custom_fields, food_pairing, serving_temp, allergens, description, status, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
@@ -318,7 +337,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 tasting_notes = EXCLUDED.tasting_notes, custom_fields = EXCLUDED.custom_fields, food_pairing = EXCLUDED.food_pairing, 
                 serving_temp = EXCLUDED.serving_temp, allergens = EXCLUDED.allergens, description = EXCLUDED.description, 
                 status = EXCLUDED.status, updated_at = NOW()
-            `, [id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status]);
+            `, [id, itemId, fullName, type, region, country, tastingNotes, finalCustomFields, foodPairing, servingTemp, allergens, description, status]);
             break;
         }
         case 'DELETE_PRODUCT_SHEET': {
