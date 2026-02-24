@@ -79,6 +79,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     configMap.programMapping = {};
                 }
             }
+            if (row.key === 'meal_reminder_times') {
+                try {
+                    configMap.mealReminderTimes = JSON.parse(row.value);
+                } catch (e) {
+                    configMap.mealReminderTimes = [];
+                }
+            }
             if (row.key === 'email_sender') configMap.emailSender = row.value;
         });
 

@@ -37,6 +37,14 @@ const getBarDateStr = (d: Date = new Date()) => {
     return shift.toISOString().split('T')[0];
 };
 
+const toLocalISOString = (dateStr: string) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const offset = date.getTimezoneOffset() * 60000;
+    const localDate = new Date(date.getTime() - offset);
+    return localDate.toISOString().slice(0, 16);
+};
+
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
@@ -262,10 +270,9 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       if (evt) {
           setSelectedEvent(evt);
           setNewEventTitle(evt.title);
-          setNewEventStart(evt.startTime.slice(0, 16));
-          setNewEventEnd(evt.endTime.slice(0, 16));
+          setNewEventStart(toLocalISOString(evt.startTime));
+          setNewEventEnd(toLocalISOString(evt.endTime));
           setNewEventLocation(evt.location || '');
-          setNewEventGuests(evt.guestsCount?.toString() || '0');
           setNewEventGuests(evt.guestsCount?.toString() || '0');
           setNewEventDesc(evt.description || '');
           try { setNewEventProducts(JSON.parse(evt.productsJson || '[]')); } catch(e) { setNewEventProducts([]); }
