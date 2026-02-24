@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ProductSheet, StockItem, UserRole, ProductType, Glassware } from '../types';
+import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice } from '../types';
 import { generateProductSheetWithAI } from '../services/geminiService';
 
 interface ProductKnowledgeProps {
@@ -10,9 +10,10 @@ interface ProductKnowledgeProps {
   onSync: (action: string, payload: any) => void;
   productTypes?: ProductType[];
   glassware?: Glassware[];
+  formats?: Format[];
 }
 
-const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [] }) => {
+const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<ProductSheet | null>(null);
@@ -30,7 +31,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
   const [temp, setTemp] = useState('');
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [glasswareIds, setGlasswareIds] = useState<string[]>([]);
-  const [suggestedPrices, setSuggestedPrices] = useState<{ p25: string, p50: string, p70: string }>({ p25: '', p50: '', p70: '' });
+  const [suggestedPrices, setSuggestedPrices] = useState<SuggestedPrice[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const linkedItem = items.find(i => i.id === selectedSheet?.itemId);
@@ -89,7 +90,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
       setTemp('');
       setCustomFields({});
       setGlasswareIds([]);
-      setSuggestedPrices({ p25: '', p50: '', p70: '' });
+      setSuggestedPrices([]);
       setSelectedSheet(null);
   };
 
@@ -226,7 +227,11 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit Stock (Référence)</label>
                       <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)}>
                           <option value="">Sélectionner...</option>
-                          {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                          {items
+                              .filter(i => !sheets.some(s => s.itemId === i.id)) // Exclude items that already have a sheet
+                              .sort((a, b) => a.name.localeCompare(b.name))
+                              .map(i => <option key={i.id} value={i.id}>{i.name}</option>)
+                          }
                       </select>
                   </div>
                   <div className="space-y-2">
@@ -266,7 +271,12 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Format (Ref)</label>
                           <input 
                             className="w-full bg-slate-100 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none text-slate-500" 
-                            value={items.find(i => i.id === selectedItemId)?.formatId || '-'} 
+                            value={(() => {
+                                const item = items.find(i => i.id === selectedItemId);
+                                if (!item) return '-';
+                                const fmt = formats.find(f => f.id === item.formatId);
+                                return fmt ? fmt.name : item.formatId || '-';
+                            })()} 
                             disabled 
                           />
                       </div>
@@ -274,20 +284,47 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                   
                   {currentUserRole === 'ADMIN' && (
                       <div className="bg-emerald-50 p-4 rounded-xl space-y-3 border border-emerald-100">
-                          <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Prix Conseillés (Admin)</p>
-                          <div className="grid grid-cols-3 gap-4">
-                              <div>
-                                  <label className="text-[9px] font-bold text-emerald-500 uppercase ml-1">25 cl</label>
-                                  <input className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" placeholder="€" value={suggestedPrices.p25} onChange={e => setSuggestedPrices({...suggestedPrices, p25: e.target.value})} />
-                              </div>
-                              <div>
-                                  <label className="text-[9px] font-bold text-emerald-500 uppercase ml-1">50 cl</label>
-                                  <input className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" placeholder="€" value={suggestedPrices.p50} onChange={e => setSuggestedPrices({...suggestedPrices, p50: e.target.value})} />
-                              </div>
-                              <div>
-                                  <label className="text-[9px] font-bold text-emerald-500 uppercase ml-1">70 cl</label>
-                                  <input className="w-full bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" placeholder="€" value={suggestedPrices.p70} onChange={e => setSuggestedPrices({...suggestedPrices, p70: e.target.value})} />
-                              </div>
+                          <div className="flex justify-between items-center">
+                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Prix Conseillés (Admin)</p>
+                              <button 
+                                  onClick={() => setSuggestedPrices([...suggestedPrices, { label: '', price: '' }])}
+                                  className="text-[9px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-800"
+                              >
+                                  + Ajouter
+                              </button>
+                          </div>
+                          <div className="space-y-2">
+                              {suggestedPrices.map((price, idx) => (
+                                  <div key={idx} className="flex gap-2 items-center">
+                                      <input 
+                                          className="flex-1 bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" 
+                                          placeholder="Format (ex: 25cl)" 
+                                          value={price.label} 
+                                          onChange={e => {
+                                              const newPrices = [...suggestedPrices];
+                                              newPrices[idx].label = e.target.value;
+                                              setSuggestedPrices(newPrices);
+                                          }} 
+                                      />
+                                      <input 
+                                          className="w-24 bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800 text-right" 
+                                          placeholder="Prix €" 
+                                          value={price.price} 
+                                          onChange={e => {
+                                              const newPrices = [...suggestedPrices];
+                                              newPrices[idx].price = e.target.value;
+                                              setSuggestedPrices(newPrices);
+                                          }} 
+                                      />
+                                      <button 
+                                          onClick={() => setSuggestedPrices(suggestedPrices.filter((_, i) => i !== idx))}
+                                          className="text-emerald-400 hover:text-emerald-600 font-bold px-2"
+                                      >
+                                          ✕
+                                      </button>
+                                  </div>
+                              ))}
+                              {suggestedPrices.length === 0 && <p className="text-xs text-emerald-400 italic text-center">Aucun prix conseillé.</p>}
                           </div>
                       </div>
                   )}
@@ -347,7 +384,11 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                             {selectedSheet.glasswareIds && selectedSheet.glasswareIds.length > 0 && (
                                 <p className="text-slate-400">Verres: {selectedSheet.glasswareIds.map(id => glassware.find(g => g.id === id)?.name).filter(Boolean).join(', ')}</p>
                             )}
-                            {linkedItem?.formatId && <p className="text-slate-400">Format: {linkedItem.formatId}</p>}
+                            {linkedItem?.formatId && (
+                                <p className="text-slate-400">
+                                    Format: {formats.find(f => f.id === linkedItem.formatId)?.name || linkedItem.formatId}
+                                </p>
+                            )}
                           </div>
                       </div>
                       <button onClick={() => setViewMode('LIST')} className="text-white/50 hover:text-white">✕</button>
@@ -355,13 +396,16 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                   <div className="flex-1 overflow-y-auto p-8 space-y-8">
                       <p className="text-lg text-slate-700 font-medium leading-relaxed">{selectedSheet.description}</p>
                       
-                      {currentUserRole === 'ADMIN' && selectedSheet.suggestedPrices && (
+                      {currentUserRole === 'ADMIN' && selectedSheet.suggestedPrices && selectedSheet.suggestedPrices.length > 0 && (
                           <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
                               <h3 className="font-black text-sm uppercase text-emerald-600 tracking-widest border-b border-emerald-200 pb-2 mb-4">Prix Conseillés (Admin)</h3>
-                              <div className="grid grid-cols-3 gap-4 text-center">
-                                  <div><span className="block font-black text-emerald-400 text-xs uppercase mb-1">25 cl</span><span className="text-emerald-800 font-bold text-lg">{selectedSheet.suggestedPrices.p25 || '-'} €</span></div>
-                                  <div><span className="block font-black text-emerald-400 text-xs uppercase mb-1">50 cl</span><span className="text-emerald-800 font-bold text-lg">{selectedSheet.suggestedPrices.p50 || '-'} €</span></div>
-                                  <div><span className="block font-black text-emerald-400 text-xs uppercase mb-1">70 cl</span><span className="text-emerald-800 font-bold text-lg">{selectedSheet.suggestedPrices.p70 || '-'} €</span></div>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
+                                  {selectedSheet.suggestedPrices.map((sp, idx) => (
+                                      <div key={idx}>
+                                          <span className="block font-black text-emerald-400 text-xs uppercase mb-1">{sp.label}</span>
+                                          <span className="text-emerald-800 font-bold text-lg">{sp.price} €</span>
+                                      </div>
+                                  ))}
                               </div>
                           </div>
                       )}

@@ -263,7 +263,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {(displayTransactions as Transaction[]).map((t, idx) => {
+                        {(filteredData as Transaction[]).map((t, idx) => {
                             const item = items.find(i => i.id === t.itemId);
                             const d = safeDate(t.date);
                             return (
@@ -288,7 +288,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                                 </tr>
                             );
                         })}
-                        {displayTransactions.length === 0 && (
+                        {filteredData.length === 0 && (
                             <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic text-sm">Aucun mouvement pour cette période.</td></tr>
                         )}
                     </tbody>

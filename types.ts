@@ -314,13 +314,18 @@ export interface DailyAlert {
     consigne: number;
 }
 
+export interface SuggestedPrice {
+    label: string;
+    price: string;
+}
+
 export interface ProductSheet {
     id: string;
     itemId: string; // Link to StockItem
     fullName?: string; // Nom complet pour recherche
     type: string; // Correspond à ProductType.name
     glasswareIds?: string[]; // Link to Glassware (up to 3)
-    suggestedPrices?: { p25?: string; p50?: string; p70?: string }; // Admin only
+    suggestedPrices?: SuggestedPrice[]; // Admin only
     region?: string;
     country?: string;
     tastingNotes?: string; // JSON string { nose: '', mouth: '', eye: '' }
