@@ -27,6 +27,9 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
   const [selectedWeek, setSelectedWeek] = useState<string>(''); 
   const [selectedDay, setSelectedDay] = useState<string>(new Date().toISOString().split('T')[0]); 
 
+  const [movementTypeFilter, setMovementTypeFilter] = useState<'ALL' | 'IN' | 'OUT'>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+
   // Set default filters based on active tab
   useEffect(() => {
       if (activeTab === 'LOSSES' || activeTab === 'CLIENT_RUPTURE') {
@@ -117,7 +120,15 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
   const filteredData = useMemo(() => {
       switch (activeTab) {
           case 'MOVEMENTS':
-              return transactions.filter(t => checkDateInFilter(t.date)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+              return transactions.filter(t => {
+                  if (!checkDateInFilter(t.date)) return false;
+                  if (movementTypeFilter !== 'ALL' && t.type !== movementTypeFilter) return false;
+                  if (categoryFilter !== 'ALL') {
+                      const item = items.find(i => i.id === t.itemId);
+                      if (item?.category !== categoryFilter) return false;
+                  }
+                  return true;
+              }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           case 'LOSSES':
               return losses.filter(l => checkDateInFilter(l.discardedAt));
           case 'CLIENT_RUPTURE':
@@ -131,20 +142,22 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           default:
               return [];
       }
-  }, [activeTab, transactions, losses, orders, dailyStockAlerts, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear]);
+  }, [activeTab, transactions, losses, orders, dailyStockAlerts, periodFilter, selectedDay, selectedWeek, selectedMonth, selectedYear, movementTypeFilter, categoryFilter, items]);
 
   const aggregatedData = useMemo(() => {
-      if (activeTab === 'MOVEMENTS') return filteredData;
+      if (activeTab === 'MOVEMENTS' && periodFilter === 'DAY') return filteredData;
 
-      const groups: Record<string, { item: StockItem, quantity: number, count: number, dates: string[] }> = {};
+      const groups: Record<string, { item: StockItem, quantity: number, count: number, dates: string[], type?: string }> = {};
 
       filteredData.forEach((entry: any) => {
           const itemId = entry.itemId || entry.item_id; // Handle different shapes if needed
           const item = items.find(i => i.id === itemId);
           if (!item) return;
 
-          if (!groups[itemId]) {
-              groups[itemId] = { item, quantity: 0, count: 0, dates: [] };
+          const groupKey = activeTab === 'MOVEMENTS' ? `${itemId}_${entry.type}` : itemId;
+
+          if (!groups[groupKey]) {
+              groups[groupKey] = { item, quantity: 0, count: 0, dates: [], type: entry.type };
           }
 
           let qty = 0;
@@ -152,15 +165,16 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           else if (activeTab === 'CLIENT_RUPTURE') qty = 1; 
           else if (activeTab === 'STOCK_TENSION' || activeTab === 'STOCK_RUPTURE') qty = 1; 
           else if (activeTab === 'RECEIVED') qty = entry.quantity;
+          else if (activeTab === 'MOVEMENTS') qty = entry.quantity;
 
-          groups[itemId].quantity += qty;
-          groups[itemId].count += 1;
+          groups[groupKey].quantity += qty;
+          groups[groupKey].count += 1;
           const date = entry.date || entry.discardedAt || entry.ruptureDate || entry.receivedAt;
-          if (date) groups[itemId].dates.push(date);
+          if (date) groups[groupKey].dates.push(date);
       });
 
       return Object.values(groups).sort((a, b) => b.quantity - a.quantity);
-  }, [filteredData, activeTab, items]);
+  }, [filteredData, activeTab, items, periodFilter]);
 
   const handleExport = () => {
       let csvContent = "data:text/csv;charset=utf-8,";
@@ -216,6 +230,29 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
 
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex flex-wrap gap-2">
+                  {activeTab === 'MOVEMENTS' && (
+                      <>
+                          <select 
+                              value={movementTypeFilter} 
+                              onChange={(e) => setMovementTypeFilter(e.target.value as 'ALL' | 'IN' | 'OUT')}
+                              className="bg-slate-100 border-none rounded-lg px-3 py-2 text-xs font-black uppercase text-slate-700 outline-none cursor-pointer"
+                          >
+                              <option value="ALL">Tous les types</option>
+                              <option value="IN">Entrées</option>
+                              <option value="OUT">Sorties</option>
+                          </select>
+                          <select 
+                              value={categoryFilter} 
+                              onChange={(e) => setCategoryFilter(e.target.value)}
+                              className="bg-slate-100 border-none rounded-lg px-3 py-2 text-xs font-black uppercase text-slate-700 outline-none cursor-pointer"
+                          >
+                              <option value="ALL">Toutes les catégories</option>
+                              {Array.from(new Set(items.map(i => i.category))).map(c => (
+                                  <option key={c} value={c}>{c}</option>
+                              ))}
+                          </select>
+                      </>
+                  )}
                   <select 
                     value={periodFilter} 
                     onChange={(e) => setPeriodFilter(e.target.value as PeriodFilter)}
@@ -259,7 +296,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
       </div>
 
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-          {activeTab === 'MOVEMENTS' ? (
+          {activeTab === 'MOVEMENTS' && periodFilter === 'DAY' ? (
             <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
                 <table className="w-full text-left">
                     <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
@@ -309,9 +346,11 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                       <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
                           <tr>
                               <th className="p-4">Produit</th>
+                              {activeTab === 'MOVEMENTS' && <th className="p-4">Type</th>}
                               <th className="p-4 text-right">
                                   {activeTab === 'LOSSES' ? 'Quantité Perdue (Unit)' : 
                                    activeTab === 'RECEIVED' ? 'Quantité Reçue' : 
+                                   activeTab === 'MOVEMENTS' ? 'Quantité Totale' :
                                    'Occurrences / Jours'}
                               </th>
                               <th className="p-4 text-right">Tags (Dates)</th>
@@ -324,8 +363,15 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                                       {g.item.name}
                                       <span className="block text-[9px] text-slate-400 font-normal uppercase tracking-wider mt-0.5">{g.item.category}</span>
                                   </td>
+                                  {activeTab === 'MOVEMENTS' && (
+                                      <td className="p-4">
+                                          <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider ${g.type === 'IN' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                                              {g.type === 'IN' ? 'Entrée' : 'Sortie'}
+                                          </span>
+                                      </td>
+                                  )}
                                   <td className="p-4 text-right font-black text-slate-800">
-                                      {activeTab === 'LOSSES' ? (g.quantity * 100).toFixed(2) : g.quantity}
+                                      {activeTab === 'LOSSES' ? (g.quantity * 100).toFixed(2) : g.quantity.toFixed(3)}
                                       {activeTab === 'LOSSES' && <span className="text-[9px] text-slate-400 font-normal ml-1">Unit</span>}
                                   </td>
                                   <td className="p-4 text-right">
@@ -340,7 +386,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                               </tr>
                           ))}
                           {aggregatedData.length === 0 && (
-                              <tr><td colSpan={3} className="p-8 text-center text-slate-400 italic text-sm">Aucune donnée pour cette période.</td></tr>
+                              <tr><td colSpan={activeTab === 'MOVEMENTS' ? 4 : 3} className="p-8 text-center text-slate-400 italic text-sm">Aucune donnée pour cette période.</td></tr>
                           )}
                       </tbody>
                   </table>

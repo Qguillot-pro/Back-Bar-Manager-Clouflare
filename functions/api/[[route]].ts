@@ -203,7 +203,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 tastingNotes: p.tasting_notes, customFields: p.custom_fields,
                 foodPairing: p.food_pairing, servingTemp: p.serving_temp, allergens: p.allergens, description: p.description, status: p.status, updatedAt: p.updated_at,
                 glasswareIds: customFieldsObj['glasswareIds'] || [],
-                suggestedPrices: customFieldsObj['suggestedPrices'] || []
+                salesFormat: customFieldsObj['salesFormat'] || 0,
+                actualPrice: customFieldsObj['actualPrice'] || 0,
+                marginRate: customFieldsObj['marginRate']
             };
         });
         // NEW: Product Types
@@ -328,16 +330,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'SAVE_PRODUCT_SHEET': {
-            const { id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status, glasswareIds, suggestedPrices } = payload;
+            const { id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status, glasswareIds, salesFormat, actualPrice, marginRate } = payload;
             
             // Merge new fields into customFields
-            let fieldsObj = {};
+            let fieldsObj: any = {};
             try {
                 fieldsObj = JSON.parse(customFields || '{}');
             } catch (e) {}
             
             if (glasswareIds) fieldsObj['glasswareIds'] = glasswareIds;
-            if (suggestedPrices) fieldsObj['suggestedPrices'] = suggestedPrices;
+            if (salesFormat !== undefined) fieldsObj['salesFormat'] = salesFormat;
+            if (actualPrice !== undefined) fieldsObj['actualPrice'] = actualPrice;
+            if (marginRate !== undefined) fieldsObj['marginRate'] = marginRate;
             
             const finalCustomFields = JSON.stringify(fieldsObj);
 

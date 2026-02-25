@@ -289,45 +289,28 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                       <div className="bg-emerald-50 p-4 rounded-xl space-y-3 border border-emerald-100">
                           <div className="flex justify-between items-center">
                               <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Prix Conseillés (Admin)</p>
-                              <button 
-                                  onClick={() => setSuggestedPrices([...suggestedPrices, { label: '', price: '' }])}
-                                  className="text-[9px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-800"
-                              >
-                                  + Ajouter
-                              </button>
                           </div>
-                          <div className="space-y-2">
-                              {suggestedPrices.map((price, idx) => (
-                                  <div key={idx} className="flex gap-2 items-center">
-                                      <input 
-                                          className="flex-1 bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800" 
-                                          placeholder="Format (ex: 25cl)" 
-                                          value={price.label} 
-                                          onChange={e => {
-                                              const newPrices = [...suggestedPrices];
-                                              newPrices[idx].label = e.target.value;
-                                              setSuggestedPrices(newPrices);
-                                          }} 
-                                      />
-                                      <input 
-                                          className="w-24 bg-white border border-emerald-200 rounded-lg p-2 text-sm outline-none font-bold text-emerald-800 text-right" 
-                                          placeholder="Prix €" 
-                                          value={price.price} 
-                                          onChange={e => {
-                                              const newPrices = [...suggestedPrices];
-                                              newPrices[idx].price = e.target.value;
-                                              setSuggestedPrices(newPrices);
-                                          }} 
-                                      />
-                                      <button 
-                                          onClick={() => setSuggestedPrices(suggestedPrices.filter((_, i) => i !== idx))}
-                                          className="text-emerald-400 hover:text-emerald-600 font-bold px-2"
-                                      >
-                                          ✕
-                                      </button>
-                                  </div>
-                              ))}
-                              {suggestedPrices.length === 0 && <p className="text-xs text-emerald-400 italic text-center">Aucun prix conseillé.</p>}
+                          <div className="flex gap-4">
+                              <div className="flex-1 space-y-2">
+                                  <label className="text-[9px] font-black text-emerald-600 uppercase tracking-widest ml-1">Format de Vente (ex: 4cl)</label>
+                                  <input 
+                                      type="number"
+                                      step="0.1"
+                                      className="w-full bg-white border border-emerald-200 rounded-xl p-3 font-bold text-sm outline-none text-emerald-800" 
+                                      value={salesFormat || ''} 
+                                      onChange={e => setSalesFormat(parseFloat(e.target.value) || 0)} 
+                                  />
+                              </div>
+                              <div className="flex-1 space-y-2">
+                                  <label className="text-[9px] font-black text-emerald-600 uppercase tracking-widest ml-1">Prix de Vente Actuel (€)</label>
+                                  <input 
+                                      type="number"
+                                      step="0.1"
+                                      className="w-full bg-white border border-emerald-200 rounded-xl p-3 font-bold text-sm outline-none text-emerald-800" 
+                                      value={actualPrice || ''} 
+                                      onChange={e => setActualPrice(parseFloat(e.target.value) || 0)} 
+                                  />
+                              </div>
                           </div>
                       </div>
                   )}
@@ -399,16 +382,18 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                   <div className="flex-1 overflow-y-auto p-8 space-y-8">
                       <p className="text-lg text-slate-700 font-medium leading-relaxed">{selectedSheet.description}</p>
                       
-                      {currentUserRole === 'ADMIN' && selectedSheet.suggestedPrices && selectedSheet.suggestedPrices.length > 0 && (
+                      {currentUserRole === 'ADMIN' && selectedSheet.salesFormat > 0 && selectedSheet.actualPrice > 0 && (
                           <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
                               <h3 className="font-black text-sm uppercase text-emerald-600 tracking-widest border-b border-emerald-200 pb-2 mb-4">Prix Conseillés (Admin)</h3>
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
-                                  {selectedSheet.suggestedPrices.map((sp, idx) => (
-                                      <div key={idx}>
-                                          <span className="block font-black text-emerald-400 text-xs uppercase mb-1">{sp.label}</span>
-                                          <span className="text-emerald-800 font-bold text-lg">{sp.price} €</span>
-                                      </div>
-                                  ))}
+                              <div className="grid grid-cols-2 gap-4 text-center">
+                                  <div>
+                                      <span className="block font-black text-emerald-400 text-xs uppercase mb-1">Format de Vente</span>
+                                      <span className="text-emerald-800 font-bold text-lg">{selectedSheet.salesFormat}</span>
+                                  </div>
+                                  <div>
+                                      <span className="block font-black text-emerald-400 text-xs uppercase mb-1">Prix Actuel</span>
+                                      <span className="text-emerald-800 font-bold text-lg">{selectedSheet.actualPrice} €</span>
+                                  </div>
                               </div>
                           </div>
                       )}

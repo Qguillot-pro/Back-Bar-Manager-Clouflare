@@ -10,7 +10,7 @@ interface MovementsProps {
   onOpenKeypad: (config: any) => void;
   unfulfilledOrders: UnfulfilledOrder[];
   onReportUnfulfilled: (itemId: string, quantity: number) => void;
-  onCreateTemporaryItem?: (name: string, quantity: number) => void;
+  onCreateTemporaryItem?: (name: string, quantity: number) => string | void;
   formats: Format[];
   dlcProfiles?: DLCProfile[];
   onUndo?: () => void;
@@ -27,6 +27,9 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [qty, setQty] = useState<string>('1');
   const [isServiceTransfer, setIsServiceTransfer] = useState(false);
   
+  const [unfulfilledSearch, setUnfulfilledSearch] = useState('');
+  const [unfulfilledQty, setUnfulfilledQty] = useState<string>('1');
+
   const [dlcModalOpen, setDlcModalOpen] = useState(false);
   const [pendingDlcItem, setPendingDlcItem] = useState<StockItem | null>(null);
   const [pendingDlcAction, setPendingDlcAction] = useState<'IN' | 'OUT'>('OUT');
@@ -34,6 +37,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [isTempItemModalOpen, setIsTempItemModalOpen] = useState(false);
   const [tempItemName, setTempItemName] = useState('');
   const [tempItemQty, setTempItemQty] = useState<number>(0);
+  const [tempItemAction, setTempItemAction] = useState<'IN' | 'UNFULFILLED'>('IN');
 
   const [consigneModalOpen, setConsigneModalOpen] = useState(false);
   const [pendingConsigneItem, setPendingConsigneItem] = useState<StockItem | null>(null);
@@ -52,6 +56,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     if (!item) {
         if (type === 'IN' && onCreateTemporaryItem) {
             setTempItemName(search);
+            setTempItemAction('IN');
             setIsTempItemModalOpen(true);
         } else {
             alert(`Produit "${search}" introuvable.`);
@@ -84,6 +89,35 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     setIsServiceTransfer(false);
   };
 
+  const handleUnfulfilledAction = () => {
+      if (unfulfilledQty.includes('.') || unfulfilledQty.includes(',')) {
+          alert("Les décimales ne sont pas autorisées sur cet écran. Veuillez saisir un nombre entier.");
+          return;
+      }
+
+      const searchNormalized = normalizeText(unfulfilledSearch.trim());
+      const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
+
+      let quantity = parseInt(unfulfilledQty, 10);
+      if (isNaN(quantity) || quantity <= 0) quantity = 1;
+
+      if (!item) {
+          if (onCreateTemporaryItem) {
+              setTempItemName(unfulfilledSearch);
+              setTempItemQty(quantity);
+              setTempItemAction('UNFULFILLED');
+              setIsTempItemModalOpen(true);
+          } else {
+              alert(`Produit "${unfulfilledSearch}" introuvable.`);
+          }
+          return;
+      }
+
+      onReportUnfulfilled(item.id, quantity);
+      setUnfulfilledSearch('');
+      setUnfulfilledQty('1');
+  };
+
   const finalizeConsigneTransaction = () => {
       if (!pendingConsigneItem) return;
       let quantity = parseInt(qty, 10) || 1;
@@ -114,7 +148,15 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
   const handleCreateTemp = () => {
       if (onCreateTemporaryItem && tempItemName) {
-          onCreateTemporaryItem(tempItemName, tempItemQty);
+          const newId = onCreateTemporaryItem(tempItemName, tempItemQty);
+          if (tempItemAction === 'UNFULFILLED' && newId) {
+              onReportUnfulfilled(newId as string, tempItemQty || 1);
+              setUnfulfilledSearch('');
+              setUnfulfilledQty('1');
+          } else if (tempItemAction === 'IN') {
+              setSearch('');
+              setQty('1');
+          }
           setTempItemName('');
           setTempItemQty(0);
           setIsTempItemModalOpen(false);
@@ -184,7 +226,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                           <datalist id="movement-items">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
                       </div>
                       <button 
-                        onClick={() => { setTempItemName(search); setIsTempItemModalOpen(true); }}
+                        onClick={() => { setTempItemName(search); setTempItemAction('IN'); setIsTempItemModalOpen(true); }}
                         className="bg-amber-100 hover:bg-amber-200 text-amber-600 p-4 rounded-2xl transition-colors h-[58px] flex items-center justify-center"
                         title="Créer un produit temporaire"
                       >
@@ -260,38 +302,68 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
       {/* RUPTURES CLIENT VIEW */}
       {activeTab === 'UNFULFILLED' && (
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-              <div className="p-4 border-b bg-rose-50 flex items-center gap-2">
-                  <span className="w-1.5 h-4 bg-rose-500 rounded-full"></span>
-                  <h3 className="font-black text-rose-800 uppercase tracking-widest text-xs">Ruptures signalées par le service</h3>
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex gap-4 items-end">
+                      <div className="flex-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit en rupture</label>
+                          <input list="unfulfilled-items" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-rose-100" placeholder="Rechercher ou saisir un nouveau produit..." value={unfulfilledSearch} onChange={(e) => setUnfulfilledSearch(e.target.value)} />
+                          <datalist id="unfulfilled-items">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
+                      </div>
+                      <div className="w-24">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Qté</label>
+                          <input 
+                            type="number" 
+                            inputMode="numeric" 
+                            pattern="[0-9]*"
+                            step="1"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-center outline-none" 
+                            value={unfulfilledQty} 
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                if (/^\d*$/.test(val)) setUnfulfilledQty(val);
+                            }} 
+                          />
+                      </div>
+                      <button onClick={handleUnfulfilledAction} className="bg-rose-500 text-white px-6 py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg active:scale-95 text-xs h-[58px]">
+                          Signaler
+                      </button>
+                  </div>
               </div>
-              <table className="w-full text-left">
-                  <thead className="bg-white text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                      <tr>
-                          <th className="p-4">Date/Heure</th>
-                          <th className="p-4">Produit</th>
-                          <th className="p-4 text-center">Qté Perdue</th>
-                          <th className="p-4">Signalé par</th>
-                      </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                      {unfulfilledOrders.slice(0, 50).map(u => (
-                          <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="p-4 text-xs font-bold text-slate-500">
-                                  {new Date(u.date).toLocaleDateString()} <span className="text-slate-400 text-[10px]">{new Date(u.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                              </td>
-                              <td className="p-4 font-black text-slate-800">
-                                  {items.find(i => i.id === u.itemId)?.name || 'Inconnu'}
-                              </td>
-                              <td className="p-4 text-center font-black text-rose-500">{u.quantity || 1}</td>
-                              <td className="p-4 text-xs font-bold text-slate-600">{u.userName || '-'}</td>
+
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-4 border-b bg-rose-50 flex items-center gap-2">
+                      <span className="w-1.5 h-4 bg-rose-500 rounded-full"></span>
+                      <h3 className="font-black text-rose-800 uppercase tracking-widest text-xs">Ruptures signalées par le service</h3>
+                  </div>
+                  <table className="w-full text-left">
+                      <thead className="bg-white text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                          <tr>
+                              <th className="p-4">Date/Heure</th>
+                              <th className="p-4">Produit</th>
+                              <th className="p-4 text-center">Qté Perdue</th>
+                              <th className="p-4">Signalé par</th>
                           </tr>
-                      ))}
-                      {unfulfilledOrders.length === 0 && (
-                          <tr><td colSpan={4} className="p-12 text-center text-slate-400 italic">Aucune rupture signalée récemment.</td></tr>
-                      )}
-                  </tbody>
-              </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                          {unfulfilledOrders.slice(0, 50).map(u => (
+                              <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="p-4 text-xs font-bold text-slate-500">
+                                      {new Date(u.date).toLocaleDateString()} <span className="text-slate-400 text-[10px]">{new Date(u.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                  </td>
+                                  <td className="p-4 font-black text-slate-800">
+                                      {items.find(i => i.id === u.itemId)?.name || 'Inconnu'}
+                                  </td>
+                                  <td className="p-4 text-center font-black text-rose-500">{u.quantity || 1}</td>
+                                  <td className="p-4 text-xs font-bold text-slate-600">{u.userName || '-'}</td>
+                              </tr>
+                          ))}
+                          {unfulfilledOrders.length === 0 && (
+                              <tr><td colSpan={4} className="p-12 text-center text-slate-400 italic">Aucune rupture signalée récemment.</td></tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
           </div>
       )}
     </div>

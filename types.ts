@@ -327,7 +327,6 @@ export interface ProductSheet {
     fullName?: string; // Nom complet pour recherche
     type: string; // Correspond à ProductType.name
     glasswareIds?: string[]; // Link to Glassware (up to 3)
-    suggestedPrices?: SuggestedPrice[]; // Admin only
     region?: string;
     country?: string;
     tastingNotes?: string; // JSON string { nose: '', mouth: '', eye: '' }
