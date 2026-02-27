@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Transaction, PendingOrder, StockItem, StorageSpace, UnfulfilledOrder, Format, Loss, DailyStockAlert } from '../types';
+import { Transaction, PendingOrder, StockItem, StorageSpace, UnfulfilledOrder, Format, Loss, DailyAlert, AppConfig } from '../types';
 
 interface HistoryProps {
   transactions: Transaction[];
@@ -11,7 +11,7 @@ interface HistoryProps {
   onUpdateOrderQuantity?: (orderIds: string[], newQuantity: number) => void;
   formats: Format[];
   losses?: Loss[];
-  dailyStockAlerts?: DailyStockAlert[];
+  dailyStockAlerts?: DailyAlert[];
   appConfig?: AppConfig;
 }
 

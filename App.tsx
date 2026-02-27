@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, MealReservation } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, MealReservation, DailyAlert } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -38,6 +38,30 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loginInput, setLoginInput] = useState('');
   const [loginStatus, setLoginStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [lockoutDurationIndex, setLockoutDurationIndex] = useState(0);
+  const [lockoutTimeLeft, setLockoutTimeLeft] = useState(0);
+
+  const LOCKOUT_DURATIONS = [30, 60, 300, 600, 1800, 3600];
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (lockoutUntil) {
+      timer = setInterval(() => {
+        const now = Date.now();
+        const diff = Math.ceil((lockoutUntil - now) / 1000);
+        if (diff <= 0) {
+          setLockoutUntil(null);
+          setLockoutTimeLeft(0);
+          setLoginStatus('idle');
+        } else {
+          setLockoutTimeLeft(diff);
+        }
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [lockoutUntil]);
   
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); 
   const [isTestMode, setIsTestMode] = useState(false); // Mode Test State
@@ -551,13 +575,15 @@ const App: React.FC = () => {
   };
 
   const handlePinInput = useCallback((num: string) => {
-    if (loginStatus !== 'idle' || loginInput.length >= 4) return;
+    if (loginStatus !== 'idle' || loginInput.length >= 4 || lockoutUntil) return;
     const newPin = loginInput + num;
     setLoginInput(newPin);
     if (newPin.length === 4) {
       const found = users.find(u => u.pin === newPin);
       if (found) { 
           setLoginStatus('success'); 
+          setFailedAttempts(0);
+          setLockoutDurationIndex(0);
           
           // ENREGISTREMENT DU LOG DE CONNEXION ICI
           const logEntry = {
@@ -576,19 +602,65 @@ const App: React.FC = () => {
               setLoginInput(''); 
           }, 600); 
       }
-      else { setLoginStatus('error'); setTimeout(() => { setLoginStatus('idle'); setLoginInput(''); }, 1000); }
+      else { 
+          setLoginStatus('error'); 
+          const newFailedAttempts = failedAttempts + 1;
+          setFailedAttempts(newFailedAttempts);
+
+          if (newFailedAttempts >= 3) {
+              const duration = LOCKOUT_DURATIONS[Math.min(lockoutDurationIndex, LOCKOUT_DURATIONS.length - 1)];
+              setLockoutUntil(Date.now() + duration * 1000);
+              setLockoutTimeLeft(duration);
+              setLockoutDurationIndex(prev => prev + 1);
+              setFailedAttempts(0); // Reset attempts after lockout starts
+          }
+
+          setTimeout(() => { 
+              if (!lockoutUntil) {
+                  setLoginStatus('idle'); 
+              }
+              setLoginInput(''); 
+          }, 1000); 
+      }
     }
-  }, [loginInput, loginStatus, users]);
+  }, [loginInput, loginStatus, users, failedAttempts, lockoutUntil, lockoutDurationIndex]);
 
   if (loading) return <div className="h-screen flex items-center justify-center font-black animate-pulse">CHARGEMENT...</div>;
   
   if (!currentUser) return (
     <div className="h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden max-w-sm w-full">
-        <div className="bg-indigo-600 p-8 text-center text-white"><h1 className="font-black text-xl uppercase tracking-widest">BarStock Pro</h1></div>
-        <div className="p-8">
-            <div className="flex justify-center gap-4 mb-8">{[0,1,2,3].map(i=>(<div key={i} className={`w-4 h-4 rounded-full transition-all ${loginInput.length > i ? 'bg-indigo-600 scale-110' : 'bg-slate-200'}`}></div>))}</div>
-            <div className="grid grid-cols-3 gap-4">{[1,2,3,4,5,6,7,8,9, 'C', 0, '←'].map(n=>(<button key={n.toString()} onClick={()=> n === '←' ? setLoginInput(p=>p.slice(0,-1)) : n==='C' ? setLoginInput('') : handlePinInput(n.toString())} className="aspect-square rounded-full bg-slate-50 text-slate-700 font-black text-2xl shadow-sm border">{n}</button>))}</div>
+        <div className="bg-indigo-600 p-8 text-center text-white">
+            <h1 className="font-black text-xl uppercase tracking-widest">BarStock Pro</h1>
+            {lockoutUntil && (
+                <div className="mt-2 bg-rose-500/20 text-rose-200 py-1 px-3 rounded-full text-[10px] font-bold uppercase tracking-widest animate-pulse">
+                    Sécurité : Réessayez dans {lockoutTimeLeft}s
+                </div>
+            )}
+        </div>
+        <div className={`p-8 transition-opacity duration-300 ${lockoutUntil ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
+            <div className="flex justify-center gap-4 mb-8">
+                {[0,1,2,3].map(i=>(
+                    <div key={i} className={`w-4 h-4 rounded-full transition-all ${loginInput.length > i ? 'bg-indigo-600 scale-110' : 'bg-slate-200'} ${loginStatus === 'error' ? 'bg-rose-500 animate-bounce' : ''}`}></div>
+                ))}
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+                {[1,2,3,4,5,6,7,8,9, 'C', 0, '←'].map(n=>(
+                    <button 
+                        key={n.toString()} 
+                        disabled={!!lockoutUntil}
+                        onClick={()=> n === '←' ? setLoginInput(p=>p.slice(0,-1)) : n==='C' ? setLoginInput('') : handlePinInput(n.toString())} 
+                        className="aspect-square rounded-full bg-slate-50 text-slate-700 font-black text-2xl shadow-sm border hover:bg-slate-100 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                        {n}
+                    </button>
+                ))}
+            </div>
+            {failedAttempts > 0 && !lockoutUntil && (
+                <p className="text-center mt-4 text-[10px] font-bold text-rose-500 uppercase tracking-widest">
+                    {failedAttempts} essai{failedAttempts > 1 ? 's' : ''} infructueux
+                </p>
+            )}
         </div>
       </div>
     </div>

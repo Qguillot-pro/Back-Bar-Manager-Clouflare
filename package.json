@@ -7,6 +7,7 @@
     "start": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "lint": "tsc --noEmit",
     "deploy": "wrangler pages deploy dist --project-name barstock-pro"
   },
   "dependencies": {
