@@ -4,6 +4,7 @@ import { StockItem, StorageSpace, StockLevel, Category, StockConsigne, Format } 
 
 interface GlobalInventoryProps {
   items: StockItem[];
+  setItems: React.Dispatch<React.SetStateAction<StockItem[]>>;
   storages: StorageSpace[];
   stockLevels: StockLevel[];
   categories: Category[];
@@ -13,7 +14,7 @@ interface GlobalInventoryProps {
   formats: Format[];
 }
 
-const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stockLevels, categories, consignes, onSync, onUpdateStock, formats = [] }) => {
+const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, setItems, storages, stockLevels, categories, consignes, onSync, onUpdateStock, formats = [] }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<Category | 'ALL'>('ALL');
   const [newItemName, setNewItemName] = useState('');
@@ -68,7 +69,9 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
   const handleLocationChange = (itemId: string, val: string) => {
       const item = items.find(i => i.id === itemId);
       if (item) {
-          onSync('SAVE_ITEM', { ...item, inventoryLocation: val });
+          const updatedItem = { ...item, inventoryLocation: val };
+          setItems(prev => prev.map(i => i.id === itemId ? updatedItem : i));
+          onSync('SAVE_ITEM', updatedItem);
       }
   };
 
@@ -126,6 +129,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
           isDraft: false,
           inventoryLocation: newItemLocation
       };
+      setItems(prev => [...prev, newItem]);
       onSync('SAVE_ITEM', newItem);
       setNewItemName('');
       setNewItemLocation('');

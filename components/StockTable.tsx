@@ -6,6 +6,7 @@ interface StockTableProps {
   items: StockItem[];
   storages: StorageSpace[];
   stockLevels: StockLevel[];
+  setStockLevels?: React.Dispatch<React.SetStateAction<StockLevel[]>>;
   consignes?: StockConsigne[]; 
   priorities: StockPriority[];
   onUpdateStock: (itemId: string, storageId: string, qty: number) => void;
@@ -65,7 +66,7 @@ const EditableNumberCell = ({
     );
 };
 
-const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, priorities, onUpdateStock, onAdjustTransaction, consignes = [], currentUser, onSync }) => {
+const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, setStockLevels, priorities, onUpdateStock, onAdjustTransaction, consignes = [], currentUser, onSync }) => {
   const [activeTab, setActiveTab] = useState<'GLOBAL' | 'PRODUCT' | 'STORAGE'>('GLOBAL');
   const [searchTerm, setSearchTerm] = useState('');
   const [columnFilters, setColumnFilters] = useState<string[]>(['all', 'none', 'none']);
@@ -120,22 +121,33 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
       if (targetIndex < 0 || targetIndex >= storageItems.length) return;
 
-      const currentItem = storageItems[index];
-      const targetItem = storageItems[targetIndex];
+      const newItems = [...storageItems];
+      const temp = newItems[index];
+      newItems[index] = newItems[targetIndex];
+      newItems[targetIndex] = temp;
 
-      const updateLevel = (item: StockItem, order: number) => {
+      newItems.forEach((item, idx) => {
           const level = stockLevels.find(l => l.itemId === item.id && l.storageId === selectedStorageId);
-          const updatedLevel: StockLevel = {
-              itemId: item.id,
-              storageId: selectedStorageId,
-              currentQuantity: level?.currentQuantity || 0,
-              order: order
-          };
-          onSync?.('SAVE_STOCK_LEVEL', updatedLevel);
-      };
-
-      updateLevel(currentItem, targetIndex);
-      updateLevel(targetItem, index);
+          if (level?.order !== idx) {
+              const updatedLevel: StockLevel = {
+                  itemId: item.id,
+                  storageId: selectedStorageId,
+                  currentQuantity: level?.currentQuantity || 0,
+                  order: idx
+              };
+              onSync?.('SAVE_STOCK_LEVEL', updatedLevel);
+              
+              if (setStockLevels) {
+                  setStockLevels(prev => {
+                      const exists = prev.find(l => l.itemId === item.id && l.storageId === selectedStorageId);
+                      if (exists) {
+                          return prev.map(l => l.itemId === item.id && l.storageId === selectedStorageId ? updatedLevel : l);
+                      }
+                      return [...prev, updatedLevel];
+                  });
+              }
+          }
+      });
   };
 
   // Vue Par Produit : Espaces Autorisés
