@@ -111,7 +111,8 @@ const Configuration: React.FC<ConfigProps> = ({
       else if (field === 'emailSender') key = 'email_sender';
       else if (field === 'barDayStart') key = 'bar_day_start';
       else if (field === 'programMapping') key = 'program_mapping';
-      else key = field; // Fallback
+      else if (field === 'programThresholds') key = 'program_thresholds';
+      else key = String(field); // Fallback
 
       onSync('SAVE_CONFIG', { key, value: typeof value === 'object' ? JSON.stringify(value) : value });
   };

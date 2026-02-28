@@ -109,6 +109,7 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
             try {
                 const products: EventProduct[] = JSON.parse(evt.productsJson);
                 products.forEach(p => {
+                    if (!p.itemId) return;
                     const item = items.find(i => i.id === p.itemId);
                     const profile = item?.dlcProfileId ? dlcProfiles.find(pro => pro.id === item.dlcProfileId) : null;
                     if (profile?.type === 'PRODUCTION') return; // Exclude here too

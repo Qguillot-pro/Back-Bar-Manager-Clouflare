@@ -20,6 +20,7 @@ type Tab = 'MOVEMENTS' | 'LOSSES' | 'CLIENT_RUPTURE' | 'STOCK_TENSION' | 'STOCK_
 
 const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, formats = [], losses = [], dailyStockAlerts = [], appConfig }) => {
   const [activeTab, setActiveTab] = useState<Tab>('MOVEMENTS');
+  const [validatedGroups, setValidatedGroups] = useState<Set<string>>(new Set());
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('MONTH');
   
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());

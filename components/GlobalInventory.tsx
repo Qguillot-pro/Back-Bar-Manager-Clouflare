@@ -18,6 +18,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
   const [filterCategory, setFilterCategory] = useState<Category | 'ALL'>('ALL');
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState<Category | ''>('');
+  const [newItemLocation, setNewItemLocation] = useState('');
   
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportCategories, setExportCategories] = useState<Set<string>>(new Set(categories));
@@ -29,7 +30,25 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
           (filterCategory === 'ALL' || i.category === filterCategory) &&
           i.name.toLowerCase().includes(searchTerm.trim().toLowerCase())
       );
-      return filtered.sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+      
+      return filtered.sort((a, b) => {
+          // Sort by inventoryLocation if available
+          if (a.inventoryLocation || b.inventoryLocation) {
+              const locA = a.inventoryLocation || 'ZZZZ'; // Put items without location at the end
+              const locB = b.inventoryLocation || 'ZZZZ';
+              
+              // Try numeric sort if both are numbers
+              const numA = parseFloat(locA);
+              const numB = parseFloat(locB);
+              if (!isNaN(numA) && !isNaN(numB)) {
+                  return numA - numB;
+              }
+              
+              return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
+          }
+          
+          return (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name);
+      });
   }, [items, filterCategory, searchTerm]);
 
   const getBarStock = (itemId: string) => {
@@ -44,6 +63,13 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
 
   const getSurstockLevel = (itemId: string) => {
       return stockLevels.find(l => l.itemId === itemId && l.storageId === 's0')?.currentQuantity || 0;
+  };
+
+  const handleLocationChange = (itemId: string, val: string) => {
+      const item = items.find(i => i.id === itemId);
+      if (item) {
+          onSync('SAVE_ITEM', { ...item, inventoryLocation: val });
+      }
   };
 
   const handleGlobalStockChange = (itemId: string, val: string) => {
@@ -97,27 +123,12 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
           createdAt: new Date().toISOString(),
           isInventoryOnly: true,
           order: items.length,
-          isDraft: false
+          isDraft: false,
+          inventoryLocation: newItemLocation
       };
       onSync('SAVE_ITEM', newItem);
       setNewItemName('');
-  };
-
-  const moveItem = (index: number, direction: 'up' | 'down') => {
-      if (direction === 'up' && index === 0) return;
-      if (direction === 'down' && index === displayedItems.length - 1) return;
-
-      const newItems = [...displayedItems];
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
-      const currentItem = newItems[index];
-      const targetItem = newItems[targetIndex];
-
-      let order1 = currentItem.order ?? index;
-      let order2 = targetItem.order ?? targetIndex;
-      if (order1 === order2) { order1 = index; order2 = targetIndex; }
-
-      onSync('SAVE_ITEM', { ...currentItem, order: order2 });
-      onSync('SAVE_ITEM', { ...targetItem, order: order1 });
+      setNewItemLocation('');
   };
 
   const openExportModal = () => {
@@ -133,17 +144,27 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
   };
 
   const handleConfirmExport = () => {
-      let csv = "\uFEFFCatégorie,Produit,Format,Stock Bar,Stock Autre/Resto,Total\n";
+      let csv = "\uFEFFEmplacement,Catégorie,Produit,Format,Stock Bar,Stock Autre/Resto,Total\n";
       const itemsToExport = items
           .filter(i => exportCategories.has(i.category))
-          .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+          .sort((a, b) => {
+              if (a.inventoryLocation || b.inventoryLocation) {
+                  const locA = a.inventoryLocation || 'ZZZZ';
+                  const locB = b.inventoryLocation || 'ZZZZ';
+                  const numA = parseFloat(locA);
+                  const numB = parseFloat(locB);
+                  if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                  return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
+              }
+              return (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name);
+          });
 
       itemsToExport.forEach(i => {
           const bar = getBarStock(i.id);
           const other = getGlobalStock(i.id);
           const total = bar + other;
           const fmt = formats.find(f => f.id === i.formatId)?.name || '';
-          csv += `"${i.category}","${i.name}","${fmt}","${bar}","${other}","${total}"\n`;
+          csv += `"${i.inventoryLocation || ''}","${i.category}","${i.name}","${fmt}","${bar}","${other}","${total}"\n`;
       });
       
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -251,6 +272,16 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                         {categories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                 </div>
+                <div className="w-full md:w-32 space-y-1">
+                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest ml-1">Emplacement</label>
+                    <input 
+                        type="text" 
+                        className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-bold outline-none"
+                        placeholder="#"
+                        value={newItemLocation}
+                        onChange={e => setNewItemLocation(e.target.value)}
+                    />
+                </div>
                 <button onClick={handleCreateInventoryItem} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-md">Ajouter</button>
             </div>
         </div>
@@ -260,7 +291,7 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
             <table className="w-full text-left">
                 <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
                     <tr>
-                        <th className="p-4 w-16 text-center">Ordre</th>
+                        <th className="p-4 w-24 text-center">Emplacement</th>
                         <th className="p-4">Produit</th>
                         <th className="p-4">Catégorie</th>
                         <th className="p-4 text-center bg-slate-100/50">Stock Bar</th>
@@ -286,10 +317,13 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, storages, stoc
                         return (
                             <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
                                 <td className="p-4 text-center">
-                                    <div className="flex flex-col items-center gap-1 opacity-20 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => moveItem(idx, 'up')} className="hover:text-indigo-600"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg></button>
-                                        <button onClick={() => moveItem(idx, 'down')} className="hover:text-indigo-600"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg></button>
-                                    </div>
+                                    <input 
+                                        type="text"
+                                        className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-center font-black text-xs outline-none focus:ring-2 focus:ring-indigo-100"
+                                        placeholder="#"
+                                        value={item.inventoryLocation || ''}
+                                        onChange={(e) => handleLocationChange(item.id, e.target.value)}
+                                    />
                                 </td>
                                 <td className="p-4 font-bold text-sm text-slate-800">
                                     {item.name}

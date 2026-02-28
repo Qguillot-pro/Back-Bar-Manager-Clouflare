@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { StockItem, StorageSpace, StockLevel, StockConsigne, StockPriority } from '../types';
+import { StockItem, StorageSpace, StockLevel, StockConsigne, StockPriority, User } from '../types';
 
 interface StockTableProps {
   items: StockItem[];
@@ -10,6 +10,8 @@ interface StockTableProps {
   priorities: StockPriority[];
   onUpdateStock: (itemId: string, storageId: string, qty: number) => void;
   onAdjustTransaction?: (itemId: string, storageId: string, delta: number) => void;
+  currentUser?: User;
+  onSync?: (action: string, payload: any) => void;
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -63,10 +65,11 @@ const EditableNumberCell = ({
     );
 };
 
-const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, priorities, onUpdateStock, onAdjustTransaction, consignes = [] }) => {
+const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, priorities, onUpdateStock, onAdjustTransaction, consignes = [], currentUser, onSync }) => {
   const [activeTab, setActiveTab] = useState<'GLOBAL' | 'PRODUCT' | 'STORAGE'>('GLOBAL');
   const [searchTerm, setSearchTerm] = useState('');
   const [columnFilters, setColumnFilters] = useState<string[]>(['all', 'none', 'none']);
+  const [isReorderMode, setIsReorderMode] = useState(false);
   
   // States pour les vues spécifiques
   const [productSearch, setProductSearch] = useState('');
@@ -87,7 +90,53 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
       return storages.filter(s => activeIds.includes(s.id));
   }, [storages, columnFilters]);
 
-  const filteredItemsGlobal = items.filter(i => normalizeText(i.name).includes(normalizeText(searchTerm)));
+  const filteredItemsGlobal = useMemo<StockItem[]>(() => {
+      return items.filter(i => normalizeText(i.name).includes(normalizeText(searchTerm)));
+  }, [items, searchTerm]);
+
+  const storageItems = useMemo<StockItem[]>(() => {
+      const filtered = items.filter(i => {
+          const qty = stockLevels.find(l => l.itemId === i.id && l.storageId === selectedStorageId)?.currentQuantity || 0;
+          const consigne = getConsigneValue(i.id, selectedStorageId);
+          const matchesSearch = normalizeText(i.name).includes(normalizeText(searchTerm));
+          
+          if (searchTerm) return matchesSearch;
+          return qty > 0 || consigne > 0;
+      });
+
+      return filtered.sort((a, b) => {
+          const levelA = stockLevels.find(l => l.itemId === a.id && l.storageId === selectedStorageId);
+          const levelB = stockLevels.find(l => l.itemId === b.id && l.storageId === selectedStorageId);
+          
+          const orderA = levelA?.order ?? 999999;
+          const orderB = levelB?.order ?? 999999;
+          
+          if (orderA !== orderB) return orderA - orderB;
+          return a.name.localeCompare(b.name);
+      });
+  }, [items, stockLevels, selectedStorageId, searchTerm]);
+
+  const moveItemInStorage = (index: number, direction: 'up' | 'down') => {
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= storageItems.length) return;
+
+      const currentItem = storageItems[index];
+      const targetItem = storageItems[targetIndex];
+
+      const updateLevel = (item: StockItem, order: number) => {
+          const level = stockLevels.find(l => l.itemId === item.id && l.storageId === selectedStorageId);
+          const updatedLevel: StockLevel = {
+              itemId: item.id,
+              storageId: selectedStorageId,
+              currentQuantity: level?.currentQuantity || 0,
+              order: order
+          };
+          onSync?.('SAVE_STOCK_LEVEL', updatedLevel);
+      };
+
+      updateLevel(currentItem, targetIndex);
+      updateLevel(targetItem, index);
+  };
 
   // Vue Par Produit : Espaces Autorisés
   const authorizedStorages = useMemo(() => {
@@ -260,35 +309,69 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
       {/* VUE PAR ESPACE */}
       {activeTab === 'STORAGE' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-              <div className="bg-white p-6 rounded-3xl border shadow-sm">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Sélectionner un espace</label>
-                  <select 
-                    value={selectedStorageId} 
-                    onChange={e => setSelectedStorageId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer"
-                  >
-                      {storages.filter(s => s.id !== 's_global').map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+              <div className="bg-white p-6 rounded-3xl border shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div className="flex-1 w-full">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Sélectionner un espace</label>
+                      <select 
+                        value={selectedStorageId} 
+                        onChange={e => setSelectedStorageId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-black text-slate-800 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer"
+                      >
+                          {storages.filter(s => s.id !== 's_global').map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                  </div>
+                  {currentUser?.role === 'ADMIN' && (
+                      <div className="flex items-center gap-3 bg-slate-50 px-6 py-4 rounded-2xl border border-slate-200 shadow-sm shrink-0">
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${!isReorderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Lecture</span>
+                          <button 
+                              onClick={() => setIsReorderMode(!isReorderMode)} 
+                              className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${isReorderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} 
+                          >
+                              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-300 ${isReorderMode ? 'left-7' : 'left-1'}`}></div>
+                          </button>
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${isReorderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Définir Ordre</span>
+                      </div>
+                  )}
               </div>
 
               <div className="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
                   <table className="w-full text-left">
                       <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
                           <tr>
+                              {isReorderMode && <th className="p-6 w-20 text-center">Ordre</th>}
                               <th className="p-6">Produit</th>
                               <th className="p-6 text-center">Quantité (Décimale OK)</th>
                               <th className="p-6 text-center">Consigne</th>
-                              <th className="p-6 text-center">Action</th>
+                              {!isReorderMode && <th className="p-6 text-center">Action</th>}
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                          {items.filter(i => normalizeText(i.name).includes(normalizeText(searchTerm))).map(item => {
+                          {storageItems.map((item, idx) => {
                               const qty = stockLevels.find(l => l.itemId === item.id && l.storageId === selectedStorageId)?.currentQuantity || 0;
                               const consigne = getConsigneValue(item.id, selectedStorageId);
-                              if (qty === 0 && consigne === 0 && !searchTerm) return null;
 
                               return (
                                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                                      {isReorderMode && (
+                                          <td className="p-6 text-center">
+                                              <div className="flex flex-col items-center gap-1">
+                                                  <button 
+                                                      onClick={() => moveItemInStorage(idx, 'up')} 
+                                                      disabled={idx === 0}
+                                                      className={`p-1 rounded hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-colors ${idx === 0 ? 'opacity-20 cursor-not-allowed' : ''}`}
+                                                  >
+                                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg>
+                                                  </button>
+                                                  <button 
+                                                      onClick={() => moveItemInStorage(idx, 'down')}
+                                                      disabled={idx === storageItems.length - 1}
+                                                      className={`p-1 rounded hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-colors ${idx === storageItems.length - 1 ? 'opacity-20 cursor-not-allowed' : ''}`}
+                                                  >
+                                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
+                                                  </button>
+                                              </div>
+                                          </td>
+                                      )}
                                       <td className="p-6 font-bold text-slate-700">{item.name}</td>
                                       <td className="p-6 text-center">
                                           <EditableNumberCell 
@@ -298,15 +381,22 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, p
                                           />
                                       </td>
                                       <td className="p-6 text-center text-slate-400 font-bold">{consigne || '-'}</td>
-                                      <td className="p-6 text-center">
-                                          <div className="flex justify-center gap-2">
-                                              <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>
-                                              <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>
-                                          </div>
-                                      </td>
+                                      {!isReorderMode && (
+                                          <td className="p-6 text-center">
+                                              <div className="flex justify-center gap-2">
+                                                  <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>
+                                                  <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>
+                                              </div>
+                                          </td>
+                                      )}
                                   </tr>
                               );
                           })}
+                          {storageItems.length === 0 && (
+                              <tr>
+                                  <td colSpan={isReorderMode ? 4 : 4} className="p-20 text-center italic text-slate-400 text-sm">Aucun produit trouvé dans cet espace.</td>
+                              </tr>
+                          )}
                       </tbody>
                   </table>
               </div>

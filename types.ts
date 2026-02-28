@@ -24,6 +24,7 @@ export interface AppConfig {
   tempItemDuration: '3_DAYS' | '7_DAYS' | '14_DAYS' | '1_MONTH' | '3_MONTHS' | 'INFINITE';
   defaultMargin?: number; // Pourcentage (ex: 82)
   programMapping?: Record<string, string[]>; // Map ProgramType (OF_THE_DAY...) -> Array of Category Names
+  programThresholds?: Record<string, number>; // Map ProgramType -> Price Threshold
   mealReminderTimes?: string[]; // ["10:00", "17:00"]
   barDayStart?: string; // "04:00"
   emailSender?: string;
@@ -90,6 +91,7 @@ export interface StockItem {
   isDraft?: boolean;
   isTemporary?: boolean; 
   isInventoryOnly?: boolean; 
+  inventoryLocation?: string;
 }
 
 export interface DLCHistory {
@@ -126,6 +128,7 @@ export interface StockLevel {
   itemId: string;
   storageId: string;
   currentQuantity: number;
+  order?: number;
 }
 
 export interface Transaction {

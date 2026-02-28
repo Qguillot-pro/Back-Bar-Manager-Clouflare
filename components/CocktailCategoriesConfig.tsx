@@ -53,6 +53,19 @@ const CocktailCategoriesConfig: React.FC<CocktailCategoriesConfigProps> = ({ cat
       onSync('SAVE_CONFIG', { key: 'program_mapping', value: JSON.stringify(updatedConfig.programMapping) });
   };
 
+  const handleUpdateThreshold = (program: string, value: number) => {
+      if (!appConfig || !setAppConfig) return;
+      
+      const currentThresholds = appConfig.programThresholds || {};
+      const updatedConfig = {
+          ...appConfig,
+          programThresholds: { ...currentThresholds, [program]: value }
+      };
+      
+      setAppConfig(updatedConfig);
+      onSync('SAVE_CONFIG', { key: 'program_thresholds', value: JSON.stringify(updatedConfig.programThresholds) });
+  };
+
   const programs = [
       { id: 'OF_THE_DAY', label: 'Cocktail du Jour' },
       { id: 'MOCKTAIL', label: 'Mocktail' },
@@ -88,9 +101,22 @@ const CocktailCategoriesConfig: React.FC<CocktailCategoriesConfigProps> = ({ cat
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {programs.map(prog => (
-                        <div key={prog.id} className="bg-slate-50 p-5 rounded-3xl border border-slate-200">
+                        <div key={prog.id} className="bg-slate-50 p-5 rounded-3xl border border-slate-200 flex flex-col">
                             <h4 className="font-black text-slate-800 uppercase tracking-tight mb-4 text-center">{prog.label}</h4>
-                            <div className="space-y-2">
+                            
+                            <div className="mb-4">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Prix Seuil (€)</label>
+                                <input 
+                                    type="number" 
+                                    className="w-full bg-white border border-slate-200 rounded-xl p-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-100"
+                                    placeholder="ex: 12.00"
+                                    step="0.5"
+                                    value={appConfig.programThresholds?.[prog.id] || ''}
+                                    onChange={(e) => handleUpdateThreshold(prog.id, parseFloat(e.target.value) || 0)}
+                                />
+                            </div>
+
+                            <div className="space-y-2 flex-1">
                                 {categories.map(c => {
                                     const isChecked = (appConfig.programMapping?.[prog.id] || []).includes(c.name);
                                     return (

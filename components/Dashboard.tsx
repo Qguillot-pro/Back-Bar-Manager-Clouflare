@@ -187,7 +187,8 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                   let quantityInL = ing.quantity;
                   if (ing.unit === 'cl') quantityInL = ing.quantity / 100;
                   else if (ing.unit === 'ml') quantityInL = ing.quantity / 1000;
-                  else if (ing.unit === 'oz') quantityInL = ing.quantity * 0.0295735;
+                  else if (ing.unit === 'dash') quantityInL = (ing.quantity * 0.001); // 1ml approx
+                  else if (ing.unit === 'cuillere') quantityInL = (ing.quantity * 0.005); // 5ml approx
                   
                   const format = formats.find(f => f.id === item.formatId);
                   const volume = format?.value || 0.7;
@@ -206,31 +207,35 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       return { cost: totalCost, suggestedPrice: priceTTC };
   };
 
-  const getCocktailInfo = (type: string) => {
-      // Use the calculation logic directly
-      const c = getCalculatedCocktail(type as DailyCocktailType);
-      
-      let name = 'Non défini';
-      let recipe: Recipe | undefined;
-      let priceInfo = { cost: 0, suggestedPrice: 0 };
+    const getCocktailInfo = (type: string) => {
+        // Use the calculation logic directly
+        const c = getCalculatedCocktail(type as DailyCocktailType);
+        
+        let name = 'Non défini';
+        let recipe: Recipe | undefined;
+        let priceInfo = { cost: 0, suggestedPrice: 0 };
 
-      if (c) {
-          if (c.customName) {
-              name = c.customName;
-          } else if (c.recipeId) {
-              recipe = recipes.find(r => r.id === c.recipeId);
-              name = recipe?.name || 'Recette Inconnue';
-              if (recipe) {
-                  priceInfo = calculateRecipePrice(recipe);
-              }
-          }
-      }
-      
-      // Determine if manual override (warning) exists
-      const isManual = dailyCocktails.some(dc => dc.date === currentBarDate && dc.type === type);
-      
-      return { name, recipe, hasWarning: isManual, price: priceInfo.suggestedPrice };
-  };
+        if (c) {
+            if (c.customName) {
+                name = c.customName;
+            } else if (c.recipeId) {
+                recipe = recipes.find(r => r.id === c.recipeId);
+                name = recipe?.name || 'Recette Inconnue';
+                if (recipe) {
+                    priceInfo = calculateRecipePrice(recipe);
+                }
+            }
+        }
+        
+        // Determine if manual override (warning) exists
+        const isManual = dailyCocktails.some(dc => dc.date === currentBarDate && dc.type === type);
+        
+        // Check threshold
+        const threshold = appConfig.programThresholds?.[type] || 0;
+        const isOverThreshold = threshold > 0 && priceInfo.suggestedPrice > threshold;
+        
+        return { name, recipe, hasWarning: isManual, price: priceInfo.suggestedPrice, isOverThreshold };
+    };
 
   // 6. Meal Reservations Data
   const todaysMeals = useMemo(() => {
@@ -369,7 +374,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                           <ul className="space-y-2">
                               {selectedCocktailRecipe.ingredients.map((ing, i) => {
                                   const item = items.find(it => it.id === ing.itemId);
-                                  const stock = ing.itemId ? stockLevels.filter(l => l.itemId === ing.itemId).reduce((acc, curr) => acc + curr.currentQuantity, 0) : null;
+                                  const stock = ing.itemId ? stockLevels.filter(l => l.itemId === ing.itemId).reduce((acc, curr) => acc + curr.currentQuantity, 0) : 0;
                                   const isOutOfStock = ing.itemId && stock <= 0;
 
                                   return (
@@ -456,7 +461,12 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                               )}
                               <div className="flex justify-between items-start">
                                   <span className={`text-[9px] font-black uppercase tracking-widest ${colors[type]}`}>{labels[type]}</span>
-                                  {icons[type] && <span className="text-[10px]">{icons[type]}</span>}
+                                  <div className="flex gap-1 items-center">
+                                      {info.isOverThreshold && (
+                                          <span className="text-rose-500 font-black text-xs animate-bounce" title="Prix conseillé élevé">€</span>
+                                      )}
+                                      {icons[type] && <span className="text-[10px]">{icons[type]}</span>}
+                                  </div>
                               </div>
                               <p className={`font-bold text-sm leading-tight line-clamp-2 ${info.name === 'Non défini' ? 'opacity-50 italic' : ''}`}>{info.name}</p>
                               {(type === 'OF_THE_DAY' || type === 'MOCKTAIL') && info.price > 0 && (

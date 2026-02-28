@@ -384,6 +384,11 @@ const App: React.FC = () => {
 
           for (const target of targets) {
               if (remainingQty <= 0) break;
+              
+              // Règle spéciale : ne pas ajouter si un stock est en décimale (sauf si c'est le seul espace possible ?)
+              // L'utilisateur dit : "ne pas ajouter si un stock est en décimale, ajouter à l'espace de stockage suivant dans ce cas"
+              if (target.current % 1 !== 0) continue;
+
               if (target.id === 's0') {
                   commitTrans(target.id, remainingQty, 'IN', target.current + remainingQty);
                   remainingQty = 0;
@@ -396,6 +401,7 @@ const App: React.FC = () => {
               }
           }
           if (remainingQty > 0) {
+              // Si on a encore de la quantité et qu'on a sauté les décimaux, on force sur s0 ou le dernier
               const fallback = targets.find(t => t.id === 's0') || targets[targets.length - 1];
               if (fallback) commitTrans(fallback.id, remainingQty, 'IN', fallback.current + remainingQty);
           }
@@ -563,15 +569,27 @@ const App: React.FC = () => {
   };
 
   const handleAddDlc = (itemId: string, storageId: string, openedAt?: string) => {
-      const dlc: DLCHistory = {
-          id: 'dlc_' + Date.now() + Math.random(),
-          itemId,
-          storageId,
-          openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
-          userName: currentUser?.name
-      };
-      setDlcHistory(prev => [dlc, ...prev]);
-      syncData('SAVE_DLC_HISTORY', dlc);
+      const existing = dlcHistory.find(h => h.itemId === itemId);
+      if (existing) {
+          const updated: DLCHistory = { 
+              ...existing, 
+              storageId, 
+              openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
+              userName: currentUser?.name 
+          };
+          setDlcHistory(prev => prev.map(h => h.id === existing.id ? updated : h));
+          syncData('SAVE_DLC_HISTORY', updated);
+      } else {
+          const dlc: DLCHistory = {
+              id: 'dlc_' + Date.now() + Math.random(),
+              itemId,
+              storageId,
+              openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
+              userName: currentUser?.name
+          };
+          setDlcHistory(prev => [dlc, ...prev]);
+          syncData('SAVE_DLC_HISTORY', dlc);
+      }
   };
 
   const handlePinInput = useCallback((num: string) => {
@@ -733,7 +751,7 @@ const App: React.FC = () => {
           {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onUpdateDlc={handleUpdateDlc} userRole={currentUser.role} />}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={handleAddDlc} onDlcConsumption={(id) => { const old = dlcHistory.filter(h=>h.itemId===id).sort((a,b)=>new Date(a.openedAt).getTime()-new Date(b.openedAt).getTime())[0]; if(old){ setDlcHistory(p=>p.filter(h=>h.id!==old.id)); syncData('DELETE_DLC_HISTORY', {id: old.id}); } }} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} onUndo={handleUndoLastTransaction} />}
-          {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} />}
+          {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} currentUser={currentUser} onSync={syncData} />}
           {view === 'inventory' && <GlobalInventory items={items} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} />}
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} />}
           {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { setOrders(prev => prev.map(o => o.id === id ? { ...o, quantity: q, status: s || o.status, ruptureDate: r } : o)); syncData('SAVE_ORDER', { id, quantity: q, status: s, ruptureDate: r }); }} onDeleteOrder={(id) => { setOrders(prev => prev.filter(o => o.id !== id)); syncData('DELETE_ORDER', { id }); }} onAddManualOrder={(itemId, qty) => { 
@@ -752,8 +770,8 @@ const App: React.FC = () => {
           {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={storages} onDelete={(id, qty) => { const target = dlcHistory.find(h => h.id === id); if(target) { const loss: Loss = { id: 'loss_'+Date.now(), itemId: target.itemId, openedAt: target.openedAt, discardedAt: new Date().toISOString(), quantity: qty || 0, userName: currentUser?.name }; setLosses(p=>[loss,...p]); syncData('SAVE_LOSS', loss); setDlcHistory(p => p.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', { id }); handleTransaction(target.itemId, 'OUT', 1, false, "Produit en perte"); } }} onUpdateDlc={handleUpdateDlc} userRole={currentUser.role} onAddDlc={handleAddDlc} />}
           {view === 'articles' && <ArticlesList items={items} setItems={setItems} formats={formats} categories={categories} onDelete={(id) => { setItems(p => p.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); }} userRole={currentUser.role} dlcProfiles={dlcProfiles} onSync={syncData} events={events} recipes={recipes} />}
           {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} stockLevels={stockLevels} formats={formats} />}
-          {view === 'product_knowledge' && <ProductKnowledge sheets={productSheets} items={items} currentUserRole={currentUser.role} onSync={syncData} productTypes={productTypes} glassware={glassware} formats={formats} />}
-          {view === 'admin_prices' && currentUser.role === 'ADMIN' && <AdminPrices items={items} productSheets={productSheets} formats={formats} appConfig={appConfig} onSync={syncData} setProductSheets={setProductSheets} />}
+          {view === 'product_knowledge' && <ProductKnowledge sheets={productSheets} items={items} currentUserRole={currentUser.role} onSync={syncData} productTypes={productTypes} glassware={glassware} formats={formats} stockLevels={stockLevels} consignes={consignes} />}
+          {view === 'admin_prices' && currentUser.role === 'ADMIN' && <AdminPrices items={items} productSheets={productSheets} formats={formats} appConfig={appConfig} onSync={syncData} setProductSheets={setProductSheets} recipes={recipes} setRecipes={setRecipes} />}
           {view === 'configuration' && <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={storages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} cocktailCategories={cocktailCategories} setCocktailCategories={setCocktailCategories} productTypes={productTypes} setProductTypes={setProductTypes} emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates} fullData={{items, storages, stockLevels}} />}
           {view === 'connection_logs' && <ConnectionLogs logs={userLogs} />}
       </main>

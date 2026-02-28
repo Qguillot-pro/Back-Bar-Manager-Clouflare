@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { StockItem, ProductSheet, Format, AppConfig } from '../types';
+import { StockItem, ProductSheet, Format, AppConfig, Recipe } from '../types';
 
 interface AdminPricesProps {
     items: StockItem[];
@@ -8,70 +8,115 @@ interface AdminPricesProps {
     appConfig: AppConfig;
     onSync: (action: string, payload: any) => void;
     setProductSheets: React.Dispatch<React.SetStateAction<ProductSheet[]>>;
+    recipes: Recipe[];
+    setRecipes: React.Dispatch<React.SetStateAction<Recipe[]>>;
 }
 
-const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats, appConfig, onSync, setProductSheets }) => {
+const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats, appConfig, onSync, setProductSheets, recipes, setRecipes }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
 
     const defaultMargin = appConfig.defaultMargin || 82;
 
     const data = useMemo(() => {
-        return productSheets.map(sheet => {
+        const productData = productSheets.map(sheet => {
             const item = items.find(i => i.id === sheet.itemId);
             if (!item) return null;
 
             const format = formats.find(f => f.id === item.formatId);
-            const formatValue = format?.value || 1; // Avoid division by zero
+            const formatValue = format?.value || 1;
             
             const marginRate = sheet.marginRate !== undefined ? sheet.marginRate : defaultMargin;
             const salesFormat = sheet.salesFormat || 0;
             const actualPrice = sheet.actualPrice || 0;
 
-            // Cost calculation: (Unit Price / Reference Format Value) * Sales Format Value
             const cost = (item.pricePerUnit / formatValue) * salesFormat;
-            
-            // Recommended Price calculation: Cost / (1 - Margin Rate / 100)
             const recommendedPrice = marginRate < 100 ? cost / (1 - marginRate / 100) : 0;
-
-            // Margin check
-            // Actual Margin = (Actual Price - Cost) / Actual Price
             const actualMargin = actualPrice > 0 ? ((actualPrice - cost) / actualPrice) * 100 : 0;
             const isRespected = actualPrice >= recommendedPrice;
 
             return {
-                sheet,
-                item,
-                format,
-                cost,
-                marginRate,
+                type: 'PRODUCT',
+                id: sheet.id,
+                name: item.name,
+                category: item.category,
+                buyPrice: item.pricePerUnit,
+                refFormat: formatValue,
                 salesFormat,
-                actualPrice,
+                marginRate,
                 recommendedPrice,
+                actualPrice,
                 actualMargin,
-                isRespected
+                isRespected,
+                cost
             };
-        }).filter(Boolean) as any[];
-    }, [productSheets, items, formats, defaultMargin]);
+        }).filter(Boolean);
+
+        const cocktailData = recipes.map(recipe => {
+            // Calculate cost from ingredients
+            const cost = recipe.ingredients.reduce((acc, ing) => {
+                if (!ing.itemId) return acc;
+                const item = items.find(i => i.id === ing.itemId);
+                if (!item || !item.pricePerUnit) return acc;
+                const format = formats.find(f => f.id === item.formatId);
+                const divider = format?.value || 70;
+                let qtyInCl = ing.quantity;
+                if (ing.unit === 'ml') qtyInCl = ing.quantity / 10;
+                if (ing.unit === 'dash') qtyInCl = ing.quantity * 0.1;
+                if (ing.unit === 'piece') qtyInCl = 1;
+                return acc + (item.pricePerUnit / divider) * qtyInCl;
+            }, 0);
+
+            const actualPrice = recipe.sellingPrice || 0;
+            const marginRate = defaultMargin; // Cocktails use default margin for recommendation
+            const recommendedPrice = marginRate < 100 ? cost / (1 - marginRate / 100) : 0;
+            const actualMargin = actualPrice > 0 ? ((actualPrice - cost) / actualPrice) * 100 : 0;
+            const isRespected = actualPrice >= recommendedPrice;
+
+            return {
+                type: 'COCKTAIL',
+                id: recipe.id,
+                name: recipe.name,
+                category: 'Cocktail',
+                buyPrice: cost, // For cocktails, buyPrice is the total cost
+                refFormat: 1,
+                salesFormat: 1,
+                marginRate,
+                recommendedPrice,
+                actualPrice,
+                actualMargin,
+                isRespected,
+                cost
+            };
+        });
+
+        return [...productData, ...cocktailData] as any[];
+    }, [productSheets, items, formats, defaultMargin, recipes]);
 
     const filteredData = useMemo(() => {
         return data.filter(d => {
-            const matchesSearch = d.item.name.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesCategory = categoryFilter === 'ALL' || d.item.category === categoryFilter;
+            const matchesSearch = d.name.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesCategory = categoryFilter === 'ALL' || d.category === categoryFilter;
             return matchesSearch && matchesCategory;
         });
     }, [data, searchTerm, categoryFilter]);
 
-    const categories = Array.from(new Set(items.map(i => i.category)));
+    const categories = Array.from(new Set(data.map(d => d.category)));
 
-    const handleUpdateSheet = (sheetId: string, field: string, value: number) => {
-        const sheet = productSheets.find(s => s.id === sheetId);
-        if (!sheet) return;
-
-        const updatedSheet = { ...sheet, [field]: value, updatedAt: new Date().toISOString() };
-        
-        setProductSheets(prev => prev.map(s => s.id === sheetId ? updatedSheet : s));
-        onSync('SAVE_PRODUCT_SHEET', updatedSheet);
+    const handleUpdate = (id: string, type: string, field: string, value: number) => {
+        if (type === 'PRODUCT') {
+            const sheet = productSheets.find(s => s.id === id);
+            if (!sheet) return;
+            const updatedSheet = { ...sheet, [field]: value, updatedAt: new Date().toISOString() };
+            setProductSheets(prev => prev.map(s => s.id === id ? updatedSheet : s));
+            onSync('SAVE_PRODUCT_SHEET', updatedSheet);
+        } else {
+            const recipe = recipes.find(r => r.id === id);
+            if (!recipe) return;
+            const updatedRecipe = { ...recipe, [field === 'actualPrice' ? 'sellingPrice' : field]: value };
+            setRecipes(prev => prev.map(r => r.id === id ? updatedRecipe : r));
+            onSync('SAVE_RECIPE', updatedRecipe);
+        }
     };
 
     return (
@@ -123,38 +168,40 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {filteredData.map((row) => (
-                                <tr key={row.sheet.id} className="hover:bg-slate-50 transition-colors">
+                                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="p-4">
-                                        <div className="font-bold text-slate-900">{row.item.name}</div>
-                                        <div className="text-xs text-slate-500">{row.item.category}</div>
+                                        <div className="font-bold text-slate-900">{row.name}</div>
+                                        <div className="text-xs text-slate-500">{row.category}</div>
                                     </td>
                                     <td className="p-4 text-right font-mono text-sm text-slate-600">
-                                        {row.item.pricePerUnit.toFixed(2)} €
+                                        {row.buyPrice.toFixed(2)} €
                                     </td>
                                     <td className="p-4 text-right font-mono text-sm text-slate-600">
-                                        {row.format?.value || '-'}
+                                        {row.refFormat || '-'}
                                     </td>
                                     <td className="p-4 text-right">
                                         <input 
                                             type="number" 
                                             value={row.salesFormat || ''} 
-                                            onChange={(e) => handleUpdateSheet(row.sheet.id, 'salesFormat', parseFloat(e.target.value) || 0)}
-                                            className="w-20 text-right p-1 border border-slate-200 rounded bg-white text-sm font-mono"
+                                            onChange={(e) => handleUpdate(row.id, row.type, 'salesFormat', parseFloat(e.target.value) || 0)}
+                                            className="w-20 text-right p-1 border border-slate-200 rounded bg-white text-sm font-mono disabled:opacity-50"
                                             placeholder="ex: 4"
                                             step="0.1"
+                                            disabled={row.type === 'COCKTAIL'}
                                         />
                                     </td>
                                     <td className="p-4 text-right">
                                         <input 
                                             type="number" 
-                                            value={row.sheet.marginRate !== undefined ? row.sheet.marginRate : ''} 
+                                            value={row.marginRate !== undefined ? row.marginRate : ''} 
                                             onChange={(e) => {
                                                 const val = e.target.value;
-                                                handleUpdateSheet(row.sheet.id, 'marginRate', val === '' ? defaultMargin : parseFloat(val));
+                                                handleUpdate(row.id, row.type, 'marginRate', val === '' ? defaultMargin : parseFloat(val));
                                             }}
-                                            className="w-16 text-right p-1 border border-slate-200 rounded bg-white text-sm font-mono"
+                                            className="w-16 text-right p-1 border border-slate-200 rounded bg-white text-sm font-mono disabled:opacity-50"
                                             placeholder={defaultMargin.toString()}
                                             step="1"
+                                            disabled={row.type === 'COCKTAIL'}
                                         />
                                     </td>
                                     <td className="p-4 text-right font-mono font-bold text-slate-900">
@@ -164,7 +211,7 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                                         <input 
                                             type="number" 
                                             value={row.actualPrice || ''} 
-                                            onChange={(e) => handleUpdateSheet(row.sheet.id, 'actualPrice', parseFloat(e.target.value) || 0)}
+                                            onChange={(e) => handleUpdate(row.id, row.type, 'actualPrice', parseFloat(e.target.value) || 0)}
                                             className={`w-24 text-right p-1 border rounded text-sm font-mono font-bold ${row.actualPrice > 0 ? (row.isRespected ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700') : 'bg-white border-slate-200 text-slate-900'}`}
                                             placeholder="0.00"
                                             step="0.1"

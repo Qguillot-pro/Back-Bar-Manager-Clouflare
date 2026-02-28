@@ -444,14 +444,9 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-10 space-y-10 scrollbar-thin">
-                      <div className="grid grid-cols-3 gap-6">
+                      <div className="grid grid-cols-2 gap-6">
                           <div className="bg-slate-50 p-4 rounded-3xl text-center border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase mb-2">Verre</p><p className="font-bold text-slate-800 text-xs">{glass?.name || 'Standard'}</p></div>
                           <div className="bg-slate-50 p-4 rounded-3xl text-center border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase mb-2">Méthode</p><p className="font-bold text-slate-800 text-xs">{selectedRecipe.technique}</p></div>
-                          <div className="bg-pink-50 p-4 rounded-3xl text-center border border-pink-100 no-print-bg">
-                              <p className="text-[9px] font-black text-pink-400 uppercase mb-2">Prix Conseillé</p>
-                              <p className="font-black text-pink-600 text-base">{currentSuggestedPrice.toFixed(2)} €</p>
-                              <p className="text-[8px] text-pink-400 mt-1">Coût: {currentCost.toFixed(2)}€</p>
-                          </div>
                       </div>
                       
                       <div className="space-y-6">
@@ -459,7 +454,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           <ul className="space-y-3">
                               {selectedRecipe.ingredients.map((ing, i) => {
                                   const item = items.find(it => it.id === ing.itemId);
-                                  const stock = ing.itemId ? getStockLevel(ing.itemId) : null;
+                                  const stock = ing.itemId ? getStockLevel(ing.itemId) : 0;
                                   const isOutOfStock = ing.itemId && stock <= 0;
 
                                   return (

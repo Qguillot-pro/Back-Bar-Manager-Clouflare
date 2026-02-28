@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice } from '../types';
+import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice, StockLevel, StockConsigne } from '../types';
 import { generateProductSheetWithAI } from '../services/geminiService';
 
 interface ProductKnowledgeProps {
@@ -11,9 +11,11 @@ interface ProductKnowledgeProps {
   productTypes?: ProductType[];
   glassware?: Glassware[];
   formats?: Format[];
+  stockLevels?: StockLevel[];
+  consignes?: StockConsigne[];
 }
 
-const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [] }) => {
+const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [], stockLevels = [], consignes = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<ProductSheet | null>(null);
@@ -107,6 +109,39 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
       setViewMode('DETAIL');
   };
 
+  const openEdit = (sheet: ProductSheet) => {
+      setSelectedSheet(sheet);
+      setSelectedItemId(sheet.itemId);
+      setFullName(sheet.fullName || '');
+      setSheetType(sheet.type);
+      setDesc(sheet.description);
+      setRegion(sheet.region || '');
+      setCountry(sheet.country || '');
+      const tastingObj = getTastingObj(sheet.tastingNotes);
+      setTasting({ nose: tastingObj.nose || '', mouth: tastingObj.mouth || '', eye: tastingObj.eye || '' });
+      setPairing(sheet.foodPairing || '');
+      setTemp(sheet.servingTemp || '');
+      setCustomFields(getCustomFieldsObj(sheet.customFields));
+      setGlasswareIds(sheet.glasswareIds || []);
+      setSalesFormat(sheet.salesFormat || 0);
+      setActualPrice(sheet.actualPrice || 0);
+      setViewMode('CREATE');
+  };
+
+  const handleDelete = (id: string) => {
+      if (window.confirm("Supprimer cette fiche produit ?")) {
+          onSync('DELETE_PRODUCT_SHEET', { id });
+          setViewMode('LIST');
+          resetForm();
+      }
+  };
+
+  const handleValidate = (sheet: ProductSheet) => {
+      const updated: ProductSheet = { ...sheet, status: 'VALIDATED', updatedAt: new Date().toISOString() };
+      onSync('SAVE_PRODUCT_SHEET', updated);
+      setSelectedSheet(updated);
+  };
+
   const filteredSheets = useMemo(() => {
       let res = sheets;
       if (search) {
@@ -135,8 +170,12 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
   const getProductStatus = (itemId: string) => {
       const item = items.find(i => i.id === itemId);
       if (!item) return null;
-      if (item.quantity === 0) return { label: 'RUPTURE PRODUIT', color: 'bg-red-500 text-white' };
-      if (item.quantity < item.consigne) return { label: 'SOUS TENSION', color: 'bg-orange-500 text-white' };
+      
+      const currentQty = stockLevels.filter(l => l.itemId === itemId).reduce((acc, curr) => acc + curr.currentQuantity, 0);
+      const consigne = consignes.filter(c => c.itemId === itemId).reduce((acc, curr) => acc + curr.minQuantity, 0);
+
+      if (currentQty === 0) return { label: 'RUPTURE PRODUIT', color: 'bg-red-500 text-white' };
+      if (currentQty < consigne) return { label: 'SOUS TENSION', color: 'bg-orange-500 text-white' };
       return null;
   };
 
@@ -222,8 +261,8 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
       return (
           <div className="max-w-2xl mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
               <div className="p-8 border-b bg-slate-50 flex justify-between items-center">
-                  <h2 className="font-black text-xl text-slate-800 uppercase tracking-tight">Nouvelle Fiche</h2>
-                  <button onClick={() => setViewMode('LIST')} className="text-slate-400 font-bold text-xs uppercase">Annuler</button>
+                  <h2 className="font-black text-xl text-slate-800 uppercase tracking-tight">{selectedSheet ? 'Modifier la Fiche' : 'Nouvelle Fiche'}</h2>
+                  <button onClick={() => { setViewMode('LIST'); resetForm(); }} className="text-slate-400 font-bold text-xs uppercase">Annuler</button>
               </div>
               <div className="p-8 space-y-6">
                   <div className="space-y-2">
@@ -355,7 +394,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
               <div className="bg-white rounded-[2.5rem] w-full max-w-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
                   <div className="bg-slate-900 text-white p-8 flex justify-between items-start">
-                      <div>
+                      <div className="flex-1">
                           <div className="flex gap-2 mb-2">
                             <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-2 py-1 rounded text-white inline-block">{selectedSheet.type}</span>
                             {(() => {
@@ -377,12 +416,38 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                             )}
                           </div>
                       </div>
-                      <button onClick={() => setViewMode('LIST')} className="text-white/50 hover:text-white">✕</button>
+                      <div className="flex items-center gap-4">
+                          {currentUserRole === 'ADMIN' && (
+                              <div className="flex gap-2">
+                                  {selectedSheet.status === 'DRAFT' && (
+                                      <button 
+                                          onClick={() => handleValidate(selectedSheet)} 
+                                          className="bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-black uppercase text-[9px] tracking-widest hover:bg-emerald-600 shadow-lg"
+                                      >
+                                          Valider
+                                      </button>
+                                  )}
+                                  <button 
+                                      onClick={() => openEdit(selectedSheet)} 
+                                      className="bg-cyan-500 text-white px-3 py-1.5 rounded-lg font-black uppercase text-[9px] tracking-widest hover:bg-cyan-600 shadow-lg"
+                                  >
+                                      Modifier
+                                  </button>
+                                  <button 
+                                      onClick={() => handleDelete(selectedSheet.id)} 
+                                      className="bg-rose-500 text-white px-3 py-1.5 rounded-lg font-black uppercase text-[9px] tracking-widest hover:bg-rose-600 shadow-lg"
+                                  >
+                                      Supprimer
+                                  </button>
+                              </div>
+                          )}
+                          <button onClick={() => setViewMode('LIST')} className="text-white/50 hover:text-white">✕</button>
+                      </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-8 space-y-8">
                       <p className="text-lg text-slate-700 font-medium leading-relaxed">{selectedSheet.description}</p>
                       
-                      {currentUserRole === 'ADMIN' && selectedSheet.salesFormat > 0 && selectedSheet.actualPrice > 0 && (
+                      {currentUserRole === 'ADMIN' && (selectedSheet.salesFormat || 0) > 0 && (selectedSheet.actualPrice || 0) > 0 && (
                           <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
                               <h3 className="font-black text-sm uppercase text-emerald-600 tracking-widest border-b border-emerald-200 pb-2 mb-4">Prix Conseillés (Admin)</h3>
                               <div className="grid grid-cols-2 gap-4 text-center">
