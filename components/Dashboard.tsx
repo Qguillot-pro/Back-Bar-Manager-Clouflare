@@ -233,8 +233,9 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
         // Check threshold
         const threshold = appConfig.programThresholds?.[type] || 0;
         const isOverThreshold = threshold > 0 && priceInfo.suggestedPrice > threshold;
+        const hasThreshold = threshold > 0;
         
-        return { name, recipe, hasWarning: isManual, price: priceInfo.suggestedPrice, isOverThreshold };
+        return { name, recipe, hasWarning: isManual, price: priceInfo.suggestedPrice, isOverThreshold, hasThreshold };
     };
 
   // 6. Meal Reservations Data
@@ -462,18 +463,14 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                               <div className="flex justify-between items-start">
                                   <span className={`text-[9px] font-black uppercase tracking-widest ${colors[type]}`}>{labels[type]}</span>
                                   <div className="flex gap-1 items-center">
-                                      {info.isOverThreshold && (
-                                          <span className="text-rose-500 font-black text-xs animate-bounce" title="Prix conseillé élevé">€</span>
+                                      {info.hasThreshold && info.price > 0 && (
+                                          <span className={`font-black text-xs ${info.isOverThreshold ? 'text-rose-500 animate-bounce' : 'text-emerald-500'}`} title={info.isOverThreshold ? "Prix conseillé élevé" : "Prix conseillé OK"}>€</span>
                                       )}
                                       {icons[type] && <span className="text-[10px]">{icons[type]}</span>}
                                   </div>
                               </div>
                               <p className={`font-bold text-sm leading-tight line-clamp-2 ${info.name === 'Non défini' ? 'opacity-50 italic' : ''}`}>{info.name}</p>
-                              {(type === 'OF_THE_DAY' || type === 'MOCKTAIL') && info.price > 0 && (
-                                  <div className="mt-1">
-                                      <span className="text-[10px] font-black bg-white/20 text-white px-2 py-0.5 rounded-md">{info.price.toFixed(2)}€</span>
-                                  </div>
-                              )}
+                              {/* Prix conseillé retiré comme demandé, remplacé par l'indicateur € */}
                           </div>
                       );
                   })}

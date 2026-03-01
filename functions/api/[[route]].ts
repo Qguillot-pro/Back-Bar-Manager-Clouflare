@@ -79,6 +79,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     configMap.programMapping = {};
                 }
             }
+            if (row.key === 'program_thresholds') {
+                try {
+                    configMap.programThresholds = JSON.parse(row.value);
+                } catch (e) {
+                    console.error("Error parsing program_thresholds", e);
+                    configMap.programThresholds = {};
+                }
+            }
             if (row.key === 'meal_reminder_times') {
                 try {
                     configMap.mealReminderTimes = JSON.parse(row.value);

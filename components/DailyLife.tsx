@@ -48,13 +48,15 @@ const toLocalISOString = (dateStr: string) => {
     return localDate.toISOString().slice(0, 16);
 };
 
-const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycleConfig, saveCycleConfig }: { 
+const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycleConfig, saveCycleConfig, appConfig, saveConfig }: { 
     type: DailyCocktailType, 
     onClose: () => void,
     recipes: Recipe[],
     cocktailCategories: CocktailCategory[],
     getCycleConfig: (type: DailyCocktailType) => CycleConfig,
-    saveCycleConfig: (type: DailyCocktailType, cfg: CycleConfig) => void
+    saveCycleConfig: (type: DailyCocktailType, cfg: CycleConfig) => void,
+    appConfig?: AppConfig,
+    saveConfig?: (key: string, value: any) => void
 }) => {
     const existing = getCycleConfig(type);
     const [isActive, setIsActive] = useState(existing.isActive);
@@ -62,6 +64,7 @@ const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycle
     const [startDate, setStartDate] = useState(existing.startDate.split('T')[0]);
     const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>(existing.recipeIds);
     const [filterCategory, setFilterCategory] = useState<string>('');
+    const [threshold, setThreshold] = useState<number>(appConfig?.programThresholds?.[type] || 0);
 
     const availableRecipes = useMemo(() => {
         return recipes.filter(r => !filterCategory || r.category === filterCategory);
@@ -84,6 +87,10 @@ const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycle
 
     const handleSave = () => {
         saveCycleConfig(type, { isActive, frequency, startDate: new Date(startDate).toISOString(), recipeIds: selectedRecipeIds });
+        if (saveConfig && appConfig) {
+            const newThresholds = { ...appConfig.programThresholds, [type]: threshold };
+            saveConfig('programThresholds', newThresholds);
+        }
         onClose();
     };
 
@@ -102,6 +109,19 @@ const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycle
                         </label>
                     </div>
                     
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block mb-2">Seuil de prix conseillé (€)</label>
+                        <input 
+                            type="number" 
+                            step="0.01"
+                            className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" 
+                            value={threshold || ''} 
+                            onChange={e => setThreshold(parseFloat(e.target.value) || 0)}
+                            placeholder="Ex: 12.50"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1 ml-1">Un indicateur vert/rouge apparaîtra sur le dashboard selon ce seuil.</p>
+                    </div>
+
                     {isActive && (
                         <>
                             <div className="grid grid-cols-2 gap-4">
@@ -539,6 +559,8 @@ const DailyLife: React.FC<DailyLifeProps> = ({
               cocktailCategories={cocktailCategories}
               getCycleConfig={getCycleConfig}
               saveCycleConfig={saveCycleConfig}
+              appConfig={appConfig}
+              saveConfig={saveConfig}
           />
       )}
 
