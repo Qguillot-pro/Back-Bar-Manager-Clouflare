@@ -41,15 +41,17 @@ interface ConfigProps {
   setEmailTemplates?: React.Dispatch<React.SetStateAction<EmailTemplate[]>>;
   productTypes?: ProductType[];
   setProductTypes?: React.Dispatch<React.SetStateAction<ProductType[]>>;
+  roleProfiles: any[];
+  setRoleProfiles: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 const Configuration: React.FC<ConfigProps> = ({ 
   setItems, setStorages, setFormats, storages, formats, priorities, setPriorities, consignes, setConsignes, items,
   categories, setCategories, users, setUsers, currentUser, dlcProfiles, setDlcProfiles, onSync, appConfig, setAppConfig,
   glassware = [], setGlassware, techniques = [], setTechniques, cocktailCategories = [], setCocktailCategories, fullData,
-  emailTemplates = [], setEmailTemplates, productTypes = [], setProductTypes
+  emailTemplates = [], setEmailTemplates, productTypes = [], setProductTypes, roleProfiles, setRoleProfiles
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'product_types' | 'email' | 'backup' | 'credits' | 'import'>('general');
+  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'profiles' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'product_types' | 'email' | 'backup' | 'credits' | 'import'>('general');
   const [authorizedSubTabs, setAuthorizedSubTabs] = useState<Set<string>>(new Set());
   const [authPinInput, setAuthPinInput] = useState('');
   
@@ -72,6 +74,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [newUserName, setNewUserName] = useState('');
   const [newUserPin, setNewUserPin] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('BARMAN');
+  const [newUserProfileId, setNewUserProfileId] = useState<string>('');
   const [newUserShowInMeal, setNewUserShowInMeal] = useState(true);
   const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
 
@@ -157,12 +160,36 @@ const Configuration: React.FC<ConfigProps> = ({
       c.forEach((s, i) => onSync('SAVE_STORAGE_ORDER', { id: s.id, order: i }));
   };
   
+  // Role Profile State
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [newProfilePermissions, setNewProfilePermissions] = useState<Record<string, {view: boolean, edit: boolean}>>({});
+
+  const RESOURCES = [
+    { id: 'dashboard', label: 'Tableau de bord' },
+    { id: 'messages', label: 'Messages' },
+    { id: 'daily_life', label: 'Vie Quotidienne' },
+    { id: 'bar_prep', label: 'Mise en Place Bar' },
+    { id: 'restock', label: 'Réappro Cave' },
+    { id: 'movements', label: 'Mouvements Stock' },
+    { id: 'inventory', label: 'Inventaire' },
+    { id: 'global_inventory', label: 'Inventaire Général' },
+    { id: 'product_knowledge', label: 'Fiches Produits' },
+    { id: 'recipes', label: 'Recettes' },
+    { id: 'articles', label: 'Articles & Prix' },
+    { id: 'order', label: 'Commandes' },
+    { id: 'dlc', label: 'DLC & Ouvertures' },
+    { id: 'history', label: 'Historique' },
+    { id: 'config', label: 'Configuration' }
+  ];
+
   const handleSaveUser = () => { 
       if (!newUserName || !newUserPin) return; 
       const userToSave: User = { 
           id: editingUserId || 'u' + Date.now(), 
           name: newUserName, 
           role: newUserRole, 
+          profileId: newUserProfileId || undefined,
           pin: newUserPin,
           showInMealPlanning: newUserShowInMeal
       }; 
@@ -174,7 +201,7 @@ const Configuration: React.FC<ConfigProps> = ({
       }
       
       onSync('SAVE_USER', userToSave); 
-      setNewUserName(''); setNewUserPin(''); setEditingUserId(null); setNewUserRole('BARMAN'); setNewUserShowInMeal(true);
+      setNewUserName(''); setNewUserPin(''); setEditingUserId(null); setNewUserRole('BARMAN'); setNewUserShowInMeal(true); setNewUserProfileId('');
   };
 
   const startEditUser = (u: User) => {
@@ -182,6 +209,7 @@ const Configuration: React.FC<ConfigProps> = ({
       setNewUserName(u.name);
       setNewUserPin(u.pin);
       setNewUserRole(u.role);
+      setNewUserProfileId(u.profileId || '');
       setNewUserShowInMeal(u.showInMealPlanning !== false);
   };
 
@@ -190,7 +218,51 @@ const Configuration: React.FC<ConfigProps> = ({
       setNewUserName('');
       setNewUserPin('');
       setNewUserRole('BARMAN');
+      setNewUserProfileId('');
       setNewUserShowInMeal(true);
+  };
+
+  const handleSaveProfile = () => {
+    if (!newProfileName) return;
+    const profile = {
+        id: editingProfileId || 'prof_' + Date.now(),
+        name: newProfileName,
+        permissions: newProfilePermissions
+    };
+    if (editingProfileId) {
+        setRoleProfiles(prev => prev.map(p => p.id === editingProfileId ? profile : p));
+    } else {
+        setRoleProfiles(prev => [...prev, profile]);
+    }
+    onSync('SAVE_ROLE_PROFILE', profile);
+    setNewProfileName('');
+    setNewProfilePermissions({});
+    setEditingProfileId(null);
+  };
+
+  const startEditProfile = (p: any) => {
+    setEditingProfileId(p.id);
+    setNewProfileName(p.name);
+    setNewProfilePermissions(p.permissions || {});
+  };
+
+  const deleteProfile = (id: string) => {
+    if (window.confirm("Supprimer ce profil ?")) {
+        setRoleProfiles(prev => prev.filter(p => p.id !== id));
+        onSync('DELETE_ROLE_PROFILE', { id });
+    }
+  };
+
+  const togglePermission = (res: string, type: 'view' | 'edit') => {
+    setNewProfilePermissions(prev => {
+        const current = prev[res] || { view: false, edit: false };
+        const updated = { ...current, [type]: !current[type] };
+        // If edit is true, view must be true
+        if (type === 'edit' && updated.edit) updated.view = true;
+        // If view is false, edit must be false
+        if (type === 'view' && !updated.view) updated.edit = false;
+        return { ...prev, [res]: updated };
+    });
   };
   
   const deleteUser = (id: string) => {
@@ -271,6 +343,7 @@ const Configuration: React.FC<ConfigProps> = ({
             <button onClick={() => handleTabChange('techniques')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'techniques' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Techniques</button>
             <button onClick={() => handleTabChange('cocktail_cats')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'cocktail_cats' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Catégories Cocktails</button>
             <button onClick={() => handleTabChange('users')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Utilisateurs</button>
+            <button onClick={() => handleTabChange('profiles')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'profiles' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Profils & Permissions</button>
             <button onClick={() => handleTabChange('dlc')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'dlc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Configuration DLC</button>
             <button onClick={() => handleTabChange('email')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'email' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Emails & Commandes</button>
             <button onClick={() => handleTabChange('backup')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'backup' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Sauvegarde</button>
@@ -484,6 +557,15 @@ const Configuration: React.FC<ConfigProps> = ({
                                   <option value="ADMIN">Admin</option>
                               </select>
                           </div>
+                          {newUserRole === 'BARMAN' && (
+                            <div className="w-40 space-y-1">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Profil Accès</label>
+                                <select className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold outline-none text-sm" value={newUserProfileId} onChange={e => setNewUserProfileId(e.target.value)}>
+                                    <option value="">Aucun (Accès restreint)</option>
+                                    {roleProfiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </div>
+                          )}
                           <div className="flex items-center h-[46px] px-2">
                               <label className="flex items-center gap-2 cursor-pointer" title="Afficher dans le planning repas">
                                   <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={newUserShowInMeal} onChange={e => setNewUserShowInMeal(e.target.checked)} />
@@ -507,6 +589,11 @@ const Configuration: React.FC<ConfigProps> = ({
                                           <p className="font-bold text-slate-900 text-sm">{u.name}</p>
                                           <div className="flex items-center gap-2">
                                               <span className="text-[10px] font-black bg-slate-50 text-slate-400 px-2 py-0.5 rounded uppercase tracking-widest">{u.role}</span>
+                                              {u.profileId && (
+                                                <span className="text-[10px] font-black bg-indigo-50 text-indigo-400 px-2 py-0.5 rounded uppercase tracking-widest">
+                                                    {roleProfiles.find(p => p.id === u.profileId)?.name || 'Profil Inconnu'}
+                                                </span>
+                                              )}
                                               <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded">
                                                   <span className="text-[10px] font-mono font-bold text-slate-500">PIN: {visiblePins.has(u.id) ? u.pin : '••••'}</span>
                                                   <button onClick={() => revealPin(u.id)} className="text-slate-300 hover:text-indigo-500">
@@ -531,6 +618,73 @@ const Configuration: React.FC<ConfigProps> = ({
                       </div>
                   </div>
               )}
+          </div>
+      )}
+
+      {activeSubTab === 'profiles' && (
+          <div className="max-w-4xl mx-auto space-y-8">
+              <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>Gestion des Profils & Permissions</h3>
+                  
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-6">
+                      <div className="flex gap-4 items-end">
+                          <div className="flex-1 space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom du Profil</label>
+                              <input className="w-full bg-white border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" placeholder="Ex: Barman Junior, Manager..." value={newProfileName} onChange={e => setNewProfileName(e.target.value)} />
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={handleSaveProfile} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 shadow-md">{editingProfileId ? 'Modifier' : 'Créer Profil'}</button>
+                            {editingProfileId && <button onClick={() => { setEditingProfileId(null); setNewProfileName(''); setNewProfilePermissions({}); }} className="bg-slate-200 text-slate-600 px-4 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-300">Annuler</button>}
+                          </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {RESOURCES.map(res => {
+                              const perms = newProfilePermissions[res.id] || { view: false, edit: false };
+                              return (
+                                  <div key={res.id} className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+                                      <p className="font-black text-[10px] uppercase tracking-widest text-slate-500">{res.label}</p>
+                                      <div className="flex gap-4">
+                                          <button 
+                                            onClick={() => togglePermission(res.id, 'view')}
+                                            className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${perms.view ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
+                                          >
+                                              Voir
+                                          </button>
+                                          <button 
+                                            onClick={() => togglePermission(res.id, 'edit')}
+                                            className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${perms.edit ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
+                                          >
+                                              Modifier
+                                          </button>
+                                      </div>
+                                  </div>
+                              );
+                          })}
+                      </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {roleProfiles.map(p => (
+                          <div key={p.id} className="bg-white p-5 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm hover:shadow-md transition-all">
+                              <div>
+                                  <p className="font-black text-sm text-slate-800 uppercase tracking-tight">{p.name}</p>
+                                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">
+                                      {Object.values(p.permissions || {}).filter((x: any) => x.view).length} accès configurés
+                                  </p>
+                              </div>
+                              <div className="flex gap-2">
+                                  <button onClick={() => startEditProfile(p)} className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                  </button>
+                                  <button onClick={() => deleteProfile(p.id)} className="p-2 text-rose-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
+                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  </button>
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
           </div>
       )}
 

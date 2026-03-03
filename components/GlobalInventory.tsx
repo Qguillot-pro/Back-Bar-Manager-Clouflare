@@ -12,9 +12,10 @@ interface GlobalInventoryProps {
   onSync: (action: string, payload: any) => void;
   onUpdateStock: (itemId: string, storageId: string, qty: number, note?: string) => void;
   formats: Format[];
+  canEdit?: boolean;
 }
 
-const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, setItems, storages, stockLevels, categories, consignes, onSync, onUpdateStock, formats = [] }) => {
+const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, setItems, storages, stockLevels, categories, consignes, onSync, onUpdateStock, formats = [], canEdit = true }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<Category | 'ALL'>('ALL');
   const [newItemName, setNewItemName] = useState('');
@@ -254,40 +255,42 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, setItems, stor
             </div>
 
             {/* ADD INVENTORY ONLY ITEM */}
-            <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex flex-col md:flex-row gap-4 items-end">
-                <div className="flex-1 w-full space-y-1">
-                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest ml-1">Ajout Produit Hors Bar</label>
-                    <input 
-                        type="text" 
-                        className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-bold outline-none"
-                        placeholder="Nom (ex: Champagne Ruinart Restaurant)"
-                        value={newItemName}
-                        onChange={e => setNewItemName(e.target.value)}
-                    />
+            {canEdit && (
+                <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1 w-full space-y-1">
+                        <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest ml-1">Ajout Produit Hors Bar</label>
+                        <input 
+                            type="text" 
+                            className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-bold outline-none"
+                            placeholder="Nom (ex: Champagne Ruinart Restaurant)"
+                            value={newItemName}
+                            onChange={e => setNewItemName(e.target.value)}
+                        />
+                    </div>
+                    <div className="w-full md:w-48 space-y-1">
+                        <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest ml-1">Catégorie</label>
+                        <select 
+                            className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-bold outline-none"
+                            value={newItemCategory}
+                            onChange={e => setNewItemCategory(e.target.value)}
+                        >
+                            <option value="">Choisir...</option>
+                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                    </div>
+                    <div className="w-full md:w-32 space-y-1">
+                        <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest ml-1">Emplacement</label>
+                        <input 
+                            type="text" 
+                            className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-bold outline-none"
+                            placeholder="#"
+                            value={newItemLocation}
+                            onChange={e => setNewItemLocation(e.target.value)}
+                        />
+                    </div>
+                    <button onClick={handleCreateInventoryItem} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-md">Ajouter</button>
                 </div>
-                <div className="w-full md:w-48 space-y-1">
-                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest ml-1">Catégorie</label>
-                    <select 
-                        className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-bold outline-none"
-                        value={newItemCategory}
-                        onChange={e => setNewItemCategory(e.target.value)}
-                    >
-                        <option value="">Choisir...</option>
-                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                </div>
-                <div className="w-full md:w-32 space-y-1">
-                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest ml-1">Emplacement</label>
-                    <input 
-                        type="text" 
-                        className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-bold outline-none"
-                        placeholder="#"
-                        value={newItemLocation}
-                        onChange={e => setNewItemLocation(e.target.value)}
-                    />
-                </div>
-                <button onClick={handleCreateInventoryItem} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-md">Ajouter</button>
-            </div>
+            )}
         </div>
 
         {/* TABLE */}
@@ -301,13 +304,15 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, setItems, stor
                         <th className="p-4 text-center bg-slate-100/50">Stock Bar</th>
                         <th className="p-4 text-center bg-amber-50">
                             Stock Autre
-                            <button 
-                                onClick={handleResetColumn} 
-                                className="block mx-auto mt-1 text-[8px] text-rose-400 hover:text-rose-600 hover:underline uppercase tracking-wide"
-                                title="Remettre toute la colonne à zéro"
-                            >
-                                Reset 0
-                            </button>
+                            {canEdit && (
+                                <button 
+                                    onClick={handleResetColumn} 
+                                    className="block mx-auto mt-1 text-[8px] text-rose-400 hover:text-rose-600 hover:underline uppercase tracking-wide"
+                                    title="Remettre toute la colonne à zéro"
+                                >
+                                    Reset 0
+                                </button>
+                            )}
                         </th>
                         <th className="p-4 text-center font-bold text-slate-800">Total</th>
                     </tr>
@@ -323,7 +328,8 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, setItems, stor
                                 <td className="p-4 text-center">
                                     <input 
                                         type="text"
-                                        className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-center font-black text-xs outline-none focus:ring-2 focus:ring-indigo-100"
+                                        disabled={!canEdit}
+                                        className={`w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-center font-black text-xs outline-none focus:ring-2 focus:ring-indigo-100 ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         placeholder="#"
                                         value={item.inventoryLocation || ''}
                                         onChange={(e) => handleLocationChange(item.id, e.target.value)}
@@ -338,30 +344,35 @@ const GlobalInventory: React.FC<GlobalInventoryProps> = ({ items, setItems, stor
                                 <td className="p-4 text-center font-black text-slate-500 bg-slate-50/50">{parseFloat(barStock.toFixed(3))}</td>
                                 <td className="p-4 text-center bg-amber-50/30">
                                     <div className="flex justify-center items-center gap-3">
-                                        <button 
-                                            onClick={() => handleAdjustStock(item.id, -1)}
-                                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-500 hover:bg-rose-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
-                                            title="-1 (Sortie Régulation)"
-                                        >
-                                            -
-                                        </button>
+                                        {canEdit && (
+                                            <button 
+                                                onClick={() => handleAdjustStock(item.id, -1)}
+                                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-500 hover:bg-rose-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
+                                                title="-1 (Sortie Régulation)"
+                                            >
+                                                -
+                                            </button>
+                                        )}
                                         <div className="relative">
                                             <input 
                                                 type="text" 
                                                 inputMode="decimal"
-                                                className={`w-20 border-2 rounded-xl p-2 text-center font-black outline-none focus:ring-4 transition-all text-lg bg-white border-amber-200 text-slate-800 focus:ring-amber-200 focus:border-amber-400`}
+                                                disabled={!canEdit}
+                                                className={`w-20 border-2 rounded-xl p-2 text-center font-black outline-none focus:ring-4 transition-all text-lg bg-white border-amber-200 text-slate-800 focus:ring-amber-200 focus:border-amber-400 ${!canEdit ? 'opacity-70 cursor-not-allowed' : ''}`}
                                                 placeholder="0"
                                                 value={otherStock || ''}
                                                 onChange={(e) => handleGlobalStockChange(item.id, e.target.value)}
                                             />
                                         </div>
-                                        <button 
-                                            onClick={() => handleAdjustStock(item.id, 1)}
-                                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-emerald-200 text-emerald-500 hover:bg-emerald-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
-                                            title="+1 (Transfert S0 ou Correction)"
-                                        >
-                                            +
-                                        </button>
+                                        {canEdit && (
+                                            <button 
+                                                onClick={() => handleAdjustStock(item.id, 1)}
+                                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-emerald-200 text-emerald-500 hover:bg-emerald-500 hover:text-white font-black text-lg transition-all active:scale-95 shadow-sm"
+                                                title="+1 (Transfert S0 ou Correction)"
+                                            >
+                                                +
+                                            </button>
+                                        )}
                                     </div>
                                 </td>
                                 <td className="p-4 text-center font-black text-lg text-slate-900">{parseFloat((barStock + otherStock).toFixed(3))}</td>

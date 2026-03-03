@@ -20,6 +20,17 @@ export const CATEGORY_ORDER = [
 export type Category = string;
 export type UserRole = 'ADMIN' | 'BARMAN';
 
+export interface Permission {
+  view: boolean;
+  edit: boolean;
+}
+
+export interface RoleProfile {
+  id: string;
+  name: string;
+  permissions: Record<string, Permission>;
+}
+
 export interface AppConfig {
   tempItemDuration: '3_DAYS' | '7_DAYS' | '14_DAYS' | '1_MONTH' | '3_MONTHS' | 'INFINITE';
   defaultMargin?: number; // Pourcentage (ex: 82)
@@ -43,6 +54,7 @@ export interface User {
   id: string;
   name: string;
   role: UserRole;
+  profileId?: string;
   pin: string;
   showInMealPlanning?: boolean;
 }

@@ -9,11 +9,12 @@ interface ConsignesProps {
   priorities: StockPriority[];
   setConsignes: React.Dispatch<React.SetStateAction<StockConsigne[]>>;
   onSync?: (action: string, payload: any) => void;
+  canEdit?: boolean;
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, priorities, setConsignes, onSync }) => {
+const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, priorities, setConsignes, onSync, canEdit = true }) => {
   const [isEditOrderMode, setIsEditOrderMode] = useState(false);
   const [editingValue, setEditingValue] = useState<{key: string, val: string} | null>(null);
   
@@ -155,7 +156,14 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
 
              <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm shrink-0">
                 <span className={`text-[10px] font-black uppercase tracking-widest ${!isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Saisie</span>
-                <button onClick={() => setIsEditOrderMode(!isEditOrderMode)} className={`relative w-10 h-5 rounded-full transition-colors ${isEditOrderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} aria-label="Changer le mode d'édition"><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isEditOrderMode ? 'left-6' : 'left-1'}`}></div></button>
+                <button 
+                  onClick={() => setIsEditOrderMode(!isEditOrderMode)} 
+                  disabled={!canEdit}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${isEditOrderMode ? 'bg-indigo-600' : 'bg-slate-200'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                  aria-label="Changer le mode d'édition"
+                >
+                  <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isEditOrderMode ? 'left-6' : 'left-1'}`}></div>
+                </button>
                 <span className={`text-[10px] font-black uppercase tracking-widest ${isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Ordre Col.</span>
              </div>
           </div>

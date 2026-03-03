@@ -62,9 +62,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- 2. ROUTE INIT AUTH ---
     if (request.method === 'GET' && path.includes('/init')) {
-        const [users, appConfig] = await Promise.all([
+        const [users, appConfig, roleProfiles, permissions] = await Promise.all([
             pool.query('SELECT * FROM users'),
-            pool.query('SELECT * FROM app_config')
+            pool.query('SELECT * FROM app_config'),
+            pool.query('SELECT * FROM role_profiles'),
+            pool.query('SELECT * FROM permissions')
         ]);
 
         const configMap: any = { tempItemDuration: '14_DAYS', defaultMargin: 82 };
@@ -103,14 +105,24 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             if (row.key.startsWith('cycle_')) configMap[row.key] = row.value;
         });
 
+        const profiles = roleProfiles.rows.map((p: any) => {
+            const pPermissions: any = {};
+            permissions.rows.filter((perm: any) => perm.role_profile_id === p.id).forEach((perm: any) => {
+                pPermissions[perm.resource_name] = { view: perm.can_view, edit: perm.can_edit };
+            });
+            return { id: p.id, name: p.name, permissions: pPermissions };
+        });
+
         const responseBody = {
             users: users.rows.map((u: any) => ({
                 id: u.id,
                 name: u.name,
                 role: u.role,
+                profileId: u.profile_id,
                 pin: u.pin,
                 showInMealPlanning: u.show_in_meal_planning !== false // Default true if null/undefined
             })),
+            roleProfiles: profiles,
             appConfig: configMap
         };
 
@@ -300,7 +312,25 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'DELETE_DLC_HISTORY': { await pool.query('DELETE FROM dlc_history WHERE id = $1', [payload.id]); break; }
         case 'SAVE_LOSS': { await pool.query(`INSERT INTO losses (id, item_id, opened_at, discarded_at, quantity, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [payload.id, payload.itemId, payload.openedAt, payload.discardedAt, payload.quantity, payload.userName]); break; }
         case 'SAVE_DAILY_STOCK_ALERT': { await pool.query(`INSERT INTO daily_stock_alerts (id, date, type, item_id, quantity, consigne) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.date, payload.type, payload.itemId, payload.quantity, payload.consigne]); break; }
-        case 'SAVE_USER': { await pool.query(`INSERT INTO users (id, name, role, pin, show_in_meal_planning) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, pin = EXCLUDED.pin, show_in_meal_planning = EXCLUDED.show_in_meal_planning`, [payload.id, payload.name, payload.role, payload.pin, payload.showInMealPlanning]); break; }
+        case 'SAVE_USER': { await pool.query(`INSERT INTO users (id, name, role, pin, show_in_meal_planning, profile_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, pin = EXCLUDED.pin, show_in_meal_planning = EXCLUDED.show_in_meal_planning, profile_id = EXCLUDED.profile_id`, [payload.id, payload.name, payload.role, payload.pin, payload.showInMealPlanning, payload.profileId]); break; }
+        case 'SAVE_ROLE_PROFILE': {
+            const { id, name, permissions } = payload;
+            await pool.query('BEGIN');
+            try {
+                await pool.query(`INSERT INTO role_profiles (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [id, name]);
+                await pool.query('DELETE FROM permissions WHERE role_profile_id = $1', [id]);
+                for (const [res, perms] of Object.entries(permissions)) {
+                    const p = perms as any;
+                    await pool.query(`INSERT INTO permissions (role_profile_id, resource_name, can_view, can_edit) VALUES ($1, $2, $3, $4)`, [id, res, p.view, p.edit]);
+                }
+                await pool.query('COMMIT');
+            } catch (e) {
+                await pool.query('ROLLBACK');
+                throw e;
+            }
+            break;
+        }
+        case 'DELETE_ROLE_PROFILE': { await pool.query('DELETE FROM role_profiles WHERE id = $1', [payload.id]); break; }
         case 'SAVE_STORAGE': { await pool.query(`INSERT INTO storage_spaces (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [payload.id, payload.name]); break; }
         case 'SAVE_STORAGE_ORDER': { await pool.query(`UPDATE storage_spaces SET sort_order = $2 WHERE id = $1`, [payload.id, payload.order]); break; }
         case 'DELETE_STORAGE': { await pool.query('DELETE FROM storage_spaces WHERE id = $1', [payload.id]); break; }

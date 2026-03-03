@@ -13,6 +13,7 @@ interface StockTableProps {
   onAdjustTransaction?: (itemId: string, storageId: string, delta: number) => void;
   currentUser?: User;
   onSync?: (action: string, payload: any) => void;
+  canEdit?: boolean;
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -20,11 +21,13 @@ const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\
 const EditableNumberCell = ({ 
     value, 
     onSave, 
-    className 
+    className,
+    disabled
 }: { 
     value: number, 
     onSave: (val: number) => void, 
-    className?: string 
+    className?: string,
+    disabled?: boolean
 }) => {
     const [localValue, setLocalValue] = useState<string>(value.toString());
 
@@ -61,12 +64,13 @@ const EditableNumberCell = ({
             value={localValue}
             onChange={handleChange}
             onBlur={handleBlur}
-            className={className}
+            disabled={disabled}
+            className={`${className} ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
         />
     );
 };
 
-const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, setStockLevels, priorities, onUpdateStock, onAdjustTransaction, consignes = [], currentUser, onSync }) => {
+const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, setStockLevels, priorities, onUpdateStock, onAdjustTransaction, consignes = [], currentUser, onSync, canEdit = true }) => {
   const [activeTab, setActiveTab] = useState<'GLOBAL' | 'PRODUCT' | 'STORAGE'>('GLOBAL');
   const [searchTerm, setSearchTerm] = useState('');
   const [columnFilters, setColumnFilters] = useState<string[]>(['all', 'none', 'none']);
@@ -113,7 +117,18 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
           const orderB = levelB?.order ?? 999999;
           
           if (orderA !== orderB) return orderA - orderB;
-          return a.name.localeCompare(b.name);
+          
+          // Fallback to Inventory Location logic (matching GlobalInventory)
+          if (a.inventoryLocation || b.inventoryLocation) {
+              const locA = a.inventoryLocation || 'ZZZZ';
+              const locB = b.inventoryLocation || 'ZZZZ';
+              const numA = parseFloat(locA);
+              const numB = parseFloat(locB);
+              if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+              return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
+          }
+          
+          return (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name);
       });
   }, [items, stockLevels, selectedStorageId, searchTerm]);
 
@@ -224,13 +239,14 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                                     return (
                                         <td key={s.id} className="p-4 border-r text-center">
                                             <div className="flex justify-center items-center gap-2">
-                                                <button onClick={() => onAdjustTransaction?.(item.id, s.id, -1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white font-black transition-all">-</button>
+                                                {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, s.id, -1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white font-black transition-all">-</button>}
                                                 <EditableNumberCell 
                                                     value={qty}
                                                     onSave={(val) => handleManualEdit(item.id, s.id, val)}
+                                                    disabled={!canEdit}
                                                     className={`w-14 text-center p-1 rounded-lg font-black text-sm border-2 transition-all ${isLow ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-100 text-slate-700'}`}
                                                 />
-                                                <button onClick={() => onAdjustTransaction?.(item.id, s.id, 1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-emerald-500 hover:text-white font-black transition-all">+</button>
+                                                {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, s.id, 1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-emerald-500 hover:text-white font-black transition-all">+</button>}
                                             </div>
                                         </td>
                                     );
@@ -293,14 +309,15 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                                               <EditableNumberCell 
                                                 value={qty}
                                                 onSave={(val) => handleManualEdit(selectedProductId, s.id, val)}
+                                                disabled={!canEdit}
                                                 className={`w-20 text-center p-3 rounded-xl font-black text-base border-2 transition-all ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
                                               />
                                           </td>
                                           <td className="p-6 text-center text-slate-400 font-bold">{consigne || '-'}</td>
                                           <td className="p-6 text-center">
                                               <div className="flex justify-center gap-2">
-                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>
-                                                  <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>
+                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>}
+                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>}
                                               </div>
                                           </td>
                                       </tr>
@@ -361,9 +378,11 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                           {storageItems.map((item, idx) => {
                               const qty = stockLevels.find(l => l.itemId === item.id && l.storageId === selectedStorageId)?.currentQuantity || 0;
                               const consigne = getConsigneValue(item.id, selectedStorageId);
+                              const isUnauthorized = selectedStorageId !== 's0' && 
+                                  (priorities.find(p => p.itemId === item.id && p.storageId === selectedStorageId)?.priority || 0) === 0;
 
                               return (
-                                  <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                                  <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isUnauthorized ? 'bg-rose-50/30' : ''}`}>
                                       {isReorderMode && (
                                           <td className="p-6 text-center">
                                               <div className="flex flex-col items-center gap-1">
@@ -384,11 +403,22 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                                               </div>
                                           </td>
                                       )}
-                                      <td className="p-6 font-bold text-slate-700">{item.name}</td>
+                                      <td className="p-6 font-bold text-slate-700">
+                                          <div className="flex items-center gap-2">
+                                              {item.name}
+                                              {isUnauthorized && (
+                                                  <span className="bg-rose-100 text-rose-600 text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-widest flex items-center gap-1">
+                                                      <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                                                      Non Autorisé ici
+                                                  </span>
+                                              )}
+                                          </div>
+                                      </td>
                                       <td className="p-6 text-center">
                                           <EditableNumberCell 
                                             value={qty}
                                             onSave={(val) => handleManualEdit(item.id, selectedStorageId, val)}
+                                            disabled={!canEdit}
                                             className={`w-20 text-center p-2 rounded-xl font-black text-sm border-2 ${consigne > 0 && qty < consigne ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
                                           />
                                       </td>
@@ -396,8 +426,8 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                                       {!isReorderMode && (
                                           <td className="p-6 text-center">
                                               <div className="flex justify-center gap-2">
-                                                  <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>
-                                                  <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>
+                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>}
+                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>}
                                               </div>
                                           </td>
                                       )}
