@@ -677,6 +677,17 @@ const App: React.FC = () => {
               setCurrentUser(found); 
               setLoginStatus('idle'); 
               setLoginInput(''); 
+              
+              let firstAllowedView = 'dashboard';
+              if (found.role !== 'ADMIN') {
+                  const profile = roleProfiles.find(p => p.id === found.profileId);
+                  const perms = profile?.permissions;
+                  const allowedItem = menuItems.find(item => perms?.[item.resource]?.view);
+                  if (allowedItem) {
+                      firstAllowedView = allowedItem.id;
+                  }
+              }
+              setView(firstAllowedView);
           }, 600); 
       }
       else { 
