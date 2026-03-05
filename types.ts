@@ -112,6 +112,8 @@ export interface DLCHistory {
   storageId: string;
   openedAt: string;
   userName?: string;
+  isNotOpened?: boolean;
+  quantity?: number;
 }
 
 export interface Loss {

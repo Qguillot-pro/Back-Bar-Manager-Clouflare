@@ -1,19 +1,20 @@
 
 import React, { useMemo, useState } from 'react';
-import { StockItem, DLCHistory, DLCProfile, StorageSpace } from '../types';
+import { StockItem, DLCHistory, DLCProfile, StorageSpace, Transaction } from '../types';
 
 interface DLCViewProps {
   items: StockItem[];
   dlcHistory: DLCHistory[];
   dlcProfiles: DLCProfile[];
   storages: StorageSpace[];
+  transactions: Transaction[];
   onDelete: (id: string, qtyLostPercent?: number) => void;
   onUpdateDlc?: (dlc: DLCHistory) => void;
   onAddDlc?: (itemId: string, storageId: string, openedAt: string) => void;
   userRole?: string;
 }
 
-const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete, onUpdateDlc, onAddDlc, userRole }) => {
+const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles = [], storages = [], onDelete, onUpdateDlc, onAddDlc, userRole, transactions = [] }) => {
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -23,16 +24,22 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
 
+  // Filters
+  const [filterProduct, setFilterProduct] = useState('');
+  const [filterStorage, setFilterStorage] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+
   // Add Modal State
   const [newItemId, setNewItemId] = useState('');
   const [newStorageId, setNewStorageId] = useState('');
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('');
+  const [isNotOpened, setIsNotOpened] = useState(false);
 
   const activeDlcs = useMemo(() => {
     if (!dlcHistory || !items) return [];
     
-    return dlcHistory.map(entry => {
+    let list = dlcHistory.map(entry => {
       const item = items.find(i => i.id === entry.itemId);
       if (!item) return null;
 
@@ -51,21 +58,46 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       const timeLeft = expirationDate.getTime() - now.getTime();
       const isExpired = timeLeft < 0;
 
+      // Check for regularization
+      const hasRegularization = transactions.some((t: Transaction) => 
+        t.itemId === entry.itemId && 
+        t.storageId === entry.storageId && 
+        t.type === 'OUT' && 
+        (t.id.startsWith('reg_') || t.note?.includes('Régulation')) &&
+        Math.abs(new Date(t.date).getTime() - openedDate.getTime()) < 24 * 3600000 // Within 24h of opening
+      );
+
       return {
         id: entry.id,
+        itemId: entry.itemId,
         itemName: item.name,
+        storageId: entry.storageId,
         storageName: storage?.name || 'Stock Global',
         openedDate,
         expirationDate,
         timeLeft,
         isExpired,
         durationLabel: durationHours >= 24 ? `${Number((durationHours/24).toFixed(1))}j` : `${durationHours}h`,
-        userName: entry.userName || 'N/A'
+        userName: entry.userName || 'N/A',
+        hasRegularization,
+        isNotOpened: entry.isNotOpened
       };
     })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-    .sort((a, b) => a.expirationDate.getTime() - b.expirationDate.getTime());
-  }, [dlcHistory, items, storages, dlcProfiles]);
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    // Apply Filters
+    if (filterProduct) {
+        list = list.filter(d => d.itemName.toLowerCase().includes(filterProduct.toLowerCase()));
+    }
+    if (filterStorage) {
+        list = list.filter(d => d.storageId === filterStorage);
+    }
+    if (filterDate) {
+        list = list.filter(d => d.openedDate.toISOString().split('T')[0] === filterDate);
+    }
+
+    return list.sort((a, b) => a.expirationDate.getTime() - b.expirationDate.getTime());
+  }, [dlcHistory, items, storages, dlcProfiles, filterProduct, filterStorage, filterDate, transactions]);
 
   const expiredCount = activeDlcs.filter(d => d.isExpired).length;
 
@@ -122,13 +154,15 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
               }
 
               const openedAt = dateObj.toISOString();
-              onAddDlc(newItemId, newStorageId, openedAt);
+              // @ts-ignore - adding isNotOpened to payload
+              onAddDlc(newItemId, newStorageId, openedAt, isNotOpened);
               
               setAddModalOpen(false);
               setNewItemId('');
               setNewStorageId('');
               setNewDate('');
               setNewTime('');
+              setIsNotOpened(false);
           } catch (error) {
               console.error("Error adding DLC:", error);
               alert("Une erreur est survenue lors de l'ajout de la DLC.");
@@ -181,6 +215,16 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Heure</label>
                               <input type="time" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={newTime} onChange={e => setNewTime(e.target.value)} />
                           </div>
+                      </div>
+                      <div className="flex items-center gap-2 p-2 bg-amber-50 rounded-xl border border-amber-100">
+                          <input 
+                            type="checkbox" 
+                            id="notOpened" 
+                            className="w-4 h-4 accent-amber-500" 
+                            checked={isNotOpened} 
+                            onChange={e => setIsNotOpened(e.target.checked)} 
+                          />
+                          <label htmlFor="notOpened" className="text-[10px] font-bold text-amber-700 uppercase tracking-wider cursor-pointer">Produit non ouvert</label>
                       </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-2">
@@ -247,29 +291,59 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
           </div>
       )}
 
-      <div className="p-6 border-b bg-slate-50 flex flex-col md:flex-row justify-between items-center gap-4">
-        <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-            <span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>
-            Suivi des DLC en cours
-        </h2>
-        <div className="flex items-center gap-3">
-            {userRole === 'ADMIN' && (
-                <button 
-                  onClick={() => {
-                    const now = new Date();
-                    setNewDate(now.toISOString().split('T')[0]);
-                    const hours = now.getHours().toString().padStart(2, '0');
-                    const minutes = now.getMinutes().toString().padStart(2, '0');
-                    setNewTime(`${hours}:${minutes}`);
-                    setAddModalOpen(true);
-                  }} 
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all shadow-lg"
-                >
-                    + Ajouter Manuel
-                </button>
-            )}
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeDlcs.length} lots actifs</span>
-            <div className={`w-3 h-3 rounded-full ${expiredCount > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`}></div>
+      <div className="p-6 border-b bg-slate-50 flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                <span className="w-1.5 h-6 bg-amber-500 rounded-full"></span>
+                Suivi des DLC en cours
+            </h2>
+            <div className="flex items-center gap-3">
+                {userRole === 'ADMIN' && (
+                    <button 
+                    onClick={() => {
+                        const now = new Date();
+                        setNewDate(now.toISOString().split('T')[0]);
+                        const hours = now.getHours().toString().padStart(2, '0');
+                        const minutes = now.getMinutes().toString().padStart(2, '0');
+                        setNewTime(`${hours}:${minutes}`);
+                        setAddModalOpen(true);
+                    }} 
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all shadow-lg"
+                    >
+                        + Ajouter Manuel
+                    </button>
+                )}
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeDlcs.length} lots actifs</span>
+                <div className={`w-3 h-3 rounded-full ${expiredCount > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`}></div>
+            </div>
+        </div>
+
+        {/* FILTERS */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+            <div className="relative">
+                <input 
+                    type="text" 
+                    placeholder="Filtrer par produit..." 
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-indigo-100"
+                    value={filterProduct}
+                    onChange={e => setFilterProduct(e.target.value)}
+                />
+                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            </div>
+            <select 
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-indigo-100"
+                value={filterStorage}
+                onChange={e => setFilterStorage(e.target.value)}
+            >
+                <option value="">Tous les emplacements</option>
+                {storages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <input 
+                type="date" 
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-indigo-100"
+                value={filterDate}
+                onChange={e => setFilterDate(e.target.value)}
+            />
         </div>
       </div>
       
@@ -288,7 +362,15 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
             {activeDlcs.map(dlc => (
               <tr key={dlc.id} className={`${dlc.isExpired ? 'bg-rose-50/50' : 'hover:bg-slate-50'} transition-colors`}>
                 <td className="p-6">
-                  <span className="font-black text-slate-900 text-sm block">{dlc.itemName}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-slate-900 text-sm block">{dlc.itemName}</span>
+                    {dlc.isNotOpened && (
+                        <div className="group relative">
+                            <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[8px] font-bold uppercase rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">Produit non ouvert</div>
+                        </div>
+                    )}
+                  </div>
                   <div className="text-[10px] font-bold text-indigo-500 uppercase mt-1 bg-indigo-50 inline-block px-2 py-0.5 rounded border border-indigo-100">
                       📍 {dlc.storageName}
                   </div>
@@ -303,6 +385,12 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                 </td>
                 <td className="p-6 text-center">
                     <div className="flex justify-center gap-2">
+                        {dlc.hasRegularization && (
+                            <div className="group relative flex items-center">
+                                <svg className="w-5 h-5 text-amber-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[8px] font-bold uppercase rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">Régularisation détectée (Produit jeté ?)</div>
+                            </div>
+                        )}
                         {userRole === 'ADMIN' && (
                             <button 
                                 onClick={() => handleOpenEdit(dlc.id, dlc.openedDate.toISOString())}

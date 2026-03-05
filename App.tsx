@@ -627,14 +627,15 @@ const App: React.FC = () => {
       syncData('SAVE_DLC_HISTORY', dlc);
   };
 
-  const handleAddDlc = (itemId: string, storageId: string, openedAt?: string) => {
-      const existing = dlcHistory.find(h => h.itemId === itemId);
+  const handleAddDlc = (itemId: string, storageId: string, openedAt?: string, isNotOpened: boolean = false) => {
+      const existing = dlcHistory.find(h => h.itemId === itemId && h.storageId === storageId);
       if (existing) {
           const updated: DLCHistory = { 
               ...existing, 
               storageId, 
               openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
-              userName: currentUser?.name 
+              userName: currentUser?.name,
+              isNotOpened
           };
           setDlcHistory(prev => prev.map(h => h.id === existing.id ? updated : h));
           syncData('SAVE_DLC_HISTORY', updated);
@@ -644,7 +645,8 @@ const App: React.FC = () => {
               itemId,
               storageId,
               openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
-              userName: currentUser?.name
+              userName: currentUser?.name,
+              isNotOpened
           };
           setDlcHistory(prev => [dlc, ...prev]);
           syncData('SAVE_DLC_HISTORY', dlc);
@@ -800,7 +802,6 @@ const App: React.FC = () => {
             </div>
             <div className="flex gap-2">
                 <button onClick={() => fetchFullData()} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center transition-all"><svg className={`w-4 h-4 ${dataSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
-                {currentUser.role === 'ADMIN' && <button onClick={() => setShowAdminLogbook(true)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5" /></svg></button>}
                 <button onClick={() => setView('configuration')} className={`flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg flex items-center justify-center transition-all ${view === 'configuration' ? 'bg-indigo-600 text-white' : ''}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066" /></svg></button>
             </div>
             <button onClick={() => {setCurrentUser(null); setView('dashboard');}} className="w-full bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all border border-rose-900/20">{!isSidebarCollapsed && "Déconnexion"}<svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7" /></svg></button>
@@ -812,7 +813,59 @@ const App: React.FC = () => {
           {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} tasks={tasks} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} mealReservations={mealReservations} users={users} />}
           {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
           {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={saveConfig} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} mealReservations={mealReservations} setMealReservations={setMealReservations} users={users} />}
-          {view === 'bar_prep' && <BarPrep items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onUpdateDlc={handleUpdateDlc} userRole={currentUser.role} />}
+          {view === 'bar_prep' && (
+            <BarPrep 
+              items={items} 
+              storages={storages} 
+              stockLevels={stockLevels} 
+              consignes={consignes} 
+              priorities={priorities} 
+              transactions={transactions} 
+              onAction={handleRestockAction} 
+              categories={categories} 
+              dlcProfiles={dlcProfiles} 
+              dlcHistory={dlcHistory} 
+              onUpdateDlc={handleUpdateDlc} 
+              onDeleteDlc={(id, qtyLostPercent) => {
+                const target = dlcHistory.find(h => h.id === id); 
+                if(target) { 
+                    const item = items.find(i => i.id === target.itemId);
+                    const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+                    const durationHours = profile?.durationHours || 24;
+                    const expirationDate = new Date(new Date(target.openedAt).getTime() + durationHours * 3600000);
+                    const isExpired = new Date() > expirationDate;
+
+                    if (qtyLostPercent && qtyLostPercent > 0) {
+                        const lossQty = qtyLostPercent / 100;
+                        const loss: Loss = { 
+                            id: 'loss_'+Date.now(), 
+                            itemId: target.itemId, 
+                            openedAt: target.openedAt, 
+                            discardedAt: new Date().toISOString(), 
+                            quantity: lossQty, 
+                            userName: currentUser?.name 
+                        }; 
+                        setLosses(p=>[loss,...p]); 
+                        syncData('SAVE_LOSS', loss); 
+                    }
+
+                    if (isExpired) {
+                        if (qtyLostPercent && qtyLostPercent > 0) {
+                            handleTransaction(target.itemId, 'OUT', 1, false, "Produit expiré jeté");
+                        }
+                    } else {
+                        if (qtyLostPercent && qtyLostPercent > 0) {
+                            handleTransaction(target.itemId, 'OUT', 1, false, "Produit jeté");
+                        }
+                    }
+
+                    setDlcHistory(p => p.filter(h => h.id !== id)); 
+                    syncData('DELETE_DLC_HISTORY', { id }); 
+                }
+              }}
+              userRole={currentUser.role} 
+            />
+          )}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={handleAddDlc} onDlcConsumption={(id) => { const old = dlcHistory.filter(h=>h.itemId===id).sort((a,b)=>new Date(a.openedAt).getTime()-new Date(b.openedAt).getTime())[0]; if(old){ setDlcHistory(p=>p.filter(h=>h.id!==old.id)); syncData('DELETE_DLC_HISTORY', {id: old.id}); } }} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} onUndo={handleUndoLastTransaction} />}
           {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} setStockLevels={setStockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} currentUser={currentUser} onSync={syncData} canEdit={canEdit('inventory')} />}
@@ -831,13 +884,67 @@ const App: React.FC = () => {
               }
           }} formats={formats} events={events} emailTemplates={emailTemplates} />}
           {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={storages} unfulfilledOrders={unfulfilledOrders} formats={formats} losses={losses} dailyStockAlerts={dailyAlerts} appConfig={appConfig} onUpdateOrderQuantity={(ids: string[], q: number) => { ids.forEach(id => { const o = orders.find(ord => ord.id === id); if (o) { const updated = { ...o, status: 'RECEIVED' as const, receivedAt: new Date().toISOString(), quantity: q }; setOrders(p => p.map(x => x.id === id ? updated : x)); syncData('SAVE_ORDER', updated); } }); }} />}
-          {view === 'dlc_tracking' && <DLCView items={items} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} storages={storages} onDelete={(id, qty) => { const target = dlcHistory.find(h => h.id === id); if(target) { const loss: Loss = { id: 'loss_'+Date.now(), itemId: target.itemId, openedAt: target.openedAt, discardedAt: new Date().toISOString(), quantity: qty || 0, userName: currentUser?.name }; setLosses(p=>[loss,...p]); syncData('SAVE_LOSS', loss); setDlcHistory(p => p.filter(h => h.id !== id)); syncData('DELETE_DLC_HISTORY', { id }); handleTransaction(target.itemId, 'OUT', 1, false, "Produit en perte"); } }} onUpdateDlc={handleUpdateDlc} userRole={currentUser.role} onAddDlc={handleAddDlc} />}
+          {view === 'dlc_tracking' && (
+            <DLCView 
+              items={items} 
+              dlcHistory={dlcHistory} 
+              dlcProfiles={dlcProfiles} 
+              storages={storages} 
+              transactions={transactions}
+              onDelete={(id, qtyLostPercent) => { 
+                const target = dlcHistory.find(h => h.id === id); 
+                if(target) { 
+                    const item = items.find(i => i.id === target.itemId);
+                    const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+                    const durationHours = profile?.durationHours || 24;
+                    const expirationDate = new Date(new Date(target.openedAt).getTime() + durationHours * 3600000);
+                    const isExpired = new Date() > expirationDate;
+
+                    // Loss recording logic: 10% = 0.1, 50% = 0.5, 100% = 1.0
+                    // Ne pas enregistrer dans perte et gaspillage les produits jetés à 0 %
+                    if (qtyLostPercent && qtyLostPercent > 0) {
+                        const lossQty = qtyLostPercent / 100;
+                        const loss: Loss = { 
+                            id: 'loss_'+Date.now(), 
+                            itemId: target.itemId, 
+                            openedAt: target.openedAt, 
+                            discardedAt: new Date().toISOString(), 
+                            quantity: lossQty, 
+                            userName: currentUser?.name 
+                        }; 
+                        setLosses(p=>[loss,...p]); 
+                        syncData('SAVE_LOSS', loss); 
+                    }
+
+                    // Stock deduction logic:
+                    // Si on jette un produit DLC expiré, ne pas déduire des stocks si 0 % de perte. 
+                    // Déduire 1 des stocks si supérieur à 0 % de perte.
+                    if (isExpired) {
+                        if (qtyLostPercent && qtyLostPercent > 0) {
+                            handleTransaction(target.itemId, 'OUT', 1, false, "Produit expiré jeté");
+                        }
+                    } else {
+                        // Si pas encore expiré mais jeté, on déduit 1 (sauf si 0% ?)
+                        // On suit la même logique par cohérence
+                        if (qtyLostPercent && qtyLostPercent > 0) {
+                            handleTransaction(target.itemId, 'OUT', 1, false, "Produit jeté");
+                        }
+                    }
+
+                    setDlcHistory(p => p.filter(h => h.id !== id)); 
+                    syncData('DELETE_DLC_HISTORY', { id }); 
+                } 
+              }} 
+              onUpdateDlc={handleUpdateDlc} 
+              userRole={currentUser.role} 
+              onAddDlc={handleAddDlc} 
+            />
+          )}
           {view === 'articles' && <ArticlesList items={items} setItems={setItems} formats={formats} categories={categories} onDelete={(id) => { setItems(p => p.filter(i => i.id !== id)); syncData('DELETE_ITEM', {id}); }} userRole={currentUser.role} dlcProfiles={dlcProfiles} onSync={syncData} events={events} recipes={recipes} />}
           {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} stockLevels={stockLevels} formats={formats} />}
           {view === 'product_knowledge' && <ProductKnowledge sheets={productSheets} items={items} currentUserRole={currentUser.role} onSync={syncData} productTypes={productTypes} glassware={glassware} formats={formats} stockLevels={stockLevels} consignes={consignes} />}
           {view === 'admin_prices' && currentUser.role === 'ADMIN' && <AdminPrices items={items} productSheets={productSheets} formats={formats} appConfig={appConfig} onSync={syncData} setProductSheets={setProductSheets} recipes={recipes} setRecipes={setRecipes} />}
-          {view === 'configuration' && <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={storages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} cocktailCategories={cocktailCategories} setCocktailCategories={setCocktailCategories} productTypes={productTypes} setProductTypes={setProductTypes} emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates} fullData={{items, storages, stockLevels}} roleProfiles={roleProfiles} setRoleProfiles={setRoleProfiles} />}
-          {view === 'connection_logs' && <ConnectionLogs logs={userLogs} />}
+          {view === 'configuration' && <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={storages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} cocktailCategories={cocktailCategories} setCocktailCategories={setCocktailCategories} productTypes={productTypes} setProductTypes={setProductTypes} emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates} fullData={{items, storages, stockLevels}} roleProfiles={roleProfiles} setRoleProfiles={setRoleProfiles} userLogs={userLogs} />}
       </main>
 
       {showAdminLogbook && currentUser && <AdminLogbook currentUser={currentUser} onSync={syncData} onClose={() => setShowAdminLogbook(false)} />}

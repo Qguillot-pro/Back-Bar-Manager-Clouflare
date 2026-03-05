@@ -8,6 +8,8 @@ import CocktailCategoriesConfig from './CocktailCategoriesConfig';
 import ImportData from './ImportData';
 import EmailConfig from './EmailConfig';
 import ProductTypesConfig from './ProductTypesConfig';
+import ConnectionLogs from './ConnectionLogs';
+import AdminLogbook from './AdminLogbook';
 
 interface ConfigProps {
   setItems: React.Dispatch<React.SetStateAction<StockItem[]>>;
@@ -43,15 +45,16 @@ interface ConfigProps {
   setProductTypes?: React.Dispatch<React.SetStateAction<ProductType[]>>;
   roleProfiles: any[];
   setRoleProfiles: React.Dispatch<React.SetStateAction<any[]>>;
+  userLogs: any[];
 }
 
 const Configuration: React.FC<ConfigProps> = ({ 
   setItems, setStorages, setFormats, storages, formats, priorities, setPriorities, consignes, setConsignes, items,
   categories, setCategories, users, setUsers, currentUser, dlcProfiles, setDlcProfiles, onSync, appConfig, setAppConfig,
   glassware = [], setGlassware, techniques = [], setTechniques, cocktailCategories = [], setCocktailCategories, fullData,
-  emailTemplates = [], setEmailTemplates, productTypes = [], setProductTypes, roleProfiles, setRoleProfiles
+  emailTemplates = [], setEmailTemplates, productTypes = [], setProductTypes, roleProfiles, setRoleProfiles, userLogs
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'profiles' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'product_types' | 'email' | 'backup' | 'credits' | 'import'>('general');
+  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'profiles' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'product_types' | 'email' | 'backup' | 'credits' | 'import' | 'logs' | 'admin_log'>('general');
   const [authorizedSubTabs, setAuthorizedSubTabs] = useState<Set<string>>(new Set());
   const [authPinInput, setAuthPinInput] = useState('');
   
@@ -347,6 +350,8 @@ const Configuration: React.FC<ConfigProps> = ({
             <button onClick={() => handleTabChange('dlc')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'dlc' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Configuration DLC</button>
             <button onClick={() => handleTabChange('email')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'email' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Emails & Commandes</button>
             <button onClick={() => handleTabChange('backup')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'backup' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Sauvegarde</button>
+            <button onClick={() => handleTabChange('logs')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'logs' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Logs Connexion</button>
+            <button onClick={() => handleTabChange('admin_log')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'admin_log' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Journal Admin</button>
             <button onClick={() => handleTabChange('credits')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'credits' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Crédits</button>
           </>
         )}
@@ -748,6 +753,16 @@ const Configuration: React.FC<ConfigProps> = ({
           </div>
       )}
 
+      {activeSubTab === 'logs' && (
+          <ConnectionLogs logs={userLogs} />
+      )}
+
+      {activeSubTab === 'admin_log' && (
+          <div className="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
+              <AdminLogbook currentUser={currentUser} onSync={onSync} onClose={() => setActiveSubTab('general')} isEmbedded={true} />
+          </div>
+      )}
+
       {/* CREDITS PAGE */}
       {activeSubTab === 'credits' && (
           <div className="max-w-2xl mx-auto bg-white p-12 rounded-[2.5rem] border shadow-sm text-center space-y-8">
@@ -769,6 +784,7 @@ const Configuration: React.FC<ConfigProps> = ({
 
               <div className="pt-8 border-t border-slate-100">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">© 2024 BarStock Pro</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Powered by Neon & Cloudflare</p>
               </div>
           </div>
       )}
