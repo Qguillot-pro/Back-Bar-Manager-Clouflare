@@ -182,6 +182,8 @@ const Configuration: React.FC<ConfigProps> = ({
     { id: 'articles', label: 'Articles & Prix' },
     { id: 'order', label: 'Commandes' },
     { id: 'dlc', label: 'DLC & Ouvertures' },
+    { id: 'admin_prices', label: 'Vérif. Prix & Marges' },
+    { id: 'consignes', label: 'Consignes Stock' },
     { id: 'history', label: 'Historique' },
     { id: 'config', label: 'Configuration' }
   ];

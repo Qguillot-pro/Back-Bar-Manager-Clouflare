@@ -52,10 +52,14 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
     const map = new Map<string, AggregatedNeed>();
 
-    // Itérer sur TOUS les items qui ont un profil DLC
+    // Itérer sur TOUS les items qui ont un profil DLC de type PRODUCTION
     items.forEach(item => {
         if (!item.dlcProfileId && !item.isDLC) return;
         const profile = item.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+        
+        // Uniquement les produits avec un profil de type PRODUCTION pour la mise en place bar
+        if (profile && profile.type !== 'PRODUCTION') return;
+        if (!profile && !item.isDLC) return; // Sécurité si pas de profil mais isDLC (devrait pas arriver avec la nouvelle logique)
 
         // Récupérer les consignes pour cet item
         const itemConsignes = consignes.filter(c => c.itemId === item.id);

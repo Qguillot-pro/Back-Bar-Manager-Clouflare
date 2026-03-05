@@ -23,6 +23,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
   
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
+  const [editIsNotOpened, setEditIsNotOpened] = useState(false);
 
   // Filters
   const [filterProduct, setFilterProduct] = useState('');
@@ -46,6 +47,10 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       const storage = storages.find(s => s.id === entry.storageId);
       const profile = item.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
       
+      // Uniquement les produits avec un profil de type OPENING pour le suivi des ouvertures
+      if (profile && profile.type !== 'OPENING') return null;
+      if (!profile && !item.isDLC) return null; // Sécurité
+
       const durationHours = profile?.durationHours || 24;
       
       let openedDate = new Date(entry.openedAt);
@@ -121,11 +126,12 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       }
   };
 
-  const handleOpenEdit = (dlcId: string, openedAt: string) => {
+  const handleOpenEdit = (dlcId: string, openedAt: string, isNotOpened?: boolean) => {
       setSelectedDlcId(dlcId);
       const d = new Date(openedAt);
       setEditDate(d.toISOString().split('T')[0]);
       setEditTime(d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+      setEditIsNotOpened(isNotOpened || false);
       setEditModalOpen(true);
   };
 
@@ -134,7 +140,11 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
           const dlc = dlcHistory.find(d => d.id === selectedDlcId);
           if (dlc) {
               const newDate = new Date(`${editDate}T${editTime}`);
-              onUpdateDlc({ ...dlc, openedAt: newDate.toISOString() });
+              onUpdateDlc({ 
+                  ...dlc, 
+                  openedAt: newDate.toISOString(),
+                  isNotOpened: editIsNotOpened
+              });
           }
           setEditModalOpen(false);
           setSelectedDlcId(null);
@@ -282,6 +292,16 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Heure</label>
                           <input type="time" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={editTime} onChange={e => setEditTime(e.target.value)} />
                       </div>
+                      <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                          <input 
+                            type="checkbox" 
+                            id="editIsNotOpened"
+                            className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
+                            checked={editIsNotOpened}
+                            onChange={e => setEditIsNotOpened(e.target.checked)}
+                          />
+                          <label htmlFor="editIsNotOpened" className="text-[10px] font-black text-slate-600 uppercase tracking-widest cursor-pointer">Produit non ouvert</label>
+                      </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-2">
                       <button onClick={() => setEditModalOpen(false)} className="py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Annuler</button>
@@ -393,7 +413,7 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                         )}
                         {userRole === 'ADMIN' && (
                             <button 
-                                onClick={() => handleOpenEdit(dlc.id, dlc.openedDate.toISOString())}
+                                onClick={() => handleOpenEdit(dlc.id, dlc.openedDate.toISOString(), dlc.isNotOpened)}
                                 className="p-3 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-2xl transition-all active:scale-90"
                                 title="Modifier la date"
                             >
