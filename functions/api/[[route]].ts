@@ -324,7 +324,20 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_ORDER': { const { id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, orderedAt, receivedAt } = payload; await pool.query(`INSERT INTO orders (id, item_id, quantity, initial_quantity, date, status, user_name, rupture_date, ordered_at, received_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, quantity = EXCLUDED.quantity, initial_quantity = EXCLUDED.initial_quantity, rupture_date = EXCLUDED.rupture_date, ordered_at = EXCLUDED.ordered_at, received_at = EXCLUDED.received_at`, [id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, orderedAt, receivedAt]); break; }
         case 'DELETE_ORDER': { await pool.query('DELETE FROM orders WHERE id = $1', [payload.id]); break; }
         case 'SAVE_UNFULFILLED_ORDER': { await pool.query(`INSERT INTO unfulfilled_orders (id, item_id, date, user_name, quantity) VALUES ($1, $2, $3, $4, $5)`, [payload.id, payload.itemId, payload.date, payload.userName, payload.quantity || 1]); break; }
-        case 'SAVE_DLC_HISTORY': { await pool.query(`INSERT INTO dlc_history (id, item_id, storage_id, opened_at, user_name) VALUES ($1, $2, $3, $4, $5)`, [payload.id, payload.itemId, payload.storageId, payload.openedAt, payload.userName]); break; }
+        case 'SAVE_DLC_HISTORY': { 
+            const { id, itemId, storageId, openedAt, userName, quantity, isNotOpened } = payload;
+            await pool.query(`
+                INSERT INTO dlc_history (id, item_id, storage_id, opened_at, user_name, quantity, is_not_opened) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (id) DO UPDATE SET 
+                storage_id = EXCLUDED.storage_id, 
+                opened_at = EXCLUDED.opened_at, 
+                user_name = EXCLUDED.user_name, 
+                quantity = EXCLUDED.quantity, 
+                is_not_opened = EXCLUDED.is_not_opened
+            `, [id, itemId, storageId, openedAt, userName, quantity || 1, isNotOpened || false]); 
+            break; 
+        }
         case 'DELETE_DLC_HISTORY': { await pool.query('DELETE FROM dlc_history WHERE id = $1', [payload.id]); break; }
         case 'SAVE_LOSS': { await pool.query(`INSERT INTO losses (id, item_id, opened_at, discarded_at, quantity, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [payload.id, payload.itemId, payload.openedAt, payload.discardedAt, payload.quantity, payload.userName]); break; }
         case 'SAVE_DAILY_STOCK_ALERT': { await pool.query(`INSERT INTO daily_stock_alerts (id, date, type, item_id, quantity, consigne) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.date, payload.type, payload.itemId, payload.quantity, payload.consigne]); break; }

@@ -15,7 +15,7 @@ interface BarPrepProps {
   dlcHistory?: DLCHistory[];
   onUpdateDlc?: (dlc: DLCHistory) => void;
   onDeleteDlc?: (id: string, qtyLostPercent: number) => void;
-  onAddDlc?: (itemId: string, storageId: string, openedAt?: string, isNotOpened?: boolean) => void;
+  onAddDlc?: (itemId: string, storageId: string, openedAt?: string, isNotOpened?: boolean, quantity?: number) => void;
   userRole?: string;
 }
 

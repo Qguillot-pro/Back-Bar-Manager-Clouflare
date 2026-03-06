@@ -665,15 +665,24 @@ const App: React.FC = () => {
       syncData('SAVE_DLC_HISTORY', dlc);
   };
 
-  const handleAddDlc = (itemId: string, storageId: string, openedAt?: string, isNotOpened: boolean = false) => {
-      const existing = dlcHistory.find(h => h.itemId === itemId && h.storageId === storageId);
+  const handleAddDlc = (itemId: string, storageId: string, openedAt?: string, isNotOpened: boolean = false, quantity: number = 1) => {
+      const item = items.find(i => i.id === itemId);
+      const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+      
+      // Only merge if it's NOT a production item and an exact match exists
+      // For production (Bar Prep), we always want separate batches of 1 (or the specified quantity)
+      const existing = (profile?.type !== 'PRODUCTION') 
+          ? dlcHistory.find(h => h.itemId === itemId && h.storageId === storageId)
+          : null;
+
       if (existing) {
           const updated: DLCHistory = { 
               ...existing, 
               storageId, 
               openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
               userName: currentUser?.name,
-              isNotOpened
+              isNotOpened,
+              quantity: (existing.quantity || 1) + quantity
           };
           setDlcHistory(prev => prev.map(h => h.id === existing.id ? updated : h));
           syncData('SAVE_DLC_HISTORY', updated);
@@ -684,7 +693,8 @@ const App: React.FC = () => {
               storageId,
               openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
               userName: currentUser?.name,
-              isNotOpened
+              isNotOpened,
+              quantity
           };
           setDlcHistory(prev => [dlc, ...prev]);
           syncData('SAVE_DLC_HISTORY', dlc);
