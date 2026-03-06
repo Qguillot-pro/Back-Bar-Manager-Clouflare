@@ -115,15 +115,14 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
 
         let allOk = true;
         itemConsignes.forEach(c => {
-            const level = stockLevels.find(l => l.itemId === c.itemId && l.storageId === c.storageId);
-            const currentQty = level?.currentQuantity || 0;
+            const batches = itemDlcs.filter(h => h.storageId === c.storageId);
+            const currentQty = batches.reduce((sum, b) => sum + (b.quantity || 1), 0);
             const minQty = c.minQuantity;
             const gap = Math.max(0, minQty - currentQty);
             if (gap > 0) allOk = false;
             
             const storage = storages.find(s => s.id === c.storageId);
             const priority = priorities.find(p => p.itemId === item.id && p.storageId === c.storageId)?.priority || 0;
-            const batches = itemDlcs.filter(h => h.storageId === c.storageId);
 
             if (storage) {
                 if (!map.has(item.id)) {
@@ -141,7 +140,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
     });
 
     const list = Array.from(map.values());
-    list.forEach(agg => agg.details.sort((a,b) => b.priority - a.priority));
+    list.forEach(agg => agg.details.sort((a,b) => b.priority - a.priority)); // Priorité la plus faible (grand nombre) en haut
     return list.sort((a, b) => a.item.name.localeCompare(b.item.name));
   }, [consignes, items, stockLevels, storages, priorities, dlcProfiles, dlcHistory]);
 
@@ -392,7 +391,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                                               return (
                                                   <div key={batch.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${isExpired ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-white border-slate-200 text-slate-700'}`}>
                                                       <div className="flex flex-col">
-                                                          <span className="text-[10px] font-black uppercase tracking-tighter">Lot: {batch.quantity || 1}</span>
+                                                          <span className="text-[10px] font-black uppercase tracking-tighter bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 mb-0.5">LOT: {batch.quantity || 1}</span>
                                                           <span className="text-[8px] font-bold opacity-60">Exp: {expiry.toLocaleDateString()}</span>
                                                       </div>
                                                       <div className="flex gap-1 ml-2">
@@ -402,7 +401,9 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                                                               defaultValue=""
                                                           >
                                                               <option value="" disabled>Transférer...</option>
-                                                              {storages.filter(s => s.id !== batch.storageId).map(s => (
+                                                              {storages
+                                                                .filter(s => s.id !== batch.storageId && consignes.some(c => c.itemId === batch.itemId && c.storageId === s.id))
+                                                                .map(s => (
                                                                   <option key={s.id} value={s.id}>{s.name}</option>
                                                               ))}
                                                           </select>
