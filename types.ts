@@ -39,6 +39,7 @@ export interface AppConfig {
   mealReminderTimes?: string[]; // ["10:00", "17:00"]
   barDayStart?: string; // "04:00"
   emailSender?: string;
+  tvaRates?: number[]; // [5.5, 10, 20]
   // Stockage des configurations de cycles en JSON string dans la DB, mais typé ici si besoin
   [key: string]: any; 
 }
@@ -229,8 +230,9 @@ export interface Recipe {
   history?: string; 
   ingredients: RecipeIngredient[];
   decoration?: string;
-  sellingPrice?: number;
-  costPrice?: number; 
+  sellingPrice?: number; // TTC
+  costPrice?: number; // HT
+  tvaRate?: number;
   status: 'DRAFT' | 'VALIDATED';
   createdBy?: string;
   createdAt: string;
@@ -356,6 +358,7 @@ export interface ProductSheet {
     status: 'DRAFT' | 'VALIDATED';
     updatedAt: string;
     salesFormat?: number; // Format de vente (valeur)
-    actualPrice?: number; // Prix de vente actuel
+    actualPrice?: number; // Prix de vente actuel TTC
     marginRate?: number; // Taux de marge spécifique
+    tvaRate?: number; // Taux de TVA
 }

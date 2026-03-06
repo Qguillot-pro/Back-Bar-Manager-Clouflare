@@ -47,6 +47,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     max: 6 
   });
 
+  // Migration V1.4: Add tva_rate to recipes if missing
+  try {
+      await pool.query('ALTER TABLE recipes ADD COLUMN IF NOT EXISTS tva_rate NUMERIC');
+  } catch (e) {
+      console.log("Migration tva_rate recipes skipped or already done");
+  }
+
   try {
     const url = new URL(request.url);
     const path = url.pathname; 
@@ -98,6 +105,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             }
             if (row.key === 'bar_day_start') configMap.barDayStart = row.value;
             if (row.key === 'email_sender') configMap.emailSender = row.value;
+            if (row.key === 'tva_rates') {
+                try {
+                    configMap.tvaRates = JSON.parse(row.value);
+                } catch (e) {
+                    configMap.tvaRates = [5.5, 10, 20];
+                }
+            }
         });
 
         // Les configurations de cycles
@@ -211,6 +225,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         if (rawData.recipes) responseBody.recipes = rawData.recipes.map((r: any) => ({
             id: r.id, name: r.name, category: r.category, glasswareId: r.glassware_id, technique: r.technique, technicalDetails: r.technical_details, description: r.description,
             history: r.history, decoration: r.decoration, sellingPrice: parseFloat(r.selling_price || '0'), costPrice: parseFloat(r.cost_price || '0'),
+            tvaRate: r.tva_rate,
             status: r.status, createdBy: r.created_by, createdAt: r.created_at, ingredients: r.ingredients
         }));
         // UPDATE: Product Sheets with new fields
@@ -225,7 +240,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 glasswareIds: customFieldsObj['glasswareIds'] || [],
                 salesFormat: customFieldsObj['salesFormat'] || 0,
                 actualPrice: customFieldsObj['actualPrice'] || 0,
-                marginRate: customFieldsObj['marginRate']
+                marginRate: customFieldsObj['marginRate'],
+                tvaRate: customFieldsObj['tvaRate']
             };
         });
         // NEW: Product Types
@@ -354,7 +370,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'DELETE_TECHNIQUE': { await pool.query('DELETE FROM techniques WHERE id = $1', [payload.id]); break; }
         case 'SAVE_COCKTAIL_CATEGORY': { await pool.query(`INSERT INTO cocktail_categories (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [payload.id, payload.name]); break; }
         case 'DELETE_COCKTAIL_CATEGORY': { await pool.query('DELETE FROM cocktail_categories WHERE id = $1', [payload.id]); break; }
-        case 'SAVE_RECIPE': { await pool.query(`INSERT INTO recipes (id, name, category, glassware_id, technique, technical_details, description, history, decoration, selling_price, cost_price, status, created_by, created_at, ingredients) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category, glassware_id = EXCLUDED.glassware_id, technique = EXCLUDED.technique, technical_details = EXCLUDED.technical_details, description = EXCLUDED.description, history = EXCLUDED.history, decoration = EXCLUDED.decoration, selling_price = EXCLUDED.selling_price, cost_price = EXCLUDED.cost_price, status = EXCLUDED.status, ingredients = EXCLUDED.ingredients`, [payload.id, payload.name, payload.category, payload.glasswareId, payload.technique, payload.technicalDetails, payload.description, payload.history, payload.decoration, payload.sellingPrice, payload.costPrice, payload.status, payload.createdBy, payload.createdAt, JSON.stringify(payload.ingredients)]); break; }
+        case 'SAVE_RECIPE': { const { id, name, category, glasswareId, technique, technicalDetails, description, history, decoration, sellingPrice, costPrice, status, createdBy, createdAt, ingredients, tvaRate } = payload; await pool.query(`INSERT INTO recipes (id, name, category, glassware_id, technique, technical_details, description, history, decoration, selling_price, cost_price, status, created_by, created_at, ingredients, tva_rate) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category, glassware_id = EXCLUDED.glassware_id, technique = EXCLUDED.technique, technical_details = EXCLUDED.technical_details, description = EXCLUDED.description, history = EXCLUDED.history, decoration = EXCLUDED.decoration, selling_price = EXCLUDED.selling_price, cost_price = EXCLUDED.cost_price, status = EXCLUDED.status, ingredients = EXCLUDED.ingredients, tva_rate = EXCLUDED.tva_rate`, [id, name, category, glasswareId, technique, technicalDetails, description, history, decoration, sellingPrice, costPrice, status, createdBy, createdAt, JSON.stringify(ingredients), tvaRate]); break; }
         case 'DELETE_RECIPE': { await pool.query('DELETE FROM recipes WHERE id = $1', [payload.id]); break; }
         case 'VALIDATE_RECIPE': { await pool.query('UPDATE recipes SET status = $2 WHERE id = $1', [payload.id, 'VALIDATED']); break; }
         case 'SAVE_EMAIL_TEMPLATE': { await pool.query(`INSERT INTO email_templates (id, name, subject, body) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subject = EXCLUDED.subject, body = EXCLUDED.body`, [payload.id, payload.name, payload.subject, payload.body]); break; }
@@ -369,7 +385,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'SAVE_PRODUCT_SHEET': {
-            const { id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status, glasswareIds, salesFormat, actualPrice, marginRate } = payload;
+            const { id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status, glasswareIds, salesFormat, actualPrice, marginRate, tvaRate } = payload;
             
             // Merge new fields into customFields
             let fieldsObj: any = {};
@@ -381,6 +397,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             if (salesFormat !== undefined) fieldsObj['salesFormat'] = salesFormat;
             if (actualPrice !== undefined) fieldsObj['actualPrice'] = actualPrice;
             if (marginRate !== undefined) fieldsObj['marginRate'] = marginRate;
+            if (tvaRate !== undefined) fieldsObj['tvaRate'] = tvaRate;
             
             const finalCustomFields = JSON.stringify(fieldsObj);
 
@@ -405,6 +422,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'DELETE_PRODUCT_TYPE': {
             await pool.query('DELETE FROM product_types WHERE id = $1', [payload.id]);
+            break;
+        }
+        case 'SAVE_DLC_TRANSFER': {
+            const { batchId, targetStorageId, newQuantity } = payload;
+            await pool.query('UPDATE dlc_history SET storage_id = $1, quantity = $2 WHERE id = $3', [targetStorageId, newQuantity, batchId]);
             break;
         }
 

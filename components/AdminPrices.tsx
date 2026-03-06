@@ -26,35 +26,40 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
             const format = formats.find(f => f.id === item.formatId);
             const formatValue = format?.value || 1;
             
+            const tvaRate = sheet.tvaRate !== undefined ? sheet.tvaRate : 20;
             const marginRate = sheet.marginRate !== undefined ? sheet.marginRate : defaultMargin;
             const salesFormat = sheet.salesFormat || 0;
-            const actualPrice = sheet.actualPrice || 0;
+            const actualPriceTTC = sheet.actualPrice || 0;
 
-            const cost = (item.pricePerUnit / formatValue) * salesFormat;
-            const recommendedPrice = marginRate < 100 ? cost / (1 - marginRate / 100) : 0;
-            const actualMargin = actualPrice > 0 ? ((actualPrice - cost) / actualPrice) * 100 : 0;
-            const isRespected = actualPrice >= recommendedPrice;
+            const costHT = (item.pricePerUnit / formatValue) * salesFormat;
+            const recommendedPriceHT = marginRate < 100 ? costHT / (1 - marginRate / 100) : 0;
+            const recommendedPriceTTC = recommendedPriceHT * (1 + tvaRate / 100);
+            
+            const actualPriceHT = actualPriceTTC / (1 + tvaRate / 100);
+            const actualMargin = actualPriceHT > 0 ? ((actualPriceHT - costHT) / actualPriceHT) * 100 : 0;
+            const isRespected = actualPriceTTC >= recommendedPriceTTC;
 
             return {
                 type: 'PRODUCT',
                 id: sheet.id,
                 name: item.name,
                 category: item.category,
-                buyPrice: item.pricePerUnit,
+                buyPriceHT: item.pricePerUnit,
                 refFormat: formatValue,
                 salesFormat,
                 marginRate,
-                recommendedPrice,
-                actualPrice,
+                tvaRate,
+                recommendedPriceTTC,
+                actualPriceTTC,
                 actualMargin,
                 isRespected,
-                cost
+                costHT
             };
         }).filter(Boolean);
 
         const cocktailData = recipes.map(recipe => {
             // Calculate cost from ingredients
-            const cost = recipe.ingredients.reduce((acc, ing) => {
+            const costHT = recipe.ingredients.reduce((acc, ing) => {
                 if (!ing.itemId) return acc;
                 const item = items.find(i => i.id === ing.itemId);
                 if (!item || !item.pricePerUnit) return acc;
@@ -67,26 +72,32 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                 return acc + (item.pricePerUnit / divider) * qtyInCl;
             }, 0);
 
-            const actualPrice = recipe.sellingPrice || 0;
+            const tvaRate = recipe.tvaRate !== undefined ? recipe.tvaRate : 20;
+            const actualPriceTTC = recipe.sellingPrice || 0;
             const marginRate = defaultMargin; // Cocktails use default margin for recommendation
-            const recommendedPrice = marginRate < 100 ? cost / (1 - marginRate / 100) : 0;
-            const actualMargin = actualPrice > 0 ? ((actualPrice - cost) / actualPrice) * 100 : 0;
-            const isRespected = actualPrice >= recommendedPrice;
+            
+            const recommendedPriceHT = marginRate < 100 ? costHT / (1 - marginRate / 100) : 0;
+            const recommendedPriceTTC = recommendedPriceHT * (1 + tvaRate / 100);
+            
+            const actualPriceHT = actualPriceTTC / (1 + tvaRate / 100);
+            const actualMargin = actualPriceHT > 0 ? ((actualPriceHT - costHT) / actualPriceHT) * 100 : 0;
+            const isRespected = actualPriceTTC >= recommendedPriceTTC;
 
             return {
                 type: 'COCKTAIL',
                 id: recipe.id,
                 name: recipe.name,
                 category: 'Cocktail',
-                buyPrice: cost, // For cocktails, buyPrice is the total cost
+                buyPriceHT: costHT, // For cocktails, buyPrice is the total cost
                 refFormat: 1,
                 salesFormat: 1,
                 marginRate,
-                recommendedPrice,
-                actualPrice,
+                tvaRate,
+                recommendedPriceTTC,
+                actualPriceTTC,
                 actualMargin,
                 isRespected,
-                cost
+                costHT
             };
         });
 
@@ -113,7 +124,14 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
         } else {
             const recipe = recipes.find(r => r.id === id);
             if (!recipe) return;
-            const updatedRecipe = { ...recipe, [field === 'actualPrice' ? 'sellingPrice' : field]: value };
+            let updatedRecipe: any;
+            if (field === 'actualPrice') {
+                updatedRecipe = { ...recipe, sellingPrice: value };
+            } else if (field === 'tvaRate') {
+                updatedRecipe = { ...recipe, tvaRate: value };
+            } else {
+                updatedRecipe = { ...recipe, [field]: value };
+            }
             setRecipes(prev => prev.map(r => r.id === id ? updatedRecipe : r));
             onSync('SAVE_RECIPE', updatedRecipe);
         }
@@ -161,8 +179,9 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                                 <th className="p-4 font-bold text-right">Format Réf.</th>
                                 <th className="p-4 font-bold text-right">Format Vente</th>
                                 <th className="p-4 font-bold text-right">Taux Marge (%)</th>
-                                <th className="p-4 font-bold text-right">Prix Conseillé (€HT)</th>
-                                <th className="p-4 font-bold text-right">Prix Actuel (€HT)</th>
+                                <th className="p-4 font-bold text-right">TVA (%)</th>
+                                <th className="p-4 font-bold text-right">Prix Conseillé (€TTC)</th>
+                                <th className="p-4 font-bold text-right">Prix Actuel (€TTC)</th>
                                 <th className="p-4 font-bold text-center">Statut</th>
                             </tr>
                         </thead>
@@ -174,7 +193,7 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                                         <div className="text-xs text-slate-500">{row.category}</div>
                                     </td>
                                     <td className="p-4 text-right font-mono text-sm text-slate-600">
-                                        {row.buyPrice.toFixed(2)} €
+                                        {row.buyPriceHT.toFixed(2)} €
                                     </td>
                                     <td className="p-4 text-right font-mono text-sm text-slate-600">
                                         {row.refFormat || '-'}
@@ -204,21 +223,32 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                                             disabled={row.type === 'COCKTAIL'}
                                         />
                                     </td>
+                                    <td className="p-4 text-right">
+                                        <select
+                                            value={row.tvaRate}
+                                            onChange={(e) => handleUpdate(row.id, row.type, 'tvaRate', parseFloat(e.target.value))}
+                                            className="p-1 border border-slate-200 rounded bg-white text-sm font-mono"
+                                        >
+                                            {(appConfig.tvaRates || [5.5, 10, 20]).map(rate => (
+                                                <option key={rate} value={rate}>{rate}%</option>
+                                            ))}
+                                        </select>
+                                    </td>
                                     <td className="p-4 text-right font-mono font-bold text-slate-900">
-                                        {row.recommendedPrice > 0 ? `${row.recommendedPrice.toFixed(2)} €` : '-'}
+                                        {row.recommendedPriceTTC > 0 ? `${row.recommendedPriceTTC.toFixed(2)} €` : '-'}
                                     </td>
                                     <td className="p-4 text-right">
                                         <input 
                                             type="number" 
-                                            value={row.actualPrice || ''} 
+                                            value={row.actualPriceTTC || ''} 
                                             onChange={(e) => handleUpdate(row.id, row.type, 'actualPrice', parseFloat(e.target.value) || 0)}
-                                            className={`w-24 text-right p-1 border rounded text-sm font-mono font-bold ${row.actualPrice > 0 ? (row.isRespected ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700') : 'bg-white border-slate-200 text-slate-900'}`}
+                                            className={`w-24 text-right p-1 border rounded text-sm font-mono font-bold ${row.actualPriceTTC > 0 ? (row.isRespected ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700') : 'bg-white border-slate-200 text-slate-900'}`}
                                             placeholder="0.00"
                                             step="0.1"
                                         />
                                     </td>
                                     <td className="p-4 text-center">
-                                        {row.actualPrice > 0 && row.recommendedPrice > 0 ? (
+                                        {row.actualPriceTTC > 0 && row.recommendedPriceTTC > 0 ? (
                                             row.isRespected ? (
                                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
                                                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>

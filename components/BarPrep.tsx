@@ -15,6 +15,7 @@ interface BarPrepProps {
   dlcHistory?: DLCHistory[];
   onUpdateDlc?: (dlc: DLCHistory) => void;
   onDeleteDlc?: (id: string, qtyLostPercent: number) => void;
+  onAddDlc?: (itemId: string, storageId: string, openedAt?: string, isNotOpened?: boolean) => void;
   userRole?: string;
 }
 
@@ -36,7 +37,7 @@ interface AggregatedNeed {
   isComplete: boolean;
 }
 
-const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, dlcProfiles, dlcHistory = [], onUpdateDlc, onDeleteDlc, userRole }) => {
+const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consignes, transactions, priorities, onAction, categories, dlcProfiles, dlcHistory = [], onUpdateDlc, onDeleteDlc, onAddDlc, userRole }) => {
   const [selectedDetail, setSelectedDetail] = useState<{ item: StockItem, detail: NeedDetail } | null>(null);
   const [productionQty, setProductionQty] = useState<string>('0');
   const [editingDlc, setEditingDlc] = useState<DLCHistory | null>(null);
@@ -48,6 +49,29 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
   const [percentLost, setPercentLost] = useState<number>(0);
 
   const [visualCheck, setVisualCheck] = useState<Record<string, boolean>>({});
+
+  const handleTransferBatch = (batch: DLCHistory, targetStorageId: string) => {
+      const batchQty = batch.quantity || 1;
+      if (batchQty > 1) {
+          const totalToTransfer = Math.floor(batchQty);
+          const remainingDecimal = batchQty - totalToTransfer;
+
+          // Update current batch to remaining decimal (if any) or delete if 0
+          if (remainingDecimal > 0) {
+              onUpdateDlc?.({ ...batch, quantity: remainingDecimal });
+          } else {
+              onDeleteDlc?.(batch.id, 0);
+          }
+
+          // Create multiple batches of 1 in target
+          for (let i = 0; i < totalToTransfer; i++) {
+              onAddDlc?.(batch.itemId, targetStorageId, batch.openedAt, batch.isNotOpened);
+          }
+      } else {
+          // Just transfer the whole batch
+          onUpdateDlc?.({ ...batch, storageId: targetStorageId });
+      }
+  };
 
   const aggregatedNeeds = useMemo<AggregatedNeed[]>(() => {
     const map = new Map<string, AggregatedNeed>();
@@ -209,11 +233,35 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Quantité (Lot)</label>
                           <input 
                               type="number" 
-                              step="0.01"
+                              step="0.1"
+                              min="0"
+                              max="1"
                               className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 font-bold text-slate-900 outline-none"
                               value={editQuantity}
-                              onChange={e => setEditQuantity(e.target.value)}
+                              onChange={e => {
+                                  const val = parseFloat(e.target.value);
+                                  // Check if it's the lowest priority storage
+                                  const agg = aggregatedNeeds.find(a => a.item.id === editingDlc.itemId);
+                                  const lowestPrioStorageId = agg?.details[agg.details.length - 1]?.storage.id;
+                                  const isLowestPrio = editingDlc.storageId === lowestPrioStorageId;
+
+                                  if (isLowestPrio) {
+                                      setEditQuantity(e.target.value);
+                                  } else {
+                                      // Only allow integers for non-lowest priority
+                                      setEditQuantity(Math.round(val).toString());
+                                  }
+                              }}
                           />
+                          <p className="text-[8px] text-slate-400 mt-1 uppercase font-bold">
+                              {(() => {
+                                  const agg = aggregatedNeeds.find(a => a.item.id === editingDlc.itemId);
+                                  const lowestPrioStorageId = agg?.details[agg.details.length - 1]?.storage.id;
+                                  return editingDlc.storageId === lowestPrioStorageId 
+                                      ? "Décimales (0.1 - 0.9) autorisées pour cet espace (priorité faible)"
+                                      : "Entiers uniquement pour cet espace";
+                              })()}
+                          </p>
                       </div>
                       <div className="flex gap-3 pt-4">
                           <button onClick={() => setEditingDlc(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200">Annuler</button>
@@ -348,6 +396,16 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
                                                           <span className="text-[8px] font-bold opacity-60">Exp: {expiry.toLocaleDateString()}</span>
                                                       </div>
                                                       <div className="flex gap-1 ml-2">
+                                                          <select 
+                                                              className="text-[8px] border border-slate-200 rounded p-0.5"
+                                                              onChange={(e) => handleTransferBatch(batch, e.target.value)}
+                                                              defaultValue=""
+                                                          >
+                                                              <option value="" disabled>Transférer...</option>
+                                                              {storages.filter(s => s.id !== batch.storageId).map(s => (
+                                                                  <option key={s.id} value={s.id}>{s.name}</option>
+                                                              ))}
+                                                          </select>
                                                           <button 
                                                             onClick={() => {
                                                                 setEditingDlc(batch);

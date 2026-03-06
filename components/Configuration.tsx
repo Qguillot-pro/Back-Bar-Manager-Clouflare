@@ -433,6 +433,46 @@ const Configuration: React.FC<ConfigProps> = ({
                     </div>
                     <p className="text-[9px] text-slate-400 mt-2 ml-1">Une notification sera envoyée aux heures programmées pour rappeler de réserver les repas.</p>
                 </div>
+
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                    <h4 className="font-black text-xs uppercase text-slate-500 tracking-widest mb-4">Profils de Taux TVA (%)</h4>
+                    <div className="flex flex-wrap gap-2">
+                        {(appConfig.tvaRates || [5.5, 10, 20]).map((rate, idx) => (
+                            <div key={idx} className="flex items-center bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 gap-2">
+                                <span className="font-black text-indigo-600 text-xs">{rate}%</span>
+                                <button 
+                                    onClick={() => {
+                                        const rates = (appConfig.tvaRates || [5.5, 10, 20]).filter((_, i) => i !== idx);
+                                        handleConfigChange('tvaRates', rates);
+                                    }}
+                                    className="text-indigo-300 hover:text-indigo-600"
+                                >
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+                        ))}
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+                            <input 
+                                type="number" 
+                                step="0.1"
+                                className="w-16 bg-transparent outline-none font-bold text-xs text-slate-600 text-center"
+                                placeholder="Taux..."
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        const val = parseFloat((e.target as HTMLInputElement).value);
+                                        if (!isNaN(val)) {
+                                            const rates = [...(appConfig.tvaRates || [5.5, 10, 20]), val].sort((a,b) => a-b);
+                                            handleConfigChange('tvaRates', rates);
+                                            (e.target as HTMLInputElement).value = '';
+                                        }
+                                    }
+                                }}
+                            />
+                            <span className="text-slate-400 font-bold text-xs">%</span>
+                        </div>
+                    </div>
+                    <p className="text-[9px] text-slate-400 mt-2 ml-1">Appuyez sur Entrée pour ajouter un nouveau taux de TVA.</p>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
