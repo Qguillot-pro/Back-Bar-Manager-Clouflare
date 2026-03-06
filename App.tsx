@@ -932,7 +932,7 @@ const App: React.FC = () => {
                   syncData('SAVE_ORDER', order); 
               }
           }} formats={formats} events={events} emailTemplates={emailTemplates} />}
-          {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={storages} unfulfilledOrders={unfulfilledOrders} formats={formats} losses={losses} dailyStockAlerts={dailyAlerts} appConfig={appConfig} onUpdateOrderQuantity={(ids: string[], q: number) => { ids.forEach(id => { const o = orders.find(ord => ord.id === id); if (o) { const updated = { ...o, status: 'RECEIVED' as const, receivedAt: new Date().toISOString(), quantity: q }; setOrders(p => p.map(x => x.id === id ? updated : x)); syncData('SAVE_ORDER', updated); } }); }} />}
+          {view === 'history' && <History transactions={transactions} orders={orders} items={items} storages={storages} unfulfilledOrders={unfulfilledOrders} formats={formats} losses={losses} dailyStockAlerts={dailyAlerts} appConfig={appConfig} onDeleteDailyAlert={(id) => { setDailyAlerts(prev => prev.filter(a => a.id !== id)); syncData('DELETE_DAILY_STOCK_ALERT', { id }); }} onUpdateOrderQuantity={(ids: string[], q: number) => { ids.forEach(id => { const o = orders.find(ord => ord.id === id); if (o) { const updated = { ...o, status: 'RECEIVED' as const, receivedAt: new Date().toISOString(), quantity: q }; setOrders(p => p.map(x => x.id === id ? updated : x)); syncData('SAVE_ORDER', updated); } }); }} />}
           {view === 'dlc_tracking' && (
             <DLCView 
               items={items} 

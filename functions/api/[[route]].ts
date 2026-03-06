@@ -339,6 +339,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break; 
         }
         case 'DELETE_DLC_HISTORY': { await pool.query('DELETE FROM dlc_history WHERE id = $1', [payload.id]); break; }
+        case 'DELETE_DAILY_STOCK_ALERT': { await pool.query('DELETE FROM daily_stock_alerts WHERE id = $1', [payload.id]); break; }
         case 'SAVE_LOSS': { await pool.query(`INSERT INTO losses (id, item_id, opened_at, discarded_at, quantity, user_name) VALUES ($1, $2, $3, $4, $5, $6)`, [payload.id, payload.itemId, payload.openedAt, payload.discardedAt, payload.quantity, payload.userName]); break; }
         case 'SAVE_DAILY_STOCK_ALERT': { await pool.query(`INSERT INTO daily_stock_alerts (id, date, type, item_id, quantity, consigne) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.date, payload.type, payload.itemId, payload.quantity, payload.consigne]); break; }
         case 'SAVE_USER': { await pool.query(`INSERT INTO users (id, name, role, pin, show_in_meal_planning, profile_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, pin = EXCLUDED.pin, show_in_meal_planning = EXCLUDED.show_in_meal_planning, profile_id = EXCLUDED.profile_id`, [payload.id, payload.name, payload.role, payload.pin, payload.showInMealPlanning, payload.profileId]); break; }

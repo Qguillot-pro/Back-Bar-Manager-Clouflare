@@ -37,7 +37,10 @@ const getBarDateStr = (d: Date = new Date(), startTime: string = '04:00') => {
     if (shift.getHours() < h || (shift.getHours() === h && shift.getMinutes() < m)) {
         shift.setDate(shift.getDate() - 1);
     }
-    return shift.toISOString().split('T')[0];
+    const y = shift.getFullYear();
+    const mm = String(shift.getMonth() + 1).padStart(2, '0');
+    const dd = String(shift.getDate()).padStart(2, '0');
+    return `${y}-${mm}-${dd}`;
 };
 
 const toLocalISOString = (dateStr: string) => {
@@ -533,10 +536,17 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 
   const weekDays = useMemo(() => {
       const today = new Date();
-      const currentDay = today.getDay(); // 0=Sun, 1=Mon...
-      const diff = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1) + (currentWeekOffset * 7); // Adjust to get Monday + Offset
+      // Get the day of the week (0-6), where 0 is Sunday
+      const day = today.getDay();
+      // Calculate how many days to subtract to get to Monday (1)
+      // If today is Sunday (0), we want to go back 6 days.
+      // If today is Monday (1), we want to go back 0 days.
+      const diffToMonday = (day === 0 ? 6 : day - 1);
       
-      const monday = new Date(today.setDate(diff));
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - diffToMonday + (currentWeekOffset * 7));
+      monday.setHours(0, 0, 0, 0);
+
       const days = [];
       for (let i = 0; i < 7; i++) {
           const d = new Date(monday);
@@ -546,7 +556,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       return days;
   }, [currentWeekOffset]);
 
-  const daysLabels = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+  const daysLabels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20 relative">

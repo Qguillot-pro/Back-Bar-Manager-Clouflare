@@ -9,6 +9,7 @@ interface HistoryProps {
   storages: StorageSpace[];
   unfulfilledOrders: UnfulfilledOrder[];
   onUpdateOrderQuantity?: (orderIds: string[], newQuantity: number) => void;
+  onDeleteDailyAlert?: (id: string) => void;
   formats: Format[];
   losses?: Loss[];
   dailyStockAlerts?: DailyAlert[];
@@ -18,7 +19,7 @@ interface HistoryProps {
 type PeriodFilter = 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
 type Tab = 'MOVEMENTS' | 'LOSSES' | 'CLIENT_RUPTURE' | 'STOCK_TENSION' | 'STOCK_RUPTURE' | 'RECEIVED';
 
-const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, formats = [], losses = [], dailyStockAlerts = [], appConfig }) => {
+const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, onDeleteDailyAlert, formats = [], losses = [], dailyStockAlerts = [], appConfig }) => {
   const [activeTab, setActiveTab] = useState<Tab>('MOVEMENTS');
   const [validatedGroups, setValidatedGroups] = useState<Set<string>>(new Set());
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('MONTH');
@@ -28,15 +29,13 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
   const [selectedWeek, setSelectedWeek] = useState<string>(''); 
   const [selectedDay, setSelectedDay] = useState<string>(new Date().toISOString().split('T')[0]); 
 
-  const [movementTypeFilter, setMovementTypeFilter] = useState<'ALL' | 'IN' | 'OUT'>('ALL');
+  const [movementTypeFilter, setMovementTypeFilter] = useState<'ALL' | 'IN' | 'OUT' | 'CAVE_IN'>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
 
   // Set default filters based on active tab
   useEffect(() => {
-      if (activeTab === 'LOSSES' || activeTab === 'CLIENT_RUPTURE') {
+      if (activeTab === 'LOSSES' || activeTab === 'CLIENT_RUPTURE' || activeTab === 'RECEIVED') {
           setPeriodFilter('MONTH');
-      } else if (activeTab === 'RECEIVED') {
-          setPeriodFilter('WEEK');
       }
   }, [activeTab]);
 
@@ -123,7 +122,9 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           case 'MOVEMENTS':
               return transactions.filter(t => {
                   if (!checkDateInFilter(t.date)) return false;
-                  if (movementTypeFilter !== 'ALL' && t.type !== movementTypeFilter) return false;
+                  if (movementTypeFilter === 'IN' && t.type !== 'IN') return false;
+                  if (movementTypeFilter === 'OUT' && t.type !== 'OUT') return false;
+                  if (movementTypeFilter === 'CAVE_IN' && (!t.isCaveTransfer || t.type !== 'IN')) return false;
                   if (categoryFilter !== 'ALL') {
                       const item = items.find(i => i.id === t.itemId);
                       if (item?.category !== categoryFilter) return false;
@@ -131,9 +132,9 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                   return true;
               }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           case 'LOSSES':
-              return losses.filter(l => checkDateInFilter(l.discardedAt));
+              return losses.filter(l => l.quantity > 0 && checkDateInFilter(l.discardedAt));
           case 'CLIENT_RUPTURE':
-              return orders.filter(o => o.ruptureDate && checkDateInFilter(o.ruptureDate));
+              return unfulfilledOrders.filter(u => checkDateInFilter(u.date));
           case 'STOCK_TENSION':
               return dailyStockAlerts.filter(a => a.type === 'TENSION' && checkDateInFilter(a.date, true));
           case 'STOCK_RUPTURE':
@@ -155,7 +156,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           const item = items.find(i => i.id === itemId);
           if (!item) return;
 
-          const groupKey = activeTab === 'MOVEMENTS' ? `${itemId}_${entry.type}` : itemId;
+          const groupKey = activeTab === 'MOVEMENTS' ? `${itemId}_${entry.type}_${entry.isCaveTransfer ? 'cave' : ''}` : itemId;
 
           if (!groups[groupKey]) {
               groups[groupKey] = { item, quantity: 0, count: 0, dates: [], type: entry.type };
@@ -163,7 +164,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
 
           let qty = 0;
           if (activeTab === 'LOSSES') qty = entry.quantity; 
-          else if (activeTab === 'CLIENT_RUPTURE') qty = 1; 
+          else if (activeTab === 'CLIENT_RUPTURE') qty = entry.quantity || 1; 
           else if (activeTab === 'STOCK_TENSION' || activeTab === 'STOCK_RUPTURE') qty = 1; 
           else if (activeTab === 'RECEIVED') qty = entry.quantity;
           else if (activeTab === 'MOVEMENTS') qty = entry.quantity;
@@ -192,7 +193,7 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
           csvContent += "Produit;Quantité Totale;Occurrences;Dates\n";
           (aggregatedData as any[]).forEach(g => {
               const datesStr = g.dates.map((d: string) => safeDate(d).toLocaleDateString()).join(', ');
-              const qtyDisplay = activeTab === 'LOSSES' ? (g.quantity * 100).toFixed(2) : g.quantity.toFixed(2);
+              const qtyDisplay = g.quantity.toFixed(2);
               csvContent += `${g.item.name};${qtyDisplay};${g.count};"${datesStr}"\n`;
           });
       }
@@ -235,12 +236,13 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                       <>
                           <select 
                               value={movementTypeFilter} 
-                              onChange={(e) => setMovementTypeFilter(e.target.value as 'ALL' | 'IN' | 'OUT')}
+                              onChange={(e) => setMovementTypeFilter(e.target.value as 'ALL' | 'IN' | 'OUT' | 'CAVE_IN')}
                               className="bg-slate-100 border-none rounded-lg px-3 py-2 text-xs font-black uppercase text-slate-700 outline-none cursor-pointer"
                           >
                               <option value="ALL">Tous les types</option>
                               <option value="IN">Entrées</option>
                               <option value="OUT">Sorties</option>
+                              <option value="CAVE_IN">Entrées Cave</option>
                           </select>
                           <select 
                               value={categoryFilter} 
@@ -372,16 +374,30 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                                       </td>
                                   )}
                                   <td className="p-4 text-right font-black text-slate-800">
-                                      {activeTab === 'LOSSES' ? (g.quantity * 100).toFixed(2) : g.quantity.toFixed(3)}
+                                      {(activeTab === 'STOCK_TENSION' || activeTab === 'STOCK_RUPTURE' || activeTab === 'CLIENT_RUPTURE') ? g.quantity.toFixed(0) : g.quantity.toFixed(2)}
                                       {activeTab === 'LOSSES' && <span className="text-[9px] text-slate-400 font-normal ml-1">Unit</span>}
                                   </td>
                                   <td className="p-4 text-right">
-                                      <div className="flex flex-wrap justify-end gap-1">
+                                      <div className="flex flex-wrap justify-end items-center gap-1">
                                           {g.dates.map((d: string, i: number) => (
                                               <span key={i} className="bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded">
                                                   {safeDate(d).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit'})}
                                               </span>
                                           ))}
+                                          {(activeTab === 'STOCK_TENSION' || activeTab === 'STOCK_RUPTURE') && onDeleteDailyAlert && (
+                                              <button 
+                                                  onClick={() => {
+                                                      if (window.confirm("Supprimer cet historique d'alerte ?")) {
+                                                          const itemAlerts = dailyStockAlerts.filter(a => a.itemId === g.item.id && a.type === (activeTab === 'STOCK_TENSION' ? 'TENSION' : 'RUPTURE') && checkDateInFilter(a.date, true));
+                                                          itemAlerts.forEach(a => onDeleteDailyAlert(a.id));
+                                                      }
+                                                  }}
+                                                  className="ml-2 p-1 text-rose-400 hover:text-rose-600 transition-colors"
+                                                  title="Supprimer l'historique de cet article"
+                                              >
+                                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                              </button>
+                                          )}
                                       </div>
                                   </td>
                               </tr>
