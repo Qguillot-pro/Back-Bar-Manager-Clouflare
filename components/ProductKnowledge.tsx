@@ -388,7 +388,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                                   />
                               </div>
                               <div className="flex-1 space-y-2">
-                                  <label className="text-[9px] font-black text-emerald-600 uppercase tracking-widest ml-1">Prix de Vente Actuel (€)</label>
+                                  <label className="text-[9px] font-black text-emerald-600 uppercase tracking-widest ml-1">Prix Actuel (Vérifier via POS) (€)</label>
                                   <input 
                                       type="number"
                                       step="0.1"
@@ -454,7 +454,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                           <div className="flex gap-4 mt-2 text-sm">
                             <p className="text-cyan-300 font-bold">{selectedSheet.region} {selectedSheet.country ? `• ${selectedSheet.country}` : ''}</p>
                             {selectedSheet.glasswareIds && selectedSheet.glasswareIds.length > 0 && (
-                                <p className="text-slate-400">Verres: {selectedSheet.glasswareIds.map(id => glassware.find(g => g.id === id)?.name).filter(Boolean).join(', ')}</p>
+                                <p className="text-slate-400">Verrerie: {selectedSheet.glasswareIds.map(id => glassware.find(g => g.id === id)?.name).filter(Boolean).join(', ')}</p>
                             )}
                             {linkedItem?.formatId && (
                                 <p className="text-slate-400">
@@ -503,7 +503,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                                       <span className="text-emerald-800 font-bold text-lg">{selectedSheet.salesFormat}</span>
                                   </div>
                                   <div>
-                                      <span className="block font-black text-emerald-400 text-xs uppercase mb-1">Prix Actuel</span>
+                                      <span className="block font-black text-emerald-400 text-xs uppercase mb-1">Prix Actuel (Vérifier via POS)</span>
                                       <span className="text-emerald-800 font-bold text-lg">{selectedSheet.actualPrice} €</span>
                                   </div>
                               </div>
