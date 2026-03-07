@@ -412,9 +412,24 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                       <div className="bg-indigo-50 p-4 rounded-xl space-y-3 border border-indigo-100">
                           <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Caractéristiques spécifiques ({sheetType})</p>
                           <div className="grid grid-cols-2 gap-4">
-                              {selectedTypeConfig.fields.map(field => (
-                                  <div key={field}><input className="w-full bg-white border border-indigo-200 rounded-lg p-2 text-sm outline-none" placeholder={field} value={customFields[field] || ''} onChange={e => setCustomFields({...customFields, [field]: e.target.value})} /></div>
-                              ))}
+                              {selectedTypeConfig.fields.map(field => {
+                                  let displayField = field;
+                                  const lowerField = field.toLowerCase();
+                                  if (lowerField === 'glasswareids') displayField = 'Verrerie';
+                                  else if (lowerField === 'salesformat') displayField = 'Format de Vente';
+                                  else if (lowerField === 'actualprice') displayField = 'Prix Actuel (Vérifier via POS)';
+
+                                  return (
+                                      <div key={field}>
+                                          <input 
+                                              className="w-full bg-white border border-indigo-200 rounded-lg p-2 text-sm outline-none" 
+                                              placeholder={displayField} 
+                                              value={customFields[field] || ''} 
+                                              onChange={e => setCustomFields({...customFields, [field]: e.target.value})} 
+                                          />
+                                      </div>
+                                  );
+                              })}
                           </div>
                       </div>
                   )}
@@ -511,7 +526,33 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                       )}
                       {Object.keys(custom).length > 0 && (
                           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                              {Object.entries(custom).map(([key, val]) => (<div key={key}><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{key}</p><p className="font-bold text-slate-800">{val as string}</p></div>))}
+                              {Object.entries(custom).map(([key, val]) => {
+                                  let displayKey = key;
+                                  let displayVal = val as string;
+
+                                  const lowerKey = key.toLowerCase();
+                                  if (lowerKey === 'glasswareids') {
+                                      displayKey = 'Verrerie';
+                                      // Resolve IDs to names if possible
+                                      const ids = displayVal.split(',').map(id => id.trim());
+                                      const names = ids.map(id => glassware.find(g => g.id === id)?.name || id);
+                                      displayVal = names.join(', ');
+                                  } else if (lowerKey === 'salesformat') {
+                                      displayKey = 'Format de Vente';
+                                  } else if (lowerKey === 'actualprice') {
+                                      displayKey = 'Prix Actuel (Vérifier via POS)';
+                                      if (displayVal && !displayVal.includes('€')) {
+                                          displayVal = `${displayVal} €`;
+                                      }
+                                  }
+
+                                  return (
+                                      <div key={key}>
+                                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{displayKey}</p>
+                                          <p className="font-bold text-slate-800">{displayVal}</p>
+                                      </div>
+                                  );
+                              })}
                           </div>
                       )}
                       <div className="bg-slate-50 p-6 rounded-3xl space-y-4">
