@@ -39,12 +39,24 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
 
   const linkedItem = items.find(i => i.id === selectedSheet?.itemId);
 
+  const [itemSearch, setItemSearch] = useState('');
+  const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
+
+  const filteredItems = useMemo(() => {
+      return items
+          .filter(i => !sheets.some(s => s.itemId === i.id))
+          .filter(i => i.name.toLowerCase().includes(itemSearch.toLowerCase()))
+          .sort((a, b) => a.name.localeCompare(b.name));
+  }, [items, sheets, itemSearch]);
+
   const handleAI = async () => {
-      const searchName = fullName || items.find(i => i.id === selectedItemId)?.name;
+      const item = items.find(i => i.id === selectedItemId);
+      const searchName = fullName || item?.name;
       if (!searchName) return;
       
       setIsGenerating(true);
-      const result = await generateProductSheetWithAI(searchName, sheetType);
+      const specificFields = selectedTypeConfig?.fields || [];
+      const result = await generateProductSheetWithAI(searchName, sheetType, specificFields);
       setIsGenerating(false);
       
       if (result) {
@@ -54,6 +66,9 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
           setTasting({ nose: result.nose || '', mouth: result.mouth || '', eye: result.eye || '' });
           setPairing(result.pairing || '');
           setTemp(result.temp || '');
+          if (result.customFields) {
+              setCustomFields(result.customFields);
+          }
       }
   };
 
@@ -265,29 +280,61 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                   <button onClick={() => { setViewMode('LIST'); resetForm(); }} className="text-slate-400 font-bold text-xs uppercase">Annuler</button>
               </div>
               <div className="p-8 space-y-6">
-                  <div className="space-y-2">
+                  <div className="space-y-2 relative">
                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit Stock (Référence)</label>
-                      <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)}>
-                          <option value="">Sélectionner...</option>
-                          {items
-                              .filter(i => !sheets.some(s => s.itemId === i.id)) // Exclude items that already have a sheet
-                              .sort((a, b) => a.name.localeCompare(b.name))
-                              .map(i => <option key={i.id} value={i.id}>{i.name}</option>)
-                          }
-                      </select>
+                      <div className="relative">
+                          <input 
+                              type="text"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none focus:ring-2 focus:ring-cyan-100"
+                              placeholder="Rechercher un produit..."
+                              value={selectedItemId ? (items.find(i => i.id === selectedItemId)?.name || '') : itemSearch}
+                              onChange={(e) => {
+                                  if (selectedItemId) setSelectedItemId('');
+                                  setItemSearch(e.target.value);
+                                  setIsItemDropdownOpen(true);
+                              }}
+                              onFocus={() => setIsItemDropdownOpen(true)}
+                          />
+                          {isItemDropdownOpen && filteredItems.length > 0 && (
+                              <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2">
+                                  {filteredItems.map(i => (
+                                      <div 
+                                          key={i.id} 
+                                          onClick={() => {
+                                              setSelectedItemId(i.id);
+                                              setItemSearch(i.name);
+                                              setIsItemDropdownOpen(false);
+                                          }}
+                                          className="p-3 hover:bg-slate-50 cursor-pointer font-bold text-sm text-slate-700 border-b border-slate-50 last:border-none"
+                                      >
+                                          {i.name}
+                                      </div>
+                                  ))}
+                              </div>
+                          )}
+                      </div>
                   </div>
                   <div className="space-y-2">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom Complet (Pour le client/recherche)</label>
-                      <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" placeholder="Ex: Rhum Clément VSOP 40°..." value={fullName} onChange={e => setFullName(e.target.value)} />
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 text-cyan-600">Nom Complet (Pour le client/recherche)</label>
+                      <input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none focus:ring-2 focus:ring-cyan-100" placeholder="Ex: Rhum Clément VSOP 40°..." value={fullName} onChange={e => setFullName(e.target.value)} />
                   </div>
                   
-                  <div className="flex gap-4">
+                  <div className="flex flex-col md:flex-row gap-4">
                       <div className="flex-1 space-y-2">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Type</label>
                           <select className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-sm outline-none" value={sheetType} onChange={e => setSheetType(e.target.value)}>
                               {productTypes.map(pt => <option key={pt.id} value={pt.name}>{pt.name}</option>)}
                               {productTypes.length === 0 && <option value="Autre">Autre</option>}
                           </select>
+                          {sheetType === 'Autre' && (
+                              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+                                  <span className="text-xl">⚠️</span>
+                                  <p className="text-[10px] font-bold text-amber-700 uppercase leading-tight">
+                                      Attention : Le type "Autre" limite les caractéristiques spécifiques. 
+                                      Privilégiez un type précis si possible.
+                                  </p>
+                              </div>
+                          )}
                       </div>
                       <div className="flex-1 space-y-2">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Verrerie (Max 3)</label>

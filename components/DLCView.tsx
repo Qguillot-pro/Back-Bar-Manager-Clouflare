@@ -10,7 +10,7 @@ interface DLCViewProps {
   transactions: Transaction[];
   onDelete: (id: string, qtyLostPercent?: number) => void;
   onUpdateDlc?: (dlc: DLCHistory) => void;
-  onAddDlc?: (itemId: string, storageId: string, openedAt: string) => void;
+  onAddDlc?: (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION', isOpen: boolean) => void;
   userRole?: string;
 }
 
@@ -60,8 +60,10 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
       
       const expirationDate = new Date(openedDate.getTime() + durationHours * 3600000);
       const now = new Date();
-      const timeLeft = expirationDate.getTime() - now.getTime();
-      const isExpired = timeLeft < 0;
+      
+      // If not opened, it doesn't expire
+      const timeLeft = entry.isNotOpened ? 999999999999 : expirationDate.getTime() - now.getTime();
+      const isExpired = entry.isNotOpened ? false : timeLeft < 0;
 
       // Check for regularization
       const hasRegularization = transactions.some((t: Transaction) => 
@@ -106,7 +108,8 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
 
   const expiredCount = activeDlcs.filter(d => d.isExpired).length;
 
-  const formatDuration = (ms: number) => {
+  const formatDuration = (ms: number, isNotOpened?: boolean) => {
+    if (isNotOpened) return "EN ATTENTE";
     if (ms < 0) return "EXPIRÉ";
     const totalMinutes = Math.floor(ms / 60000);
     const hours = Math.floor(totalMinutes / 60);
@@ -163,9 +166,11 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                   return;
               }
 
-              const openedAt = dateObj.toISOString();
-              // @ts-ignore - adding isNotOpened to payload
-              onAddDlc(newItemId, newStorageId, openedAt, isNotOpened);
+              const item = items.find(i => i.id === newItemId);
+              const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+              const type = profile?.type || 'OPENING';
+              
+              onAddDlc(newItemId, newStorageId, type, !isNotOpened);
               
               setAddModalOpen(false);
               setNewItemId('');
@@ -396,11 +401,11 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
                   </div>
                   <span className="text-[9px] text-slate-400 ml-2">Par: {dlc.userName}</span>
                 </td>
-                <td className="p-6 text-xs text-center font-bold text-slate-500">{safeDateString(dlc.openedDate)}</td>
-                <td className="p-6 text-xs text-center font-black text-slate-700">{safeDateString(dlc.expirationDate)}</td>
+                <td className="p-6 text-xs text-center font-bold text-slate-500">{dlc.isNotOpened ? 'Inconnue' : safeDateString(dlc.openedDate)}</td>
+                <td className="p-6 text-xs text-center font-black text-slate-700">{dlc.isNotOpened ? '-' : safeDateString(dlc.expirationDate)}</td>
                 <td className="p-6 text-center">
-                   <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dlc.isExpired ? 'bg-rose-500 text-white border-rose-600 animate-pulse' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-                       {formatDuration(dlc.timeLeft)}
+                   <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dlc.isNotOpened ? 'bg-amber-50 text-amber-600 border-amber-100' : dlc.isExpired ? 'bg-rose-500 text-white border-rose-600 animate-pulse' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                       {formatDuration(dlc.timeLeft, dlc.isNotOpened)}
                    </span>
                 </td>
                 <td className="p-6 text-center">

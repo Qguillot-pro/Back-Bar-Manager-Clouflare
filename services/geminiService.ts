@@ -86,14 +86,15 @@ export const generateCocktailWithAI = async (cocktailName: string, availableItem
     }
 };
 
-export const generateProductSheetWithAI = async (productName: string, type: string) => {
+export const generateProductSheetWithAI = async (productName: string, type: string, specificFields: string[] = []) => {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const prompt = `Génère une fiche technique professionnelle pour le produit "${productName}" de type ${type} (Vin, Spiritueux, Bière...).
         Sois précis et commercial. Pour les vins, indique la région et le cépage probable.
         Tasting notes : 3 mots clés max par champ.
         Food pairing : 1 suggestion courte.
-        Temp : en degrés celsius.`;
+        Temp : en degrés celsius.
+        Si possible, complète également ces caractéristiques spécifiques : ${specificFields.join(', ')}.`;
 
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
@@ -110,7 +111,14 @@ export const generateProductSheetWithAI = async (productName: string, type: stri
                         nose: { type: Type.STRING },
                         mouth: { type: Type.STRING },
                         pairing: { type: Type.STRING },
-                        temp: { type: Type.STRING }
+                        temp: { type: Type.STRING },
+                        customFields: {
+                            type: Type.OBJECT,
+                            properties: specificFields.reduce((acc, field) => {
+                                acc[field] = { type: Type.STRING };
+                                return acc;
+                            }, {} as any)
+                        }
                     },
                     required: ["description", "region", "country", "eye", "nose", "mouth", "pairing"]
                 }

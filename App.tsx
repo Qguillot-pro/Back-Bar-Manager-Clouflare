@@ -636,7 +636,9 @@ const App: React.FC = () => {
           // DLC LOGIC: If item has DLC profile, create entry (Production or Opening)
           const item = items.find(i => i.id === itemId);
           if (item?.isDLC || item?.dlcProfileId) {
-              handleAddDlc(itemId, storageId, new Date().toISOString());
+              const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
+              const type = profile?.type || 'OPENING';
+              handleAddDlc(itemId, storageId, type, true, qtyNeeded);
           }
       }
       if ((qtyToOrder && qtyToOrder > 0) || isRupture) {
@@ -665,23 +667,23 @@ const App: React.FC = () => {
       syncData('SAVE_DLC_HISTORY', dlc);
   };
 
-  const handleAddDlc = (itemId: string, storageId: string, openedAt?: string, isNotOpened: boolean = false, quantity: number = 1) => {
+  const handleAddDlc = (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION', isOpen: boolean = true, quantity: number = 1) => {
       const item = items.find(i => i.id === itemId);
       const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
       
-      // Only merge if it's NOT a production item and an exact match exists
-      // For production (Bar Prep), we always want separate batches of 1 (or the specified quantity)
-      const existing = (profile?.type !== 'PRODUCTION') 
+      // For OPENING type, we check if it's already in the list for this storage
+      const existing = (type === 'OPENING') 
           ? dlcHistory.find(h => h.itemId === itemId && h.storageId === storageId)
           : null;
+
+      const now = new Date().toISOString();
 
       if (existing) {
           const updated: DLCHistory = { 
               ...existing, 
-              storageId, 
-              openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
+              openedAt: isOpen ? now : existing.openedAt,
               userName: currentUser?.name,
-              isNotOpened,
+              isNotOpened: !isOpen,
               quantity: (existing.quantity || 1) + quantity
           };
           setDlcHistory(prev => prev.map(h => h.id === existing.id ? updated : h));
@@ -691,9 +693,9 @@ const App: React.FC = () => {
               id: 'dlc_' + Date.now() + Math.random(),
               itemId,
               storageId,
-              openedAt: (openedAt && openedAt.includes('T')) ? openedAt : new Date().toISOString(),
+              openedAt: now,
               userName: currentUser?.name,
-              isNotOpened,
+              isNotOpened: !isOpen,
               quantity
           };
           setDlcHistory(prev => [dlc, ...prev]);

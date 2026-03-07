@@ -15,7 +15,7 @@ interface BarPrepProps {
   dlcHistory?: DLCHistory[];
   onUpdateDlc?: (dlc: DLCHistory) => void;
   onDeleteDlc?: (id: string, qtyLostPercent: number) => void;
-  onAddDlc?: (itemId: string, storageId: string, openedAt?: string, isNotOpened?: boolean, quantity?: number) => void;
+  onAddDlc?: (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION', isOpen?: boolean, quantity?: number) => void;
   userRole?: string;
 }
 
@@ -65,7 +65,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
 
           // Create multiple batches of 1 in target
           for (let i = 0; i < totalToTransfer; i++) {
-              onAddDlc?.(batch.itemId, targetStorageId, batch.openedAt, batch.isNotOpened);
+              onAddDlc?.(batch.itemId, targetStorageId, 'PRODUCTION', !batch.isNotOpened);
           }
       } else {
           // Just transfer the whole batch

@@ -15,7 +15,7 @@ interface MovementsProps {
   dlcProfiles?: DLCProfile[];
   onUndo?: () => void;
   dlcHistory?: DLCHistory[];
-  onDlcEntry?: (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION') => void;
+  onDlcEntry?: (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION', isOpen?: boolean) => void;
   onDlcConsumption?: (itemId: string) => void;
 }
 
@@ -31,6 +31,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
   const [unfulfilledQty, setUnfulfilledQty] = useState<string>('1');
 
   const [dlcModalOpen, setDlcModalOpen] = useState(false);
+  const [dlcStep, setDlcStep] = useState<'OPEN_QUESTION' | 'LABEL_REMINDER'>('OPEN_QUESTION');
   const [pendingDlcItem, setPendingDlcItem] = useState<StockItem | null>(null);
   const [pendingDlcAction, setPendingDlcAction] = useState<'IN' | 'OUT'>('OUT');
 
@@ -71,6 +72,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     if ((item.isDLC || item.dlcProfileId) && dlcProfiles && onDlcEntry) {
         setPendingDlcItem(item);
         setPendingDlcAction(type);
+        setDlcStep('OPEN_QUESTION');
         setDlcModalOpen(true);
         return;
     }
@@ -129,15 +131,25 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       setIsServiceTransfer(false);
   };
 
-  const finalizeDlcTransaction = () => {
+  const handleDlcResponse = (isOpen: boolean) => {
+      if (!pendingDlcItem) return;
+      
+      if (isOpen) {
+          setDlcStep('LABEL_REMINDER');
+      } else {
+          finalizeDlcTransaction(false);
+      }
+  };
+
+  const finalizeDlcTransaction = (isOpen: boolean) => {
       if (!pendingDlcItem) return;
       let quantity = parseInt(qty, 10) || 1;
       onTransaction(pendingDlcItem.id, pendingDlcAction, quantity, isServiceTransfer);
       
-      // Trigger DLC entry for both IN (Production) and OUT (Opening for service)
       if (onDlcEntry) {
           const storageId = storages[0]?.id || 's0';
-          onDlcEntry(pendingDlcItem.id, storageId, 'OPENING');
+          // We pass the openness to onDlcEntry
+          onDlcEntry(pendingDlcItem.id, storageId, 'OPENING', isOpen);
       }
       
       setDlcModalOpen(false);
@@ -185,9 +197,37 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       {dlcModalOpen && (
           <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
               <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full text-center space-y-6 shadow-2xl">
+                  <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <span className="text-3xl">⏱️</span>
+                  </div>
                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{pendingDlcItem?.name}</h3>
-                  <p className="text-sm font-bold text-slate-600 italic">Rappel : Avez-vous collé l'étiquette DLC ?</p>
-                  <button onClick={finalizeDlcTransaction} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl">Oui, Continuer</button>
+                  
+                  {dlcStep === 'OPEN_QUESTION' ? (
+                      <>
+                          <p className="text-sm font-bold text-slate-600">La nouvelle bouteille est-elle ouverte ?</p>
+                          <div className="grid grid-cols-2 gap-4">
+                              <button onClick={() => handleDlcResponse(true)} className="py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg hover:bg-emerald-600 transition-all">Oui</button>
+                              <button onClick={() => handleDlcResponse(false)} className="py-4 bg-rose-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg hover:bg-rose-600 transition-all">Non</button>
+                          </div>
+                      </>
+                  ) : (
+                      <>
+                          <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
+                              <p className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-1">Action Requise</p>
+                              <p className="text-sm font-bold text-slate-700">
+                                  Mettre la bonne étiquette DLC :<br/>
+                                  <span className="text-indigo-600 text-lg">
+                                      {(() => {
+                                          const profile = dlcProfiles.find(p => p.id === pendingDlcItem?.dlcProfileId);
+                                          return profile?.name || 'Profil DLC';
+                                      })()}
+                                  </span>
+                              </p>
+                          </div>
+                          <button onClick={() => finalizeDlcTransaction(true)} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-indigo-700 transition-all">C'est fait !</button>
+                      </>
+                  )}
+                  
                   <button onClick={() => setDlcModalOpen(false)} className="text-slate-400 font-bold text-xs uppercase underline">Annuler</button>
               </div>
           </div>
