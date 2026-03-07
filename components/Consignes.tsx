@@ -39,6 +39,7 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
   // Gestion du blur pour sauvegarder et formater
   const handleInputBlur = (itemId: string, storageId: string, val: string, field: 'min' | 'max') => {
     setEditingValue(null);
+    if (!canEdit) return;
     let normalized = val.replace(',', '.');
     if (normalized === '.') normalized = '0';
 
@@ -86,6 +87,7 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
   };
 
   const handlePositionBlur = (storageId: string, newPos: number) => {
+      if (!canEdit) return;
       if (onSync) {
           onSync('SAVE_STORAGE_ORDER', { id: storageId, order: newPos });
       }
@@ -208,7 +210,8 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
                               <label className="block text-[8px] text-indigo-400 mb-1 font-black">POS</label>
                               <input 
                                   type="number" 
-                                  className="w-14 bg-white border border-indigo-200 rounded-lg p-1 text-center text-indigo-600 font-black" 
+                                  disabled={!canEdit}
+                                  className={`w-14 bg-white border border-indigo-200 rounded-lg p-1 text-center text-indigo-600 font-black ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`} 
                                   value={storagePositions[s.id] ?? (s.order ?? 0)} 
                                   onChange={(e) => handlePositionChange(s.id, parseInt(e.target.value) || 0)} 
                                   onBlur={(e) => handlePositionBlur(s.id, parseInt(e.target.value) || 0)}
@@ -254,8 +257,8 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
                               <input 
                                   type="text" 
                                   inputMode="decimal" 
-                                  disabled={isEditOrderMode || isZeroPriority} 
-                                  className={`w-16 p-3 border border-slate-200 rounded-l-2xl text-center font-black text-lg text-slate-900 outline-none transition-all ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500'}`} 
+                                  disabled={!canEdit || isEditOrderMode || isZeroPriority} 
+                                  className={`w-16 p-3 border border-slate-200 rounded-l-2xl text-center font-black text-lg text-slate-900 outline-none transition-all ${(!canEdit || isZeroPriority) ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-slate-50 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500'}`} 
                                   value={displayMin} 
                                   onChange={e => handleInputChange(item.id, s.id, e.target.value, 'min')}
                                   onBlur={e => handleInputBlur(item.id, s.id, e.target.value, 'min')}
@@ -267,9 +270,9 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
                               <input 
                                   type="text" 
                                   inputMode="numeric" 
-                                  disabled={isEditOrderMode || isZeroPriority} 
+                                  disabled={!canEdit || isEditOrderMode || isZeroPriority} 
                                   placeholder="-"
-                                  className={`w-14 p-3 border-y border-r border-slate-200 rounded-r-2xl text-center font-bold text-sm text-slate-500 outline-none transition-all placeholder-slate-200 ${isZeroPriority ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-white focus:bg-slate-50 focus:ring-4 focus:ring-slate-500/10 focus:border-slate-400'}`} 
+                                  className={`w-14 p-3 border-y border-r border-slate-200 rounded-r-2xl text-center font-bold text-sm text-slate-500 outline-none transition-all placeholder-slate-200 ${(!canEdit || isZeroPriority) ? 'bg-slate-100 opacity-50 cursor-not-allowed' : 'bg-white focus:bg-slate-50 focus:ring-4 focus:ring-slate-500/10 focus:border-slate-400'}`} 
                                   value={displayMax} 
                                   onChange={e => handleInputChange(item.id, s.id, e.target.value, 'max')}
                                   onBlur={e => handleInputBlur(item.id, s.id, e.target.value, 'max')}
