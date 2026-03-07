@@ -528,15 +528,15 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                               {Object.entries(custom).map(([key, val]) => {
                                   let displayKey = key;
-                                  let displayVal = val as string;
+                                  let displayVal = String(val ?? '');
 
                                   const lowerKey = key.toLowerCase();
                                   if (lowerKey === 'glasswareids') {
                                       displayKey = 'Verrerie';
                                       // Resolve IDs to names if possible
-                                      const ids = displayVal.split(',').map(id => id.trim());
+                                      const ids = displayVal ? displayVal.split(',').map(id => id.trim()) : [];
                                       const names = ids.map(id => glassware.find(g => g.id === id)?.name || id);
-                                      displayVal = names.join(', ');
+                                      displayVal = names.join(', ') || '-';
                                   } else if (lowerKey === 'salesformat') {
                                       displayKey = 'Format de Vente';
                                   } else if (lowerKey === 'actualprice') {
