@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Transaction, PendingOrder, StockItem, StorageSpace, UnfulfilledOrder, Format, Loss, DailyAlert, AppConfig } from '../types';
+import { Transaction, PendingOrder, StockItem, StorageSpace, UnfulfilledOrder, Format, Loss, DailyAlert, AppConfig, UserRole } from '../types';
 
 interface HistoryProps {
   transactions: Transaction[];
@@ -10,19 +10,24 @@ interface HistoryProps {
   unfulfilledOrders: UnfulfilledOrder[];
   onUpdateOrderQuantity?: (orderIds: string[], newQuantity: number) => void;
   onDeleteDailyAlert?: (id: string) => void;
+  onUpdateLoss?: (updatedLoss: Loss) => void;
   formats: Format[];
   losses?: Loss[];
   dailyStockAlerts?: DailyAlert[];
   appConfig?: AppConfig;
+  userRole?: UserRole;
 }
 
 type PeriodFilter = 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
 type Tab = 'MOVEMENTS' | 'LOSSES' | 'CLIENT_RUPTURE' | 'STOCK_TENSION' | 'STOCK_RUPTURE' | 'RECEIVED';
 
-const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, onDeleteDailyAlert, formats = [], losses = [], dailyStockAlerts = [], appConfig }) => {
+const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items = [], storages = [], unfulfilledOrders = [], onUpdateOrderQuantity, onDeleteDailyAlert, onUpdateLoss, formats = [], losses = [], dailyStockAlerts = [], appConfig, userRole }) => {
   const [activeTab, setActiveTab] = useState<Tab>('MOVEMENTS');
   const [validatedGroups, setValidatedGroups] = useState<Set<string>>(new Set());
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('MONTH');
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingLossId, setEditingLossId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState<string>('');
   
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth()); 
@@ -218,16 +223,44 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
       return formats.find(f => f.id === formatId)?.name || 'N/A';
   };
 
+  const handleSaveLossEdit = (loss: Loss) => {
+      if (onUpdateLoss && editQty !== '') {
+          const newQty = parseFloat(editQty);
+          if (!isNaN(newQty)) {
+              onUpdateLoss({ ...loss, quantity: newQty });
+          }
+      }
+      setEditingLossId(null);
+      setEditQty('');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-100">
-              <button onClick={() => setActiveTab('MOVEMENTS')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Mouvements</button>
-              <button onClick={() => setActiveTab('LOSSES')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'LOSSES' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Pertes & Gaspillage</button>
-              <button onClick={() => setActiveTab('CLIENT_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'CLIENT_RUPTURE' ? 'bg-rose-400 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Ruptures Clients</button>
-              <button onClick={() => setActiveTab('STOCK_TENSION')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'STOCK_TENSION' ? 'bg-amber-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Sous Tension</button>
-              <button onClick={() => setActiveTab('STOCK_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'STOCK_RUPTURE' ? 'bg-red-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Rupture Produit</button>
-              <button onClick={() => setActiveTab('RECEIVED')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'RECEIVED' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Reçus</button>
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-slate-100">
+              <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setActiveTab('MOVEMENTS')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'MOVEMENTS' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Mouvements</button>
+                  <button onClick={() => setActiveTab('LOSSES')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'LOSSES' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Pertes & Gaspillage</button>
+                  <button onClick={() => setActiveTab('CLIENT_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'CLIENT_RUPTURE' ? 'bg-rose-400 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Ruptures Clients</button>
+                  <button onClick={() => setActiveTab('STOCK_TENSION')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'STOCK_TENSION' ? 'bg-amber-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Sous Tension</button>
+                  <button onClick={() => setActiveTab('STOCK_RUPTURE')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'STOCK_RUPTURE' ? 'bg-red-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Rupture Produit</button>
+                  <button onClick={() => setActiveTab('RECEIVED')} className={`px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab === 'RECEIVED' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:bg-slate-50'}`}>Art. Reçus</button>
+              </div>
+
+              {activeTab === 'LOSSES' && userRole === 'ADMIN' && (
+                  <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${isEditMode ? 'text-rose-600' : 'text-slate-400'}`}>Mode Édition</span>
+                      <button 
+                          onClick={() => {
+                              setIsEditMode(!isEditMode);
+                              setEditingLossId(null);
+                          }} 
+                          className={`w-8 h-4 rounded-full relative transition-colors ${isEditMode ? 'bg-rose-500' : 'bg-slate-300'}`}
+                      >
+                          <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${isEditMode ? 'left-4.5' : 'left-0.5'}`}></div>
+                      </button>
+                  </div>
+              )}
           </div>
 
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -339,6 +372,68 @@ const History: React.FC<HistoryProps> = ({ transactions = [], orders = [], items
                         })}
                         {filteredData.length === 0 && (
                             <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic text-sm">Aucun mouvement pour cette période.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+          ) : activeTab === 'LOSSES' && isEditMode ? (
+            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b">
+                        <tr>
+                            <th className="p-4">Date/Heure</th>
+                            <th className="p-4">Utilisateur</th>
+                            <th className="p-4">Produit</th>
+                            <th className="p-4 text-right">Quantité</th>
+                            <th className="p-4 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {(filteredData as Loss[]).map((l, idx) => {
+                            const item = items.find(i => i.id === l.itemId);
+                            const d = safeDate(l.discardedAt);
+                            const isEditing = editingLossId === l.id;
+                            return (
+                                <tr key={`${l.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                                    <td className="p-4 text-xs font-bold text-slate-600">
+                                        {d.toLocaleDateString('fr-FR')} <span className="text-slate-400 text-[10px]">{d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</span>
+                                    </td>
+                                    <td className="p-4 text-xs font-bold text-slate-800">{l.userName || '-'}</td>
+                                    <td className="p-4 font-black text-slate-900">{item?.name || 'Inconnu'}</td>
+                                    <td className="p-4 text-right">
+                                        {isEditing ? (
+                                            <input 
+                                                type="number" 
+                                                step="0.01" 
+                                                className="w-24 bg-white border border-rose-200 rounded px-2 py-1 text-right font-black text-rose-600 outline-none focus:ring-2 focus:ring-rose-100"
+                                                value={editQty}
+                                                onChange={e => setEditQty(e.target.value)}
+                                                autoFocus
+                                            />
+                                        ) : (
+                                            <span className="font-black text-rose-600">{l.quantity.toFixed(2)}</span>
+                                        )}
+                                    </td>
+                                    <td className="p-4 text-right">
+                                        {isEditing ? (
+                                            <div className="flex justify-end gap-2">
+                                                <button onClick={() => { setEditingLossId(null); setEditQty(''); }} className="text-slate-400 hover:text-slate-600"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                                                <button onClick={() => handleSaveLossEdit(l)} className="text-emerald-500 hover:text-emerald-700"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg></button>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                onClick={() => { setEditingLossId(l.id); setEditQty(l.quantity.toString()); }} 
+                                                className="text-slate-300 hover:text-indigo-500 transition-colors"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {filteredData.length === 0 && (
+                            <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic text-sm">Aucune perte pour cette période.</td></tr>
                         )}
                     </tbody>
                 </table>
