@@ -551,7 +551,11 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       for (let i = 0; i < 7; i++) {
           const d = new Date(monday);
           d.setDate(monday.getDate() + i);
-          days.push(d.toISOString().split('T')[0]);
+          // Use local date string to avoid UTC offset issues
+          const y = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          days.push(`${y}-${mm}-${dd}`);
       }
       return days;
   }, [currentWeekOffset]);
@@ -668,7 +672,8 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       <tr>
                           <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 min-w-[150px]">Nom</th>
                           {weekDays.map(dateStr => {
-                              const d = new Date(dateStr);
+                              const [y, m, day] = dateStr.split('-').map(Number);
+                              const d = new Date(y, m - 1, day);
                               const dayName = d.toLocaleDateString('fr-FR', { weekday: 'short' });
                               const dayNum = d.getDate();
                               return (
@@ -784,11 +789,12 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                               {isRecurringTask && (
                                   <div className="flex gap-1 animate-in fade-in slide-in-from-left-2">
                                       {daysLabels.map((day, idx) => {
-                                          const isSelected = recurrenceDays.includes(idx);
+                                          const dayValue = (idx + 1) % 7; // Map 0(L)->1, 1(M)->2, ..., 5(S)->6, 6(D)->0
+                                          const isSelected = recurrenceDays.includes(dayValue);
                                           return (
                                               <button 
                                                 key={idx} 
-                                                onClick={() => toggleRecurrenceDay(idx)}
+                                                onClick={() => toggleRecurrenceDay(dayValue)}
                                                 className={`w-6 h-6 rounded-full text-[9px] font-black flex items-center justify-center transition-all ${isSelected ? 'bg-amber-500 text-white shadow-sm scale-110' : 'bg-white border border-slate-200 text-slate-400 hover:border-amber-300'}`}
                                               >
                                                   {day}

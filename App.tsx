@@ -257,7 +257,10 @@ const App: React.FC = () => {
       
       const previousBarDate = new Date(currentBarDate);
       previousBarDate.setDate(previousBarDate.getDate() - 1);
-      const dateStr = previousBarDate.toISOString().split('T')[0];
+      const y = previousBarDate.getFullYear();
+      const mm = String(previousBarDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(previousBarDate.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${mm}-${dd}`;
 
       // Check if alerts already exist for this date
       const exists = dailyAlerts.some(a => a.date === dateStr);
@@ -486,6 +489,7 @@ const App: React.FC = () => {
                   const prio = getPrio(s.id);
                   return { ...s, current: level, max, prio, availableSpace: Math.max(0, Math.floor(max - level)) };
               })
+              .filter(t => t.prio > 0 || t.id === 's0')
               .sort((a, b) => {
                   if (a.id === 's0') return 1;
                   if (b.id === 's0') return -1;
@@ -519,78 +523,66 @@ const App: React.FC = () => {
           }
 
       } else {
-          const decimalStorage = itemLevels.find(l => l.currentQuantity % 1 !== 0);
+          let remainingQty = qty;
           
-          if (decimalStorage) {
-              const integerStocks = itemLevels
-                  .filter(l => l.storageId !== decimalStorage.storageId && l.currentQuantity >= 1)
+          // 1. D'abord vider les stocks décimaux (bouteilles ouvertes)
+          const decimalStorages = itemLevels
+              .filter(l => l.currentQuantity % 1 !== 0)
+              .map(l => ({ ...l, prio: getPrio(l.storageId) }))
+              .filter(t => t.prio > 0 || t.storageId === 's0')
+              .sort((a, b) => {
+                  if (a.storageId === 's0') return 1;
+                  if (b.storageId === 's0') return -1;
+                  return a.prio - b.prio;
+              });
+
+          for (const ds of decimalStorages) {
+              if (remainingQty <= 0) break;
+              const take = Math.min(remainingQty, ds.currentQuantity);
+              commitTrans(ds.storageId, take, 'OUT', ds.currentQuantity - take);
+              remainingQty -= take;
+          }
+
+          // 2. Ensuite vider les stocks pleins par priorité
+          if (remainingQty > 0) {
+              const targets = itemLevels
+                  .filter(l => l.currentQuantity > 0)
                   .map(l => ({ ...l, prio: getPrio(l.storageId) }))
-                  .sort((a, b) => b.prio - a.prio); 
+                  .filter(t => t.prio > 0 || t.storageId === 's0')
+                  .sort((a, b) => {
+                      if (a.storageId === 's0') return 1;
+                      if (b.storageId === 's0') return -1;
+                      return a.prio - b.prio;
+                  });
 
-              if (integerStocks.length > 0) {
-                  const gapToFull = Math.ceil(decimalStorage.currentQuantity) - decimalStorage.currentQuantity;
-                  commitTrans(decimalStorage.storageId, gapToFull, 'IN', Math.ceil(decimalStorage.currentQuantity)); 
-                  const source = integerStocks[0];
-                  commitTrans(source.storageId, 1, 'OUT', source.currentQuantity - 1);
+              for (const target of targets) {
+                  if (remainingQty <= 0) break;
+                  const take = Math.min(remainingQty, target.currentQuantity);
+                  commitTrans(target.storageId, take, 'OUT', target.currentQuantity - take);
+                  remainingQty -= take;
 
-                  // NEW: Update DLC History for Bar Prep items
+                  // NEW: If Bar Prep item, transfer a batch from highest priority to this storage
                   const item = items.find(i => i.id === itemId);
                   const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
-                  if (profile && profile.type === 'PRODUCTION') {
-                      // Find the batch in source storage with the furthest DLC (newest)
-                      const sourceBatches = dlcHistory.filter(h => h.itemId === itemId && h.storageId === source.storageId);
-                      if (sourceBatches.length > 0) {
-                          const furthestBatch = [...sourceBatches].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
-                          handleUpdateDlc({ ...furthestBatch, storageId: decimalStorage.storageId });
-                      }
-                  }
-              } else {
-                  const qtyToTake = Math.min(decimalStorage.currentQuantity, qty);
-                  commitTrans(decimalStorage.storageId, qtyToTake, 'OUT', decimalStorage.currentQuantity - qtyToTake);
-              }
-
-          } else {
-              let remainingQty = qty;
-              const s0Level = itemLevels.find(l => l.storageId === 's0');
-              if (s0Level && s0Level.currentQuantity > 0) {
-                  const take = Math.min(remainingQty, s0Level.currentQuantity);
-                  commitTrans('s0', take, 'OUT', s0Level.currentQuantity - take);
-                  remainingQty -= take;
-              }
-
-              if (remainingQty > 0) {
-                  const targets = itemLevels
-                      .filter(l => l.storageId !== 's0' && l.currentQuantity > 0)
-                      .map(l => ({ ...l, prio: getPrio(l.storageId) }))
-                      .sort((a, b) => b.prio - a.prio);
-
-                  for (const target of targets) {
-                      if (remainingQty <= 0) break;
-                      const take = Math.min(remainingQty, target.currentQuantity);
-                      commitTrans(target.storageId, take, 'OUT', target.currentQuantity - take);
-                      remainingQty -= take;
-
-                      // NEW: If Bar Prep item, transfer a batch from highest priority to this storage
-                      const item = items.find(i => i.id === itemId);
-                      const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
-                      if (profile && profile.type === 'PRODUCTION' && take >= 1) {
-                          // Find the storage with the highest priority (lowest prio number) that has stock
-                          const sourceStocks = itemLevels
-                              .filter(l => l.storageId !== target.storageId && l.currentQuantity >= 1)
-                              .map(l => ({ ...l, prio: getPrio(l.storageId) }))
-                              .sort((a, b) => a.prio - b.prio); // Highest priority first (e.g. 1 before 10)
-                          
-                          if (sourceStocks.length > 0) {
-                              const source = sourceStocks[0];
-                              // Move batch from source to target
-                              const sourceBatches = dlcHistory.filter(h => h.itemId === itemId && h.storageId === source.storageId);
-                              if (sourceBatches.length > 0) {
-                                  const furthestBatch = [...sourceBatches].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
-                                  handleUpdateDlc({ ...furthestBatch, storageId: target.storageId });
-                                  // Also update stock levels to reflect the transfer
-                                  commitTrans(source.storageId, 1, 'OUT', source.currentQuantity - 1);
-                                  commitTrans(target.storageId, 1, 'IN', target.currentQuantity + 1);
-                              }
+                  if (profile && profile.type === 'PRODUCTION' && take >= 1) {
+                      const sourceStocks = itemLevels
+                          .filter(l => l.storageId !== target.storageId && l.currentQuantity >= 1)
+                          .map(l => ({ ...l, prio: getPrio(l.storageId) }))
+                          .filter(t => t.prio > 0 || t.storageId === 's0')
+                          .sort((a, b) => {
+                              if (a.storageId === 's0') return 1;
+                              if (b.storageId === 's0') return -1;
+                              return a.prio - b.prio;
+                          });
+                      
+                      if (sourceStocks.length > 0) {
+                          const source = sourceStocks[0];
+                          const sourceBatches = dlcHistory.filter(h => h.itemId === itemId && h.storageId === source.storageId);
+                          if (sourceBatches.length > 0) {
+                              const furthestBatch = [...sourceBatches].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
+                              handleUpdateDlc({ ...furthestBatch, storageId: target.storageId });
+                              commitTrans(source.storageId, 1, 'OUT', source.currentQuantity - 1);
+                              commitTrans(target.storageId, 1, 'IN', target.currentQuantity + 1);
                           }
                       }
                   }

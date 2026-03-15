@@ -67,7 +67,10 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   const getBarDateStr = (d: Date = new Date()) => {
       const shift = new Date(d);
       if (shift.getHours() < 4) shift.setDate(shift.getDate() - 1);
-      return shift.toISOString().split('T')[0];
+      const y = shift.getFullYear();
+      const mm = String(shift.getMonth() + 1).padStart(2, '0');
+      const dd = String(shift.getDate()).padStart(2, '0');
+      return `${y}-${mm}-${dd}`;
   };
 
   const currentBarDate = getBarDateStr();
