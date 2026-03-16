@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, MealReservation, DailyAlert } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, MealReservation, DailyAlert, WorkShift, ActivityMoment, ScheduleConfig } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -11,6 +11,7 @@ import Configuration from './components/Configuration';
 import Consignes from './components/Consignes';
 import DLCView from './components/DLCView';
 import History from './components/History';
+import StaffScheduling from './components/StaffScheduling';
 import MessagesView from './components/MessagesView';
 import Order from './components/Order';
 import RecipesView from './components/RecipesView';
@@ -99,6 +100,27 @@ const App: React.FC = () => {
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
   const [dailyAlerts, setDailyAlerts] = useState<DailyAlert[]>([]);
+  const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
+  const [activityMoments, setActivityMoments] = useState<ActivityMoment[]>([]);
+  const [absenceRequests, setAbsenceRequests] = useState<any[]>([]);
+  const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
+    openingHours: {
+      0: { open: '10:00', close: '22:00', isOpen: true },
+      1: { open: '10:00', close: '22:00', isOpen: true },
+      2: { open: '10:00', close: '22:00', isOpen: true },
+      3: { open: '10:00', close: '22:00', isOpen: true },
+      4: { open: '10:00', close: '22:00', isOpen: true },
+      5: { open: '10:00', close: '23:00', isOpen: true },
+      6: { open: '10:00', close: '23:00', isOpen: true },
+    },
+    setupTimeMinutes: 30,
+    closingTimeMinutes: 30,
+    defaultBreakMinutes: 30,
+    splitShiftAllowed: false,
+    restDayPattern: 'CONTINUOUS',
+    contractType: '35H',
+    location: 'Paris'
+  });
 
   const syncData = async (action: string, payload: any) => {
     // BLOCK SYNC IN TEST MODE
@@ -122,7 +144,10 @@ const App: React.FC = () => {
         const data = await response.json();
         setUsers(data.users || []);
         setRoleProfiles(data.roleProfiles || []);
-        if (data.appConfig) setAppConfig(prev => ({...prev, ...data.appConfig}));
+        if (data.appConfig) {
+            setAppConfig(prev => ({...prev, ...data.appConfig}));
+            if (data.appConfig.scheduleConfig) setScheduleConfig(data.appConfig.scheduleConfig);
+        }
         fetchFullData();
     } catch (error) { setLoading(false); }
   };
@@ -161,6 +186,9 @@ const App: React.FC = () => {
           if (dataSt.unfulfilledOrders) setUnfulfilledOrders(dataSt.unfulfilledOrders);
           if (dataSt.orders) setOrders(dataSt.orders);
           if (dataSt.mealReservations) setMealReservations(dataSt.mealReservations);
+          if (dataSt.workShifts) setWorkShifts(dataSt.workShifts);
+          if (dataSt.activityMoments) setActivityMoments(dataSt.activityMoments);
+          if (dataSt.absenceRequests) setAbsenceRequests(dataSt.absenceRequests);
 
           if (dataH.transactions) setTransactions(dataH.transactions);
           if (dataH.dlcHistory) setDlcHistory(dataH.dlcHistory);
@@ -228,6 +256,7 @@ const App: React.FC = () => {
     { id: 'admin_prices', label: 'Vérif. Prix & Marges', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', resource: 'admin_prices' },
     { id: 'consignes', label: 'Consignes Stock', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', resource: 'consignes' },
     { id: 'history', label: 'Historique', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', resource: 'history' },
+    { id: 'staff_scheduling', label: 'Optimisation Plannings', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', resource: 'staff_scheduling' },
   ];
 
   const filteredMenuItems = useMemo(() => {
@@ -1040,6 +1069,58 @@ const App: React.FC = () => {
                   } 
                 }); 
               }} 
+            />
+          )}
+          {view === 'staff_scheduling' && (
+            <StaffScheduling
+              users={users}
+              workShifts={workShifts}
+              activityMoments={activityMoments}
+              absenceRequests={absenceRequests}
+              scheduleConfig={scheduleConfig}
+              events={events}
+              mealReservations={mealReservations}
+              onSync={syncData}
+              onSaveShift={(shift: WorkShift) => {
+                setWorkShifts(prev => {
+                  const exists = prev.find(s => s.id === shift.id);
+                  if (exists) return prev.map(s => s.id === shift.id ? shift : s);
+                  return [...prev, shift];
+                });
+                syncData('SAVE_WORK_SHIFT', shift);
+              }}
+              onDeleteShift={(id: string) => {
+                setWorkShifts(prev => prev.filter(s => s.id !== id));
+                syncData('DELETE_WORK_SHIFT', { id });
+              }}
+              onSaveActivityMoment={(moment: ActivityMoment) => {
+                setActivityMoments(prev => {
+                  const exists = prev.find(m => m.id === moment.id);
+                  if (exists) return prev.map(m => m.id === moment.id ? moment : m);
+                  return [...prev, moment];
+                });
+                syncData('SAVE_ACTIVITY_MOMENT', moment);
+              }}
+              onDeleteActivityMoment={(id: string) => {
+                setActivityMoments(prev => prev.filter(m => m.id !== id));
+                syncData('DELETE_ACTIVITY_MOMENT', { id });
+              }}
+              onSaveAbsenceRequest={(request: any) => {
+                setAbsenceRequests(prev => {
+                  const exists = prev.find(r => r.id === request.id);
+                  if (exists) return prev.map(r => r.id === request.id ? request : r);
+                  return [...prev, request];
+                });
+                syncData('SAVE_ABSENCE_REQUEST', request);
+              }}
+              onDeleteAbsenceRequest={(id: string) => {
+                setAbsenceRequests(prev => prev.filter(r => r.id !== id));
+                syncData('DELETE_ABSENCE_REQUEST', { id });
+              }}
+              onSaveConfig={(config: ScheduleConfig) => {
+                setScheduleConfig(config);
+                saveConfig('schedule_config', config);
+              }}
             />
           )}
           {view === 'dlc_tracking' && (

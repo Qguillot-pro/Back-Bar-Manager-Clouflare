@@ -362,3 +362,44 @@ export interface ProductSheet {
     marginRate?: number; // Taux de marge spécifique
     tvaRate?: number; // Taux de TVA
 }
+
+export interface WorkShift {
+    id: string;
+    userId: string;
+    date: string; // YYYY-MM-DD
+    startTime: string; // HH:mm
+    endTime: string; // HH:mm
+    breakMinutes: number;
+    isSplitShift?: boolean;
+}
+
+export interface ActivityMoment {
+    id: string;
+    dayOfWeek: number; // 0-6 (0=Dimanche)
+    startTime: string;
+    endTime: string;
+    level: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+export interface AbsenceRequest {
+    id: string;
+    userId: string;
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
+    startTime?: string; // HH:mm (optional)
+    endTime?: string; // HH:mm (optional)
+    reason?: string;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    createdAt: string;
+}
+
+export interface ScheduleConfig {
+    openingHours: Record<number, { open: string; close: string; isOpen: boolean }>;
+    setupTimeMinutes: number;
+    closingTimeMinutes: number;
+    defaultBreakMinutes: number;
+    splitShiftAllowed: boolean;
+    contractType: '35H' | '39H';
+    location: string;
+    restDayPattern: 'CONTINUOUS' | 'SPLIT';
+}

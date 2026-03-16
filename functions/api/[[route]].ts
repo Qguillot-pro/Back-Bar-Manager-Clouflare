@@ -54,6 +54,45 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       console.log("Migration tva_rate recipes skipped or already done");
   }
 
+  // Migration V1.5: Add work_shifts and activity_moments tables
+  try {
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS work_shifts (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              date TEXT NOT NULL,
+              start_time TEXT NOT NULL,
+              end_time TEXT NOT NULL,
+              break_minutes INTEGER NOT NULL,
+              is_split_shift BOOLEAN DEFAULT FALSE
+          )
+      `);
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS activity_moments (
+              id TEXT PRIMARY KEY,
+              day_of_week INTEGER NOT NULL,
+              start_time TEXT NOT NULL,
+              end_time TEXT NOT NULL,
+              level TEXT NOT NULL
+          )
+      `);
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS absence_requests (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              start_date TEXT NOT NULL,
+              end_date TEXT NOT NULL,
+              start_time TEXT,
+              end_time TEXT,
+              reason TEXT,
+              status TEXT NOT NULL,
+              created_at TIMESTAMP DEFAULT NOW()
+          )
+      `);
+  } catch (e) {
+      console.log("Migration work_shifts/activity_moments skipped or already done", e);
+  }
+
   try {
     const url = new URL(request.url);
     const path = url.pathname; 
@@ -110,6 +149,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     configMap.tvaRates = JSON.parse(row.value);
                 } catch (e) {
                     configMap.tvaRates = [5.5, 10, 20];
+                }
+            }
+            if (row.key === 'schedule_config') {
+                try {
+                    configMap.scheduleConfig = JSON.parse(row.value);
+                } catch (e) {
+                    console.error("Error parsing schedule_config", e);
                 }
             }
         });
@@ -181,6 +227,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500) t),
                     'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'PENDING' OR status = 'ORDERED') t),
                     'mealReservations', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM meal_reservations) t),
+                    'workShifts', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM work_shifts WHERE date >= (CURRENT_DATE - INTERVAL '30 days')::text) t),
+                    'activityMoments', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM activity_moments) t),
+                    'absenceRequests', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM absence_requests) t),
                     'adminNotes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM admin_notes ORDER BY created_at DESC LIMIT 50) t)
                 ) as data;
             `;
@@ -273,6 +322,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }));
         if (rawData.mealReservations) responseBody.mealReservations = rawData.mealReservations.map((r: any) => ({ 
             id: r.id, userId: r.user_id, date: r.date, slot: r.slot 
+        }));
+        if (rawData.workShifts) responseBody.workShifts = rawData.workShifts.map((s: any) => ({
+            id: s.id, userId: s.user_id, date: s.date, startTime: s.start_time, endTime: s.end_time, breakMinutes: s.break_minutes, isSplitShift: s.is_split_shift
+        }));
+        if (rawData.activityMoments) responseBody.activityMoments = rawData.activityMoments.map((m: any) => ({
+            id: m.id, dayOfWeek: m.day_of_week, startTime: m.start_time, endTime: m.end_time, level: m.level
+        }));
+        if (rawData.absenceRequests) responseBody.absenceRequests = rawData.absenceRequests.map((a: any) => ({
+            id: a.id, userId: a.user_id, startDate: a.start_date, endDate: a.end_date, startTime: a.start_time, endTime: a.end_time, reason: a.reason, status: a.status, createdAt: a.created_at
         }));
         
         const orderMapper = (row: any) => ({ 
@@ -392,6 +450,43 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         
         case 'SAVE_MEAL_RESERVATION': { await pool.query(`INSERT INTO meal_reservations (id, user_id, date, slot) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date, payload.slot]); break; }
         case 'DELETE_MEAL_RESERVATION': { await pool.query('DELETE FROM meal_reservations WHERE id = $1', [payload.id]); break; }
+
+        case 'SAVE_WORK_SHIFT': {
+            const { id, userId, date, startTime, endTime, breakMinutes, isSplitShift } = payload;
+            await pool.query(`
+                INSERT INTO work_shifts (id, user_id, date, start_time, end_time, break_minutes, is_split_shift)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (id) DO UPDATE SET
+                user_id = EXCLUDED.user_id, date = EXCLUDED.date, start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time, break_minutes = EXCLUDED.break_minutes, is_split_shift = EXCLUDED.is_split_shift
+            `, [id, userId, date, startTime, endTime, breakMinutes, isSplitShift || false]);
+            break;
+        }
+        case 'DELETE_WORK_SHIFT': { await pool.query('DELETE FROM work_shifts WHERE id = $1', [payload.id]); break; }
+        case 'SAVE_ACTIVITY_MOMENT': {
+            const { id, dayOfWeek, startTime, endTime, level } = payload;
+            await pool.query(`
+                INSERT INTO activity_moments (id, day_of_week, start_time, end_time, level)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (id) DO UPDATE SET
+                day_of_week = EXCLUDED.day_of_week, start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time, level = EXCLUDED.level
+            `, [id, dayOfWeek, startTime, endTime, level]);
+            break;
+        }
+        case 'DELETE_ACTIVITY_MOMENT': { await pool.query('DELETE FROM activity_moments WHERE id = $1', [payload.id]); break; }
+        case 'SAVE_ABSENCE_REQUEST': {
+            const { id, userId, startDate, endDate, startTime, endTime, reason, status } = payload;
+            await pool.query(`
+                INSERT INTO absence_requests (id, user_id, start_date, end_date, start_time, end_time, reason, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (id) DO UPDATE SET
+                user_id = EXCLUDED.user_id, start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date,
+                start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, reason = EXCLUDED.reason, status = EXCLUDED.status
+            `, [id, userId, startDate, endDate, startTime, endTime, reason, status]);
+            break;
+        }
+        case 'DELETE_ABSENCE_REQUEST': { await pool.query('DELETE FROM absence_requests WHERE id = $1', [payload.id]); break; }
 
         // --- UPDATES V1.3 ---
         case 'SAVE_NOTE': {
