@@ -89,6 +89,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               created_at TIMESTAMP DEFAULT NOW()
           )
       `);
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS meal_reservations (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              date TEXT NOT NULL,
+              created_at TIMESTAMP DEFAULT NOW()
+          )
+      `);
   } catch (e) {
       console.log("Migration work_shifts/activity_moments skipped or already done", e);
   }
@@ -448,7 +456,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_EMAIL_TEMPLATE': { await pool.query(`INSERT INTO email_templates (id, name, subject, body) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subject = EXCLUDED.subject, body = EXCLUDED.body`, [payload.id, payload.name, payload.subject, payload.body]); break; }
         case 'DELETE_EMAIL_TEMPLATE': { await pool.query('DELETE FROM email_templates WHERE id = $1', [payload.id]); break; }
         
-        case 'SAVE_MEAL_RESERVATION': { await pool.query(`INSERT INTO meal_reservations (id, user_id, date, slot) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date, payload.slot]); break; }
+        case 'SAVE_MEAL_RESERVATION': { await pool.query(`INSERT INTO meal_reservations (id, user_id, date) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date]); break; }
         case 'DELETE_MEAL_RESERVATION': { await pool.query('DELETE FROM meal_reservations WHERE id = $1', [payload.id]); break; }
 
         case 'SAVE_WORK_SHIFT': {

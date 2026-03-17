@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, WorkShift, ActivityMoment, ScheduleConfig, MealReservation, MealPlan } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, WorkShift, ActivityMoment, ScheduleConfig, MealReservation } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -100,7 +100,6 @@ const App: React.FC = () => {
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [dailyAlerts, setDailyAlerts] = useState<DailyAlert[]>([]);
   const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
-  const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
   const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
   const [activityMoments, setActivityMoments] = useState<ActivityMoment[]>([]);
   const [absenceRequests, setAbsenceRequests] = useState<any[]>([]);
@@ -187,7 +186,6 @@ const App: React.FC = () => {
           if (dataSt.unfulfilledOrders) setUnfulfilledOrders(dataSt.unfulfilledOrders);
           if (dataSt.orders) setOrders(dataSt.orders);
           if (dataSt.mealReservations) setMealReservations(dataSt.mealReservations);
-          if (dataSt.mealPlans) setMealPlans(dataSt.mealPlans);
           if (dataSt.workShifts) setWorkShifts(dataSt.workShifts);
           if (dataSt.activityMoments) setActivityMoments(dataSt.activityMoments);
           if (dataSt.absenceRequests) setAbsenceRequests(dataSt.absenceRequests);
@@ -1015,7 +1013,7 @@ const App: React.FC = () => {
           {isTestMode && <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-black uppercase px-2 py-1 z-[100] rounded-bl-lg">Mode Test Actif - Aucune Sauvegarde</div>}
           {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} tasks={tasks} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} users={users} mealReservations={mealReservations} />}
           {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
-          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={saveConfig} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} users={users} mealReservations={mealReservations} setMealReservations={setMealReservations} mealPlans={mealPlans} setMealPlans={setMealPlans} />}
+          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={saveConfig} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} users={users} mealReservations={mealReservations} setMealReservations={setMealReservations} />}
           {view === 'bar_prep' && (
             <BarPrep 
               items={items} 
@@ -1126,7 +1124,6 @@ const App: React.FC = () => {
               events={events}
               onSync={syncData}
               mealReservations={mealReservations}
-              mealPlans={mealPlans}
               onSaveShift={(shift: WorkShift) => {
                 setWorkShifts(prev => {
                   const exists = prev.find(s => s.id === shift.id);

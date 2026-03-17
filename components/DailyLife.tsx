@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig, CocktailCategory, MealReservation, MealPlan } from '../types';
+import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig, CocktailCategory, MealReservation } from '../types';
 
 interface DailyLifeProps {
   tasks: Task[];
@@ -27,8 +27,6 @@ interface DailyLifeProps {
   users?: User[];
   mealReservations?: MealReservation[];
   setMealReservations?: React.Dispatch<React.SetStateAction<MealReservation[]>>;
-  mealPlans?: MealPlan[];
-  setMealPlans?: React.Dispatch<React.SetStateAction<MealPlan[]>>;
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -200,8 +198,7 @@ const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycle
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
-    appConfig, saveConfig, initialTab, cocktailCategories = [], onEditTask, users = [], mealReservations = [], setMealReservations,
-    mealPlans = [], setMealPlans
+    appConfig, saveConfig, initialTab, cocktailCategories = [], onEditTask, users = [], mealReservations = [], setMealReservations
 }) => {
   const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS' | 'MEALS'>('TASKS');
   const [configCycleType, setConfigCycleType] = useState<DailyCocktailType | null>(null); 
@@ -245,8 +242,8 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(getBarDateStr(new Date(), appConfig?.barDayStart));
   const [activeMealSlot, setActiveMealSlot] = useState<'LUNCH' | 'DINNER'>('LUNCH');
 
-  const handleToggleMeal = (userId: string, date: string, slot: 'LUNCH' | 'DINNER') => {
-      const existing = mealReservations?.find(r => r.userId === userId && r.date === date && r.slot === slot);
+  const handleToggleMeal = (userId: string, date: string) => {
+      const existing = mealReservations?.find(r => r.userId === userId && r.date === date);
       if (existing) {
           setMealReservations?.(prev => prev.filter(r => r.id !== existing.id));
           onSync('DELETE_MEAL_RESERVATION', { id: existing.id });
@@ -255,30 +252,11 @@ const DailyLife: React.FC<DailyLifeProps> = ({
               id: 'meal_' + Date.now(),
               userId,
               date,
-              slot,
               createdAt: new Date().toISOString()
           };
           setMealReservations?.(prev => [...prev, newRes]);
           onSync('SAVE_MEAL_RESERVATION', newRes);
       }
-  };
-
-  const handleSaveMealPlan = (date: string, lunchMenu?: string, dinnerMenu?: string) => {
-      const existing = mealPlans?.find(p => p.date === date);
-      const updated: MealPlan = existing 
-        ? { ...existing, lunchMenu, dinnerMenu }
-        : { id: 'mp_' + Date.now(), date, lunchMenu, dinnerMenu };
-      
-      setMealPlans?.(prev => {
-          const idx = prev.findIndex(p => p.date === date);
-          if (idx >= 0) {
-              const copy = [...prev];
-              copy[idx] = updated;
-              return copy;
-          }
-          return [...prev, updated];
-      });
-      onSync('SAVE_MEAL_PLAN', updated);
   };
 
   const currentBarDate = getBarDateStr(new Date(), appConfig?.barDayStart);
@@ -878,74 +856,31 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 
       {activeTab === 'MEALS' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              {/* Menu du jour */}
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                      <div>
-                          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Menu du jour</h2>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Planning pour le {new Date(currentBarDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-                      </div>
-                  </div>
-                  <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="space-y-4">
-                          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Midi (Lunch)</label>
-                          <textarea 
-                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-rose-100 outline-none resize-none transition-all"
-                              rows={3}
-                              placeholder="Menu du midi..."
-                              value={mealPlans?.find(p => p.date === currentBarDate)?.lunchMenu || ''}
-                              onChange={(e) => handleSaveMealPlan(currentBarDate, e.target.value, mealPlans?.find(p => p.date === currentBarDate)?.dinnerMenu)}
-                          />
-                      </div>
-                      <div className="space-y-4">
-                          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Soir (Dinner)</label>
-                          <textarea 
-                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-rose-100 outline-none resize-none transition-all"
-                              rows={3}
-                              placeholder="Menu du soir..."
-                              value={mealPlans?.find(p => p.date === currentBarDate)?.dinnerMenu || ''}
-                              onChange={(e) => handleSaveMealPlan(currentBarDate, mealPlans?.find(p => p.date === currentBarDate)?.lunchMenu, e.target.value)}
-                          />
-                      </div>
-                  </div>
-              </div>
-
               {/* Inscriptions */}
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
                       <div>
-                          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Inscriptions Personnel</h2>
-                          <div className="flex items-center gap-4 mt-2">
-                              <button 
-                                  onClick={() => setActiveMealSlot('LUNCH')}
-                                  className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeMealSlot === 'LUNCH' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-white text-slate-400 border border-slate-200 hover:border-slate-300'}`}
-                              >
-                                  Midi
-                              </button>
-                              <button 
-                                  onClick={() => setActiveMealSlot('DINNER')}
-                                  className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeMealSlot === 'DINNER' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-white text-slate-400 border border-slate-200 hover:border-slate-300'}`}
-                              >
-                                  Soir
-                              </button>
-                          </div>
+                          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Inscriptions Repas Staff</h2>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                              Planning pour le {new Date(currentBarDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                          </p>
                       </div>
                       <div className="bg-rose-100 text-rose-600 px-4 py-2 rounded-2xl font-black text-xs flex items-center gap-2 self-start">
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                          {mealReservations?.filter(r => r.date === currentBarDate && r.slot === activeMealSlot).length} inscrits ({activeMealSlot === 'LUNCH' ? 'Midi' : 'Soir'})
+                          {mealReservations?.filter(r => r.date === currentBarDate).length} inscrits
                       </div>
                   </div>
                   <div className="p-8">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {users.sort((a,b) => a.name.localeCompare(b.name)).map(user => {
-                              const isRegistered = mealReservations?.some(r => r.userId === user.id && r.date === currentBarDate && r.slot === activeMealSlot);
+                              const isRegistered = mealReservations?.some(r => r.userId === user.id && r.date === currentBarDate);
                               return (
                                   <button
                                       key={user.id}
-                                      onClick={() => handleToggleMeal(user.id, currentBarDate, activeMealSlot)}
+                                      onClick={() => handleToggleMeal(user.id, currentBarDate)}
                                       className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all text-left ${
                                           isRegistered 
-                                          ? 'border-rose-500 bg-rose-50 ring-4 ring-rose-50' 
+                                          ? 'border-rose-50 border-rose-500 ring-4 ring-rose-50' 
                                           : 'border-slate-100 hover:border-slate-200 bg-white'
                                       }`}
                                   >
@@ -977,8 +912,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                           const d = new Date(currentBarDate);
                           d.setDate(d.getDate() + i);
                           const dateStr = d.toISOString().split('T')[0];
-                          const lunchCount = mealReservations?.filter(r => r.date === dateStr && r.slot === 'LUNCH').length || 0;
-                          const dinnerCount = mealReservations?.filter(r => r.date === dateStr && r.slot === 'DINNER').length || 0;
+                          const count = mealReservations?.filter(r => r.date === dateStr).length || 0;
                           return (
                               <div key={i} className="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100">
                                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
@@ -987,19 +921,10 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                   <p className="text-sm font-black text-slate-700 mb-3">
                                       {d.getDate()} {d.toLocaleDateString('fr-FR', { month: 'short' })}
                                   </p>
-                                  <div className="flex justify-center gap-2">
-                                      <div className={`flex flex-col items-center justify-center w-10 h-10 rounded-xl font-black text-[10px] ${
-                                          lunchCount > 0 ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-400'
-                                      }`} title="Midi">
-                                          <span>M</span>
-                                          <span>{lunchCount}</span>
-                                      </div>
-                                      <div className={`flex flex-col items-center justify-center w-10 h-10 rounded-xl font-black text-[10px] ${
-                                          dinnerCount > 0 ? 'bg-rose-900 text-white' : 'bg-slate-200 text-slate-400'
-                                      }`} title="Soir">
-                                          <span>S</span>
-                                          <span>{dinnerCount}</span>
-                                      </div>
+                                  <div className={`flex items-center justify-center w-full py-2 rounded-xl font-black text-xs ${
+                                      count > 0 ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-slate-200 text-slate-400'
+                                  }`}>
+                                      {count} repas
                                   </div>
                               </div>
                           );

@@ -563,19 +563,11 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                   Repas Staff
               </h3>
               <div className="flex items-center justify-between relative z-10">
-                  <div className="flex gap-6">
-                      <div>
-                          <p className="text-2xl font-black text-slate-800">
-                              {mealReservations.filter(r => r.date === currentBarDate && r.slot === 'LUNCH').length}
-                          </p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Midi</p>
-                      </div>
-                      <div className="border-l border-slate-100 pl-6">
-                          <p className="text-2xl font-black text-slate-800">
-                              {mealReservations.filter(r => r.date === currentBarDate && r.slot === 'DINNER').length}
-                          </p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Soir</p>
-                      </div>
+                  <div>
+                      <p className="text-3xl font-black text-slate-800">
+                          {mealReservations.filter(r => r.date === currentBarDate).length}
+                      </p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inscrits</p>
                   </div>
                   <button className="bg-rose-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 shadow-lg shadow-rose-200">Gérer</button>
               </div>

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, WorkShift, ActivityMoment, ScheduleConfig, Event, MealReservation, MealPlan } from '../types';
+import { User, WorkShift, ActivityMoment, ScheduleConfig, Event, MealReservation } from '../types';
 import { Calendar, Clock, Settings, TrendingUp, Plus, Trash2, Save, Printer, Sparkles, ChevronLeft, ChevronRight, Lock, Loader2, Search, Sun, Cloud, CloudRain, CloudLightning, Wind } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
@@ -20,7 +20,6 @@ interface StaffSchedulingProps {
   onDeleteAbsenceRequest: (id: string) => void;
   onSaveConfig: (config: ScheduleConfig) => void;
   mealReservations: MealReservation[];
-  mealPlans: MealPlan[];
 }
 
 const StaffScheduling: React.FC<StaffSchedulingProps> = ({
@@ -38,8 +37,7 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   onSaveAbsenceRequest,
   onDeleteAbsenceRequest,
   onSaveConfig,
-  mealReservations,
-  mealPlans
+  mealReservations
 }) => {
   const [activeTab, setActiveTab] = useState<'planning' | 'config' | 'activity' | 'absences'>('planning');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -217,6 +215,10 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
     }
   };
 
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => u.showInPlanning === true);
+  }, [users]);
+
   if (!isAdminUnlocked) {
     return (
       <div className="flex flex-col items-center justify-center h-[600px] bg-slate-900/50 rounded-3xl border border-white/10">
@@ -249,10 +251,6 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       </div>
     );
   }
-
-  const filteredUsers = useMemo(() => {
-    return users.filter(u => u.showInPlanning !== false);
-  }, [users]);
 
   return (
     <div className="space-y-6">
@@ -343,7 +341,6 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
           absenceRequests={absenceRequests}
           dailyWeather={externalContext.dailyWeather}
           mealReservations={mealReservations}
-          mealPlans={mealPlans}
         />
       )}
 
@@ -390,7 +387,7 @@ const WeatherIcon = ({ type }: { type: string }) => {
   }
 };
 
-const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrint, absenceRequests, dailyWeather, mealReservations, mealPlans }: {
+const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrint, absenceRequests, dailyWeather, mealReservations }: {
   users: User[],
   workShifts: WorkShift[],
   weekDates: string[],
@@ -405,8 +402,7 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
   onPrint: () => void,
   absenceRequests: any[],
   dailyWeather?: { date: string, morning: string, afternoon: string }[],
-  mealReservations: MealReservation[],
-  mealPlans: MealPlan[]
+  mealReservations: MealReservation[]
 }) => {
   const [selectedShift, setSelectedShift] = useState<WorkShift | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -493,27 +489,9 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
                   <span className="block text-lg font-black text-white">{new Date(weekDates[i]).getDate()}</span>
                   
                   <div className="flex justify-center gap-2 mt-2">
-                    <div className="flex flex-col items-center gap-1 bg-rose-500/20 px-1.5 py-0.5 rounded-md border border-rose-500/30 min-w-[3rem]" title="Repas Midi">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[8px] font-black text-rose-400">M</span>
-                        <span className="text-[9px] font-black text-white">{mealReservations.filter((r: MealReservation) => r.date === weekDates[i] && r.slot === 'LUNCH').length}</span>
-                      </div>
-                      {mealPlans.find(p => p.date === weekDates[i])?.lunchMenu && (
-                        <span className="text-[7px] text-rose-200/70 truncate max-w-[40px] italic">
-                          {mealPlans.find(p => p.date === weekDates[i])?.lunchMenu}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-col items-center gap-1 bg-rose-900/40 px-1.5 py-0.5 rounded-md border border-rose-900/50 min-w-[3rem]" title="Repas Soir">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[8px] font-black text-rose-300">S</span>
-                        <span className="text-[9px] font-black text-white">{mealReservations.filter((r: MealReservation) => r.date === weekDates[i] && r.slot === 'DINNER').length}</span>
-                      </div>
-                      {mealPlans.find(p => p.date === weekDates[i])?.dinnerMenu && (
-                        <span className="text-[7px] text-rose-100/60 truncate max-w-[40px] italic">
-                          {mealPlans.find(p => p.date === weekDates[i])?.dinnerMenu}
-                        </span>
-                      )}
+                    <div className="flex items-center gap-1 bg-rose-500/20 px-1.5 py-0.5 rounded-md border border-rose-500/30" title="Repas Staff">
+                      <span className="text-[8px] font-black text-rose-400">R</span>
+                      <span className="text-[9px] font-black text-white">{mealReservations.filter((r: MealReservation) => r.date === weekDates[i]).length}</span>
                     </div>
                   </div>
                 </div>
