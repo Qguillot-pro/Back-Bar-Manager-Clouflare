@@ -78,7 +78,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [newUserPin, setNewUserPin] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('BARMAN');
   const [newUserProfileId, setNewUserProfileId] = useState<string>('');
-  const [newUserShowInMeal, setNewUserShowInMeal] = useState(true);
+  const [newUserShowInPlanning, setNewUserShowInPlanning] = useState(true);
   const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
 
   // DLC Profile State
@@ -196,7 +196,7 @@ const Configuration: React.FC<ConfigProps> = ({
           role: newUserRole, 
           profileId: newUserProfileId || undefined,
           pin: newUserPin,
-          showInMealPlanning: newUserShowInMeal
+          showInPlanning: newUserShowInPlanning
       }; 
       
       if (editingUserId) {
@@ -206,7 +206,7 @@ const Configuration: React.FC<ConfigProps> = ({
       }
       
       onSync('SAVE_USER', userToSave); 
-      setNewUserName(''); setNewUserPin(''); setEditingUserId(null); setNewUserRole('BARMAN'); setNewUserShowInMeal(true); setNewUserProfileId('');
+      setNewUserName(''); setNewUserPin(''); setEditingUserId(null); setNewUserRole('BARMAN'); setNewUserShowInPlanning(true); setNewUserProfileId('');
   };
 
   const startEditUser = (u: User) => {
@@ -215,7 +215,7 @@ const Configuration: React.FC<ConfigProps> = ({
       setNewUserPin(u.pin);
       setNewUserRole(u.role);
       setNewUserProfileId(u.profileId || '');
-      setNewUserShowInMeal(u.showInMealPlanning !== false);
+      setNewUserShowInPlanning(u.showInPlanning !== false);
   };
 
   const cancelEditUser = () => {
@@ -224,7 +224,7 @@ const Configuration: React.FC<ConfigProps> = ({
       setNewUserPin('');
       setNewUserRole('BARMAN');
       setNewUserProfileId('');
-      setNewUserShowInMeal(true);
+      setNewUserShowInPlanning(true);
   };
 
   const handleSaveProfile = () => {
@@ -613,10 +613,10 @@ const Configuration: React.FC<ConfigProps> = ({
                                 </select>
                             </div>
                           )}
-                          <div className="flex items-center h-[46px] px-2">
-                              <label className="flex items-center gap-2 cursor-pointer" title="Afficher dans le planning repas">
-                                  <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={newUserShowInMeal} onChange={e => setNewUserShowInMeal(e.target.checked)} />
-                                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Repas</span>
+                          <div className="flex items-center h-[46px] px-2 gap-4">
+                              <label className="flex items-center gap-2 cursor-pointer" title="Afficher dans le planning d'équipe">
+                                  <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={newUserShowInPlanning} onChange={e => setNewUserShowInPlanning(e.target.checked)} />
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Planning</span>
                               </label>
                           </div>
                           <div className="flex flex-col gap-1">
@@ -640,6 +640,9 @@ const Configuration: React.FC<ConfigProps> = ({
                                                 <span className="text-[10px] font-black bg-indigo-50 text-indigo-400 px-2 py-0.5 rounded uppercase tracking-widest">
                                                     {roleProfiles.find(p => p.id === u.profileId)?.name || 'Profil Inconnu'}
                                                 </span>
+                                              )}
+                                              {u.showInPlanning !== false && (
+                                                <span className="text-[10px] font-black bg-emerald-50 text-emerald-400 px-2 py-0.5 rounded uppercase tracking-widest">Planning</span>
                                               )}
                                               <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded">
                                                   <span className="text-[10px] font-mono font-bold text-slate-500">PIN: {visiblePins.has(u.id) ? u.pin : '••••'}</span>

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, WorkShift, ActivityMoment, ScheduleConfig, Event, MealReservation } from '../types';
-import { Calendar, Clock, Settings, TrendingUp, Plus, Trash2, Save, Printer, Sparkles, ChevronLeft, ChevronRight, Lock, Loader2 } from 'lucide-react';
+import { User, WorkShift, ActivityMoment, ScheduleConfig, Event, MealReservation, MealPlan } from '../types';
+import { Calendar, Clock, Settings, TrendingUp, Plus, Trash2, Save, Printer, Sparkles, ChevronLeft, ChevronRight, Lock, Loader2, Search, Sun, Cloud, CloudRain, CloudLightning, Wind } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
 interface StaffSchedulingProps {
@@ -10,7 +10,6 @@ interface StaffSchedulingProps {
   activityMoments: ActivityMoment[];
   scheduleConfig: ScheduleConfig;
   events: Event[];
-  mealReservations: MealReservation[];
   absenceRequests: any[];
   onSync: (action: string, payload: any) => void;
   onSaveShift: (shift: WorkShift) => void;
@@ -20,6 +19,8 @@ interface StaffSchedulingProps {
   onSaveAbsenceRequest: (request: any) => void;
   onDeleteAbsenceRequest: (id: string) => void;
   onSaveConfig: (config: ScheduleConfig) => void;
+  mealReservations: MealReservation[];
+  mealPlans: MealPlan[];
 }
 
 const StaffScheduling: React.FC<StaffSchedulingProps> = ({
@@ -28,7 +29,6 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   activityMoments,
   scheduleConfig,
   events,
-  mealReservations,
   absenceRequests,
   onSync,
   onSaveShift,
@@ -37,7 +37,9 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   onDeleteActivityMoment,
   onSaveAbsenceRequest,
   onDeleteAbsenceRequest,
-  onSaveConfig
+  onSaveConfig,
+  mealReservations,
+  mealPlans
 }) => {
   const [activeTab, setActiveTab] = useState<'planning' | 'config' | 'activity' | 'absences'>('planning');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -46,10 +48,11 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   const [showPinError, setShowPinError] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isFetchingContext, setIsFetchingContext] = useState(false);
-  const [externalContext, setExternalContext] = useState<{ holidays: string[], weather: string, legislation: string }>({
+  const [externalContext, setExternalContext] = useState<{ holidays: string[], weather: string, legislation: string, dailyWeather?: { date: string, morning: string, afternoon: string }[] }>({
     holidays: [],
     weather: '',
-    legislation: ''
+    legislation: '',
+    dailyWeather: []
   });
 
   const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
@@ -87,10 +90,18 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
       const prompt = `Recherche les informations suivantes pour la semaine du ${weekDates[0]} à ${scheduleConfig.location}:
       1. Vacances scolaires (Zone A, B, C en France) et jours fériés.
-      2. Prévisions météo simplifiées.
+      2. Prévisions météo simplifiées pour chaque jour (matin et après-midi). Choisis parmi: SUN, CLOUD, RAIN, STORM, WIND.
       3. Rappel rapide de la législation française sur le temps de travail (pauses, durée max, coupures).
       
-      Réponds en JSON: { "holidays": ["..."], "weather": "...", "legislation": "..." }`;
+      Réponds en JSON: { 
+        "holidays": ["..."], 
+        "weather": "Résumé global...", 
+        "legislation": "...",
+        "dailyWeather": [
+          { "date": "YYYY-MM-DD", "morning": "SUN/CLOUD/RAIN/STORM/WIND", "afternoon": "SUN/CLOUD/RAIN/STORM/WIND" },
+          ... (pour les 7 jours)
+        ]
+      }`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -239,10 +250,14 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
     );
   }
 
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => u.showInPlanning !== false);
+  }, [users]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800/50 p-6 rounded-3xl border border-white/10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 p-6 rounded-3xl border border-white/20 shadow-2xl">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 bg-indigo-500/20 rounded-2xl flex items-center justify-center">
             <Calendar className="w-6 h-6 text-indigo-400" />
@@ -313,7 +328,7 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
 
       {activeTab === 'planning' && (
         <PlanningGrid
-          users={users}
+          users={filteredUsers}
           workShifts={workShifts}
           weekDates={weekDates}
           days={days}
@@ -325,8 +340,10 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
           onOptimize={handleOptimize}
           isOptimizing={isOptimizing}
           onPrint={handlePrint}
-          mealReservations={mealReservations}
           absenceRequests={absenceRequests}
+          dailyWeather={externalContext.dailyWeather}
+          mealReservations={mealReservations}
+          mealPlans={mealPlans}
         />
       )}
 
@@ -336,6 +353,8 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
           days={days}
           onSave={onSaveActivityMoment}
           onDelete={onDeleteActivityMoment}
+          dailyWeather={externalContext.dailyWeather}
+          weekDates={weekDates}
         />
       )}
 
@@ -360,7 +379,18 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
 
 // --- Sub-components ---
 
-const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrint, mealReservations, absenceRequests }: {
+const WeatherIcon = ({ type }: { type: string }) => {
+  switch (type) {
+    case 'SUN': return <Sun className="w-4 h-4 text-amber-400" />;
+    case 'CLOUD': return <Cloud className="w-4 h-4 text-slate-400" />;
+    case 'RAIN': return <CloudRain className="w-4 h-4 text-blue-400" />;
+    case 'STORM': return <CloudLightning className="w-4 h-4 text-indigo-400" />;
+    case 'WIND': return <Wind className="w-4 h-4 text-slate-300" />;
+    default: return null;
+  }
+};
+
+const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrint, absenceRequests, dailyWeather, mealReservations, mealPlans }: {
   users: User[],
   workShifts: WorkShift[],
   weekDates: string[],
@@ -373,8 +403,10 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
   onOptimize: () => void,
   isOptimizing: boolean,
   onPrint: () => void,
+  absenceRequests: any[],
+  dailyWeather?: { date: string, morning: string, afternoon: string }[],
   mealReservations: MealReservation[],
-  absenceRequests: any[]
+  mealPlans: MealPlan[]
 }) => {
   const [selectedShift, setSelectedShift] = useState<WorkShift | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -394,8 +426,8 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
   };
 
   return (
-    <div className="bg-slate-800/50 rounded-3xl border border-white/10 overflow-hidden">
-      <div className="p-6 border-bottom border-white/10 flex items-center justify-between bg-slate-800/30">
+    <div className="bg-slate-900 rounded-3xl border border-white/20 overflow-hidden shadow-2xl">
+      <div className="p-6 border-b border-white/10 flex items-center justify-between bg-slate-800/50">
         <div className="flex items-center gap-4">
           <button 
             onClick={() => {
@@ -443,54 +475,111 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
 
       <div className="overflow-x-auto">
         <div className="min-w-[1000px]">
-          <div className="grid grid-cols-8 border-b border-white/10">
-            <div className="p-4 border-r border-white/10 bg-slate-900/30"></div>
-            {days.map((day: string, i: number) => (
-              <div key={day} className="p-4 text-center border-r border-white/10 last:border-r-0 bg-slate-900/30">
-                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">{day}</span>
-                <span className="block text-lg font-black text-white">{new Date(weekDates[i]).getDate()}</span>
-              </div>
-            ))}
+          <div className="grid grid-cols-8 border-b border-white/20">
+            <div className="p-4 border-r border-white/20 bg-slate-950/50"></div>
+            {days.map((day: string, i: number) => {
+              const weather = dailyWeather?.find(w => w.date === weekDates[i]);
+              return (
+                <div key={day} className="p-4 text-center border-r border-white/20 last:border-r-0 bg-slate-950/50">
+                  <div className="flex justify-center gap-2 mb-2">
+                    {weather && (
+                      <>
+                        <div title="Matin"><WeatherIcon type={weather.morning} /></div>
+                        <div title="Après-midi"><WeatherIcon type={weather.afternoon} /></div>
+                      </>
+                    )}
+                  </div>
+                  <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">{day}</span>
+                  <span className="block text-lg font-black text-white">{new Date(weekDates[i]).getDate()}</span>
+                  
+                  <div className="flex justify-center gap-2 mt-2">
+                    <div className="flex flex-col items-center gap-1 bg-rose-500/20 px-1.5 py-0.5 rounded-md border border-rose-500/30 min-w-[3rem]" title="Repas Midi">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px] font-black text-rose-400">M</span>
+                        <span className="text-[9px] font-black text-white">{mealReservations.filter((r: MealReservation) => r.date === weekDates[i] && r.slot === 'LUNCH').length}</span>
+                      </div>
+                      {mealPlans.find(p => p.date === weekDates[i])?.lunchMenu && (
+                        <span className="text-[7px] text-rose-200/70 truncate max-w-[40px] italic">
+                          {mealPlans.find(p => p.date === weekDates[i])?.lunchMenu}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-center gap-1 bg-rose-900/40 px-1.5 py-0.5 rounded-md border border-rose-900/50 min-w-[3rem]" title="Repas Soir">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px] font-black text-rose-300">S</span>
+                        <span className="text-[9px] font-black text-white">{mealReservations.filter((r: MealReservation) => r.date === weekDates[i] && r.slot === 'DINNER').length}</span>
+                      </div>
+                      {mealPlans.find(p => p.date === weekDates[i])?.dinnerMenu && (
+                        <span className="text-[7px] text-rose-100/60 truncate max-w-[40px] italic">
+                          {mealPlans.find(p => p.date === weekDates[i])?.dinnerMenu}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="relative h-[800px] overflow-y-auto custom-scrollbar">
             {timeSlots.map((time: string) => (
-              <div key={time} className="grid grid-cols-8 border-b border-white/5 h-12 group">
-                <div className="p-2 border-r border-white/10 text-[10px] font-bold text-slate-500 text-right pr-4 bg-slate-900/10">
+              <div key={time} className="grid grid-cols-8 border-b border-white/10 h-16 group">
+                <div className="p-2 border-r border-white/20 text-[11px] font-black text-slate-400 text-right pr-4 bg-slate-950/20 flex items-center justify-end">
                   {time}
                 </div>
                 {weekDates.map((date: string) => {
                   const isRestDay = !workShifts.some(s => s.date === date);
-                  const dayAbsences = absenceRequests.filter(a => a.startDate <= date && a.endDate >= date && a.status === 'APPROVED');
+                  const timeHour = parseInt(time.split(':')[0]);
+                  
+                  // Find absences for this specific hour
+                  const hourAbsences = absenceRequests.filter(a => {
+                    if (a.status !== 'APPROVED' && a.status !== 'PENDING') return false;
+                    if (a.startDate > date || a.endDate < date) return false;
+                    
+                    // If it's a single day absence with times
+                    if (a.startDate === date && a.endDate === date && a.startTime && a.endTime) {
+                      const startH = parseInt(a.startTime.split(':')[0]);
+                      const endH = parseInt(a.endTime.split(':')[0]);
+                      return timeHour >= startH && timeHour < endH;
+                    }
+                    // Full day absence
+                    return true;
+                  });
+
+                  // Find shifts covering this hour
+                  const hourShifts = workShifts.filter(s => {
+                    if (s.date !== date) return false;
+                    const startH = parseInt(s.startTime.split(':')[0]);
+                    const endH = parseInt(s.endTime.split(':')[0]);
+                    // Handle shifts crossing midnight (though unlikely here)
+                    if (endH < startH) return timeHour >= startH || timeHour < endH;
+                    return timeHour >= startH && timeHour < endH;
+                  });
 
                   return (
                     <div 
                       key={`${date}-${time}`} 
-                      className={`border-r border-white/5 last:border-r-0 relative hover:bg-indigo-500/5 cursor-pointer transition-colors ${isRestDay ? 'bg-slate-900/20' : ''}`}
+                      className={`border-r border-white/10 last:border-r-0 relative hover:bg-indigo-500/10 cursor-pointer transition-colors ${isRestDay ? 'bg-slate-950/30' : 'bg-slate-900/20'}`}
                       onClick={() => handleAddShift(date, time)}
                     >
                       {isRestDay && time === '12:00' && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-                          <span className="text-[10px] font-black uppercase tracking-widest rotate-45">Repos</span>
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
+                          <span className="text-[10px] font-black uppercase tracking-[0.3em] rotate-45 text-white">Repos</span>
                         </div>
                       )}
                       
-                      {dayAbsences.map(abs => (
-                        <div key={abs.id} className="absolute inset-x-0 top-0 bottom-0 bg-rose-500/20 pointer-events-none z-0">
-                          {time === '12:00' && (
-                            <div className="absolute inset-0 flex items-center justify-center opacity-40">
-                              <span className="text-[8px] font-black uppercase tracking-tight">Absence</span>
-                            </div>
-                          )}
+                      {hourAbsences.map(abs => (
+                        <div key={abs.id} className={`absolute inset-0 ${abs.status === 'APPROVED' ? 'bg-rose-500/30' : 'bg-amber-500/20'} border-l-2 ${abs.status === 'APPROVED' ? 'border-rose-500' : 'border-amber-500'} z-0 flex items-center justify-center`}>
+                          <span className="text-[8px] font-black uppercase tracking-tighter text-white/60 rotate-90 whitespace-nowrap">
+                            {abs.status === 'APPROVED' ? 'ABSENCE' : 'ATTENTE'}
+                          </span>
                         </div>
                       ))}
 
-                      {/* Render shifts for this date and time */}
-                      {workShifts
-                        .filter((s: WorkShift) => s.date === date && s.startTime === time)
-                        .map((shift: WorkShift) => {
+                      <div className="absolute inset-0 p-1 flex flex-col gap-1 overflow-y-auto custom-scrollbar z-10">
+                        {hourShifts.map((shift: WorkShift) => {
                           const user = users.find((u: User) => u.id === shift.userId);
-                          const hasMeal = mealReservations.some((r: MealReservation) => r.userId === shift.userId && r.date === date && user?.showInMealPlanning);
+                          const isStart = shift.startTime === time;
                           return (
                             <div
                               key={shift.id}
@@ -499,18 +588,18 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
                                 setSelectedShift(shift);
                                 setIsModalOpen(true);
                               }}
-                              className="absolute inset-x-1 top-1 bottom-1 bg-indigo-600/90 rounded-lg p-2 text-white shadow-lg border border-white/20 z-10 overflow-hidden"
+                              className={`w-full min-h-[20px] bg-indigo-600 rounded-md px-1.5 py-0.5 text-white shadow-md border border-white/20 flex flex-col justify-center ${!isStart ? 'opacity-80' : ''}`}
                             >
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-black uppercase truncate">{user?.name || 'Inconnu'}</span>
-                                {hasMeal && <span className="text-[8px] bg-emerald-500 px-1 rounded">REPAS</span>}
-                              </div>
-                              <div className="text-[9px] font-bold opacity-80">
-                                {shift.startTime} - {shift.endTime}
+                              {isStart && (
+                                <div className="text-[9px] font-black uppercase truncate leading-none mb-0.5">{user?.name}</div>
+                              )}
+                              <div className="text-[8px] font-bold opacity-70 leading-none">
+                                {shift.startTime}-{shift.endTime}
                               </div>
                             </div>
                           );
                         })}
+                      </div>
                     </div>
                   );
                 })}
@@ -636,17 +725,20 @@ const ShiftModal = ({ shift, users, onClose, onSave, onDelete }: {
   );
 };
 
-const ActivityManager = ({ activityMoments, days, onSave, onDelete }: {
+const ActivityManager = ({ activityMoments, days, onSave, onDelete, dailyWeather, weekDates }: {
   activityMoments: ActivityMoment[],
   days: string[],
   onSave: (m: ActivityMoment) => void,
-  onDelete: (id: string) => void
+  onDelete: (id: string) => void,
+  dailyWeather?: { date: string, morning: string, afternoon: string }[],
+  weekDates: string[]
 }) => {
   const [newMoment, setNewMoment] = useState<Partial<ActivityMoment>>({
     dayOfWeek: 1,
     startTime: '12:00',
     endTime: '14:00',
-    level: 'HIGH'
+    level: 'HIGH',
+    cycle: 'WEEKLY'
   });
 
   const handleAdd = () => {
@@ -660,15 +752,18 @@ const ActivityManager = ({ activityMoments, days, onSave, onDelete }: {
 
   return (
     <div className="space-y-6">
-      <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/10">
-        <h3 className="text-lg font-black text-white uppercase tracking-tight mb-6">Ajouter un moment d'activité</h3>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+      <div className="bg-slate-900 p-8 rounded-3xl border border-white/20 shadow-2xl">
+        <h3 className="text-xl font-black text-white uppercase tracking-tight mb-8 flex items-center gap-3">
+          <TrendingUp className="w-6 h-6 text-indigo-400" />
+          Configuration de l'Activité
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
           <div>
             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Jour</label>
             <select
               value={newMoment.dayOfWeek}
               onChange={(e) => setNewMoment({ ...newMoment, dayOfWeek: parseInt(e.target.value) })}
-              className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white focus:ring-2 focus:ring-indigo-500"
             >
               {days.map((day: string, i: number) => (
                 <option key={day} value={i + 1}>{day}</option>
@@ -681,7 +776,7 @@ const ActivityManager = ({ activityMoments, days, onSave, onDelete }: {
               type="time"
               value={newMoment.startTime}
               onChange={(e) => setNewMoment({ ...newMoment, startTime: e.target.value })}
-              className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white"
             />
           </div>
           <div>
@@ -690,7 +785,7 @@ const ActivityManager = ({ activityMoments, days, onSave, onDelete }: {
               type="time"
               value={newMoment.endTime}
               onChange={(e) => setNewMoment({ ...newMoment, endTime: e.target.value })}
-              className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white"
             />
           </div>
           <div>
@@ -698,16 +793,27 @@ const ActivityManager = ({ activityMoments, days, onSave, onDelete }: {
             <select
               value={newMoment.level}
               onChange={(e) => setNewMoment({ ...newMoment, level: e.target.value as any })}
-              className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white"
             >
               <option value="LOW">Faible</option>
               <option value="MEDIUM">Moyenne</option>
               <option value="HIGH">Forte</option>
             </select>
           </div>
+          <div>
+            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Cycle</label>
+            <select
+              value={newMoment.cycle}
+              onChange={(e) => setNewMoment({ ...newMoment, cycle: e.target.value as any })}
+              className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white"
+            >
+              <option value="DAILY">Quotidien</option>
+              <option value="WEEKLY">Hebdomadaire</option>
+            </select>
+          </div>
           <button
             onClick={handleAdd}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 rounded-xl transition-all shadow-lg shadow-indigo-900/50 flex items-center justify-center gap-2"
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 rounded-xl transition-all shadow-lg shadow-indigo-900/50 flex items-center justify-center gap-2 h-[46px]"
           >
             <Plus className="w-5 h-5" />
             Ajouter
@@ -715,24 +821,53 @@ const ActivityManager = ({ activityMoments, days, onSave, onDelete }: {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {activityMoments.map((m: ActivityMoment) => (
-          <div key={m.id} className="bg-slate-800/50 p-4 rounded-2xl border border-white/10 flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{days[m.dayOfWeek - 1]}</div>
-              <div className="text-white font-bold">{m.startTime} - {m.endTime}</div>
-              <div className={`text-[10px] font-black uppercase mt-1 ${m.level === 'HIGH' ? 'text-rose-400' : m.level === 'MEDIUM' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                Activité {m.level === 'HIGH' ? 'Forte' : m.level === 'MEDIUM' ? 'Moyenne' : 'Faible'}
-              </div>
-            </div>
-            <button
-              onClick={() => onDelete(m.id)}
-              className="p-2 text-slate-500 hover:text-rose-500 transition-colors"
-            >
-              <Trash2 className="w-5 h-5" />
-            </button>
-          </div>
-        ))}
+      <div className="bg-slate-900 rounded-3xl border border-white/20 shadow-2xl overflow-hidden">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-800/50 border-b border-white/10">
+              <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jour / Météo</th>
+              <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Horaires</th>
+              <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Niveau</th>
+              <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cycle</th>
+              <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activityMoments.map((m: ActivityMoment) => {
+              const weather = dailyWeather?.find(w => w.date === weekDates[m.dayOfWeek - 1]);
+              return (
+                <tr key={m.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                  <td className="p-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-bold text-white uppercase text-xs">{days[m.dayOfWeek - 1]}</span>
+                      {weather && (
+                        <div className="flex gap-1">
+                          <WeatherIcon type={weather.morning} />
+                          <WeatherIcon type={weather.afternoon} />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="p-4 font-mono text-indigo-400 text-sm">{m.startTime} - {m.endTime}</td>
+                <td className="p-4">
+                  <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md ${m.level === 'HIGH' ? 'bg-rose-500/10 text-rose-400' : m.level === 'MEDIUM' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                    {m.level === 'HIGH' ? 'Forte' : m.level === 'MEDIUM' ? 'Moyenne' : 'Faible'}
+                  </span>
+                </td>
+                <td className="p-4 text-slate-400 text-xs font-bold uppercase tracking-wider">{m.cycle === 'DAILY' ? 'Quotidien' : 'Hebdo'}</td>
+                <td className="p-4 text-right">
+                  <button
+                    onClick={() => onDelete(m.id)}
+                    className="p-2 text-slate-500 hover:text-rose-500 transition-colors"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        </table>
       </div>
     </div>
   );
@@ -743,9 +878,32 @@ const ConfigManager = ({ config, onSave }: {
   onSave: (c: ScheduleConfig) => void
 }) => {
   const [editedConfig, setEditedConfig] = useState<ScheduleConfig>({ ...config });
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+
+  const handleLocationSearch = async () => {
+    setIsSearchingLocation(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+      const prompt = `Valide et formate l'adresse suivante pour une utilisation météo: "${editedConfig.location}". 
+      Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
+      });
+      
+      if (response.text) {
+        setEditedConfig({ ...editedConfig, location: response.text.trim() });
+      }
+    } catch (e) {
+      console.error("Location Search Error", e);
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
 
   return (
-    <div className="bg-slate-800/50 p-8 rounded-3xl border border-white/10 space-y-8">
+    <div className="bg-slate-900 p-8 rounded-3xl border border-white/20 shadow-2xl space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="space-y-6">
           <h3 className="text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
@@ -754,7 +912,7 @@ const ConfigManager = ({ config, onSave }: {
           </h3>
           <div className="space-y-3">
             {Object.entries(editedConfig.openingHours).map(([day, hours]: [string, any]) => (
-              <div key={day} className="flex items-center gap-4 p-3 bg-slate-900/50 rounded-xl border border-white/5">
+              <div key={day} className="flex items-center gap-4 p-3 bg-slate-950/50 rounded-xl border border-white/10">
                 <div className="w-24 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                   {['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][parseInt(day)]}
                 </div>
@@ -768,7 +926,7 @@ const ConfigManager = ({ config, onSave }: {
                       [day]: { ...hours, open: e.target.value }
                     }
                   })}
-                  className="bg-slate-800 border border-white/10 rounded-lg p-1.5 text-xs text-white"
+                  className="bg-slate-800 border border-white/10 rounded-lg p-1.5 text-xs text-white focus:ring-1 focus:ring-indigo-500"
                 />
                 <span className="text-slate-600">à</span>
                 <input
@@ -781,7 +939,7 @@ const ConfigManager = ({ config, onSave }: {
                       [day]: { ...hours, close: e.target.value }
                     }
                   })}
-                  className="bg-slate-800 border border-white/10 rounded-lg p-1.5 text-xs text-white"
+                  className="bg-slate-800 border border-white/10 rounded-lg p-1.5 text-xs text-white focus:ring-1 focus:ring-indigo-500"
                 />
                 <input
                   type="checkbox"
@@ -812,7 +970,7 @@ const ConfigManager = ({ config, onSave }: {
                 type="number"
                 value={editedConfig.setupTimeMinutes}
                 onChange={(e) => setEditedConfig({ ...editedConfig, setupTimeMinutes: parseInt(e.target.value) })}
-                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+                className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
             <div>
@@ -821,8 +979,30 @@ const ConfigManager = ({ config, onSave }: {
                 type="number"
                 value={editedConfig.closingTimeMinutes}
                 onChange={(e) => setEditedConfig({ ...editedConfig, closingTimeMinutes: parseInt(e.target.value) })}
-                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+                className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white"
               />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Localisation (Météo)</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    value={editedConfig.location}
+                    onChange={(e) => setEditedConfig({ ...editedConfig, location: e.target.value })}
+                    placeholder="Ville, Pays..."
+                    className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 pl-10 text-white focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <button
+                  onClick={handleLocationSearch}
+                  disabled={isSearchingLocation}
+                  className="px-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl border border-white/10 transition-all"
+                >
+                  {isSearchingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Type de contrat</label>
@@ -928,6 +1108,10 @@ const AbsenceManager = ({ users, absenceRequests, onSave, onDelete }: {
       case 'REJECTED': return 'Refusé';
       default: return 'Non traité';
     }
+  };
+
+  const handleUpdateStatus = (abs: any, status: 'APPROVED' | 'REJECTED') => {
+    onSave({ ...abs, status });
   };
 
   return (

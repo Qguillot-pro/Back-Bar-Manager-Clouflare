@@ -92,7 +92,7 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
         const totalStock = stockLevels.filter(l => l.itemId === item.id).reduce((acc, curr) => acc + curr.currentQuantity, 0);
 
         // Calcul Info DLC
-        const itemDlcs = dlcHistory.filter(h => h.itemId === item.id);
+        const itemDlcs = dlcHistory.filter(h => h.itemId === item.id && (h.quantity || 0) > 0);
         let closestExpiry: Date | null = null;
         let dlcStatus: 'OK' | 'WARNING' | 'NONE' = 'NONE';
         
@@ -115,8 +115,9 @@ const BarPrep: React.FC<BarPrepProps> = ({ items, storages, stockLevels, consign
 
         let allOk = true;
         itemConsignes.forEach(c => {
+            const level = stockLevels.find(l => l.itemId === item.id && l.storageId === c.storageId)?.currentQuantity || 0;
             const batches = itemDlcs.filter(h => h.storageId === c.storageId);
-            const currentQty = batches.reduce((sum, b) => sum + (b.quantity || 1), 0);
+            const currentQty = level; // Utiliser le stock physique réel
             const minQty = c.minQuantity;
             const gap = Math.max(0, minQty - currentQty);
             if (gap > 0) allOk = false;

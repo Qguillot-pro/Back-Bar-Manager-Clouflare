@@ -44,20 +44,13 @@ export interface AppConfig {
   [key: string]: any; 
 }
 
-export interface MealReservation {
-  id: string;
-  userId: string;
-  date: string; // YYYY-MM-DD
-  slot: 'LUNCH' | 'DINNER';
-}
-
 export interface User {
   id: string;
   name: string;
   role: UserRole;
   profileId?: string;
   pin: string;
-  showInMealPlanning?: boolean;
+  showInPlanning?: boolean;
 }
 
 export interface UserLog {
@@ -363,6 +356,21 @@ export interface ProductSheet {
     tvaRate?: number; // Taux de TVA
 }
 
+export interface MealReservation {
+    id: string;
+    userId: string;
+    date: string; // YYYY-MM-DD
+    slot: 'LUNCH' | 'DINNER';
+    createdAt: string;
+}
+
+export interface MealPlan {
+    id: string;
+    date: string; // YYYY-MM-DD
+    lunchMenu?: string;
+    dinnerMenu?: string;
+}
+
 export interface WorkShift {
     id: string;
     userId: string;
@@ -379,6 +387,7 @@ export interface ActivityMoment {
     startTime: string;
     endTime: string;
     level: 'LOW' | 'MEDIUM' | 'HIGH';
+    cycle?: 'DAILY' | 'WEEKLY';
 }
 
 export interface AbsenceRequest {

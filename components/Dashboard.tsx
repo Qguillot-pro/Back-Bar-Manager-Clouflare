@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, MealReservation, User, Format } from '../types';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, User, Format, MealReservation } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -24,12 +24,12 @@ interface DashboardProps {
   glassware?: Glassware[];
   onUpdateDailyCocktail?: (cocktail: DailyCocktail) => void;
   appConfig: AppConfig;
-  mealReservations?: MealReservation[];
   users?: User[];
   formats?: Format[];
+  mealReservations?: MealReservation[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, mealReservations = [], users = [], formats = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, users = [], formats = [], mealReservations = [] }) => {
   const [newMessageText, setNewMessageText] = useState('');
   const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
   const [selectedCocktailType, setSelectedCocktailType] = useState<string | null>(null);
@@ -53,6 +53,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   // 2. KPI DLC Expirées
   const expiredDlcCount = useMemo(() => {
       return dlcHistory.filter(h => {
+        if ((h.quantity || 0) <= 0) return false;
         const item = items.find(i => i.id === h.itemId);
         const profile = dlcProfiles.find(p => p.id === item?.dlcProfileId);
         if (!profile) return false;
@@ -66,7 +67,11 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   // Helper Bar Day
   const getBarDateStr = (d: Date = new Date()) => {
       const shift = new Date(d);
-      if (shift.getHours() < 4) shift.setDate(shift.getDate() - 1);
+      const barDayStart = appConfig.barDayStart || '04:00';
+      const [h, m] = barDayStart.split(':').map(Number);
+      if (shift.getHours() < h || (shift.getHours() === h && shift.getMinutes() < m)) {
+          shift.setDate(shift.getDate() - 1);
+      }
       const y = shift.getFullYear();
       const mm = String(shift.getMonth() + 1).padStart(2, '0');
       const dd = String(shift.getDate()).padStart(2, '0');
@@ -79,8 +84,12 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   const restockHistoryData = useMemo(() => {
     const data = [];
     const today = new Date();
-    if (today.getHours() < 4) today.setDate(today.getDate() - 1);
-    today.setHours(4,0,0,0);
+    const barDayStart = appConfig.barDayStart || '04:00';
+    const [h, m] = barDayStart.split(':').map(Number);
+    if (today.getHours() < h || (today.getHours() === h && today.getMinutes() < m)) {
+        today.setDate(today.getDate() - 1);
+    }
+    today.setHours(h, m, 0, 0);
 
     for (let i = 6; i >= 0; i--) {
         const d = new Date(today);
@@ -107,9 +116,13 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   const upcomingEvents = useMemo(() => events.filter(e => new Date(e.endTime) >= new Date()).sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()).slice(0, 3), [events]);
   const pendingTasksCount = useMemo(() => {
       const now = new Date();
+      const barDayStart = appConfig.barDayStart || '04:00';
+      const [h, m] = barDayStart.split(':').map(Number);
       const startOfShift = new Date(now);
-      if (now.getHours() < 4) startOfShift.setDate(now.getDate() - 1);
-      startOfShift.setHours(4, 0, 0, 0);
+      if (now.getHours() < h || (now.getHours() === h && now.getMinutes() < m)) {
+          startOfShift.setDate(now.getDate() - 1);
+      }
+      startOfShift.setHours(h, m, 0, 0);
       const currentDayOfWeek = startOfShift.getDay();
 
       return tasks.filter(t => {
@@ -169,10 +182,14 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       else if (config.frequency === 'WEEKLY') { index = Math.floor(diffDays / 7) % listLen; } 
       else if (config.frequency === '2_WEEKS') { index = Math.floor(diffDays / 14) % listLen; } 
       else if (config.frequency === 'MON_FRI') {
-          const weeksPassed = Math.floor(diffDays / 7);
           const cleanStartStr = config.startDate.split('T')[0];
           const [sy, sm, sd] = cleanStartStr.split('-').map(Number);
-          const startDate = new Date(Date.UTC(sy, sm - 1, sd));
+          const startDateObj = new Date(Date.UTC(sy, sm - 1, sd));
+          const startDayOfWeek = startDateObj.getUTCDay(); // 0=Sun, 1=Mon...
+          
+          // Calculer le nombre de semaines calendaires écoulées (changement le lundi)
+          const weeksPassed = Math.floor((diffDays + (startDayOfWeek + 6) % 7) / 7);
+          
           const isSecondSlot = (targetDayOfWeek === 5 || targetDayOfWeek === 6 || targetDayOfWeek === 0);
           const totalSlotsPassed = weeksPassed * 2 + (isSecondSlot ? 1 : 0);
           index = totalSlotsPassed % listLen;
@@ -240,14 +257,6 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
         
         return { name, recipe, hasWarning: isManual, price: priceInfo.suggestedPrice, isOverThreshold, hasThreshold };
     };
-
-  // 6. Meal Reservations Data
-  const todaysMeals = useMemo(() => {
-      const today = currentBarDate;
-      const lunch = mealReservations.filter(r => r.date === today && r.slot === 'LUNCH');
-      const dinner = mealReservations.filter(r => r.date === today && r.slot === 'DINNER');
-      return { lunch, dinner };
-  }, [mealReservations, currentBarDate]);
 
   const handlePostMessage = () => {
       if (newMessageText.length > 0 && newMessageText.length <= 300) {
@@ -547,37 +556,31 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
               </div>
           </div>
 
-          <div onClick={() => onNavigate('daily_life:MEALS')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-emerald-300 transition-all relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-50 rounded-bl-[4rem] -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
-              <h3 className="font-black text-sm uppercase tracking-widest text-emerald-800 mb-4 relative z-10 flex items-center gap-2">
+          <div onClick={() => onNavigate('daily_life:MEALS')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-rose-300 transition-all relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-20 h-20 bg-rose-50 rounded-bl-[4rem] -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+              <h3 className="font-black text-sm uppercase tracking-widest text-rose-800 mb-4 relative z-10 flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                  Repas Staff (Aujourd'hui)
+                  Repas Staff
               </h3>
-              <div className="space-y-4 relative z-10">
-                  <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Midi ({todaysMeals.lunch.length})</span>
-                      <div className="flex -space-x-2">
-                          {todaysMeals.lunch.slice(0, 4).map(r => (
-                              <div key={r.id} className="w-6 h-6 rounded-full bg-amber-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-amber-700" title={users.find(u => u.id === r.userId)?.name}>
-                                  {users.find(u => u.id === r.userId)?.name.charAt(0)}
-                              </div>
-                          ))}
-                          {todaysMeals.lunch.length > 4 && <div className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500">+{todaysMeals.lunch.length - 4}</div>}
+              <div className="flex items-center justify-between relative z-10">
+                  <div className="flex gap-6">
+                      <div>
+                          <p className="text-2xl font-black text-slate-800">
+                              {mealReservations.filter(r => r.date === currentBarDate && r.slot === 'LUNCH').length}
+                          </p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Midi</p>
+                      </div>
+                      <div className="border-l border-slate-100 pl-6">
+                          <p className="text-2xl font-black text-slate-800">
+                              {mealReservations.filter(r => r.date === currentBarDate && r.slot === 'DINNER').length}
+                          </p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Soir</p>
                       </div>
                   </div>
-                  <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Soir ({todaysMeals.dinner.length})</span>
-                      <div className="flex -space-x-2">
-                          {todaysMeals.dinner.slice(0, 4).map(r => (
-                              <div key={r.id} className="w-6 h-6 rounded-full bg-indigo-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-indigo-700" title={users.find(u => u.id === r.userId)?.name}>
-                                  {users.find(u => u.id === r.userId)?.name.charAt(0)}
-                              </div>
-                          ))}
-                          {todaysMeals.dinner.length > 4 && <div className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500">+{todaysMeals.dinner.length - 4}</div>}
-                      </div>
-                  </div>
+                  <button className="bg-rose-500 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 shadow-lg shadow-rose-200">Gérer</button>
               </div>
           </div>
+
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

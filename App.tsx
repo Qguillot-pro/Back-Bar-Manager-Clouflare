@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, MealReservation, DailyAlert, WorkShift, ActivityMoment, ScheduleConfig } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, WorkShift, ActivityMoment, ScheduleConfig, MealReservation, MealPlan } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -98,8 +98,9 @@ const App: React.FC = () => {
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [productSheets, setProductSheets] = useState<ProductSheet[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
-  const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
   const [dailyAlerts, setDailyAlerts] = useState<DailyAlert[]>([]);
+  const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
+  const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
   const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
   const [activityMoments, setActivityMoments] = useState<ActivityMoment[]>([]);
   const [absenceRequests, setAbsenceRequests] = useState<any[]>([]);
@@ -186,6 +187,7 @@ const App: React.FC = () => {
           if (dataSt.unfulfilledOrders) setUnfulfilledOrders(dataSt.unfulfilledOrders);
           if (dataSt.orders) setOrders(dataSt.orders);
           if (dataSt.mealReservations) setMealReservations(dataSt.mealReservations);
+          if (dataSt.mealPlans) setMealPlans(dataSt.mealPlans);
           if (dataSt.workShifts) setWorkShifts(dataSt.workShifts);
           if (dataSt.activityMoments) setActivityMoments(dataSt.activityMoments);
           if (dataSt.absenceRequests) setAbsenceRequests(dataSt.absenceRequests);
@@ -502,9 +504,17 @@ const App: React.FC = () => {
           });
           syncData('SAVE_STOCK', { itemId, storageId: sid, currentQuantity: newQ });
 
-          // DLC Consumption on OUT
+          // DLC Management
           if (tType === 'OUT') {
               handleDlcConsumption(itemId, sid, amount);
+          } else if (tType === 'IN') {
+              const item = items.find(i => i.id === itemId);
+              const prio = getPrio(sid);
+              // Si c'est un produit avec DLC et qu'on l'ajoute dans un stockage de bar (prio > 0)
+              if (item && (item.isDLC || item.dlcProfileId) && prio > 0) {
+                  const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
+                  handleAddDlc(itemId, sid, profile?.type || 'OPENING', true, amount);
+              }
           }
       };
 
@@ -560,16 +570,50 @@ const App: React.FC = () => {
               .map(l => ({ ...l, prio: getPrio(l.storageId) }))
               .filter(t => t.prio > 0 || t.storageId === 's0')
               .sort((a, b) => {
-                  if (a.storageId === 's0') return 1;
-                  if (b.storageId === 's0') return -1;
-                  return a.prio - b.prio;
+                  // Priorité de sortie : Surstock (s0) > Haute > Basse
+                  if (a.storageId === 's0') return -1;
+                  if (b.storageId === 's0') return 1;
+                  return b.prio - a.prio; // Prio décroissante (Haute > Basse)
               });
 
           for (const ds of decimalStorages) {
               if (remainingQty <= 0) break;
               const take = Math.min(remainingQty, ds.currentQuantity);
-              commitTrans(ds.storageId, take, 'OUT', ds.currentQuantity - take);
+              const newQ = ds.currentQuantity - take;
+              commitTrans(ds.storageId, take, 'OUT', newQ);
               remainingQty -= take;
+
+              // Règle : Si on vide une bouteille entamée, on déplace une bouteille du stock haut vers cet espace
+              if (newQ === 0) {
+                  const item = items.find(i => i.id === itemId);
+                  const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+                  // On cherche une bouteille pleine (>= 1) dans un autre stockage (priorité haute)
+                  const sourceStocks = itemLevels
+                      .filter(l => l.storageId !== ds.storageId && l.currentQuantity >= 1)
+                      .map(l => ({ ...l, prio: getPrio(l.storageId) }))
+                      .filter(t => t.prio > 0 || t.storageId === 's0')
+                      .sort((a, b) => {
+                          if (a.storageId === 's0') return -1;
+                          if (b.storageId === 's0') return 1;
+                          return b.prio - a.prio;
+                      });
+                  
+                  if (sourceStocks.length > 0) {
+                      const source = sourceStocks[0];
+                      // Transfert physique
+                      commitTrans(source.storageId, 1, 'OUT', source.currentQuantity - 1);
+                      commitTrans(ds.storageId, 1, 'IN', 1);
+                      
+                      // Transfert DLC si applicable
+                      if (profile && (profile.type === 'PRODUCTION' || (item && item.isDLC))) {
+                          const sourceBatches = dlcHistory.filter(h => h.itemId === itemId && h.storageId === source.storageId);
+                          if (sourceBatches.length > 0) {
+                              const furthestBatch = [...sourceBatches].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
+                              handleUpdateDlc({ ...furthestBatch, storageId: ds.storageId, openedAt: new Date().toISOString() });
+                          }
+                      }
+                  }
+              }
           }
 
           // 2. Ensuite vider les stocks pleins par priorité
@@ -579,9 +623,9 @@ const App: React.FC = () => {
                   .map(l => ({ ...l, prio: getPrio(l.storageId) }))
                   .filter(t => t.prio > 0 || t.storageId === 's0')
                   .sort((a, b) => {
-                      if (a.storageId === 's0') return 1;
-                      if (b.storageId === 's0') return -1;
-                      return a.prio - b.prio;
+                      if (a.storageId === 's0') return -1; // s0 (Surstock) en priorité
+                      if (b.storageId === 's0') return 1;
+                      return b.prio - a.prio; // Puis priorité décroissante (Haute > Basse)
                   });
 
               for (const target of targets) {
@@ -763,36 +807,37 @@ const App: React.FC = () => {
   };
 
   const handleUpdateDlc = (dlc: DLCHistory) => {
-      setDlcHistory(prev => prev.map(d => d.id === dlc.id ? dlc : d));
-      syncData('SAVE_DLC_HISTORY', dlc);
+      setDlcHistory(prev => {
+          const existing = prev.find(d => d.itemId === dlc.itemId && d.storageId === dlc.storageId && d.id !== dlc.id);
+          if (existing) {
+              const merged: DLCHistory = {
+                  ...existing,
+                  quantity: parseFloat(((existing.quantity || 0) + (dlc.quantity || 0)).toFixed(3)),
+                  openedAt: dlc.openedAt,
+                  userName: currentUser?.name
+              };
+              syncData('SAVE_DLC_HISTORY', merged);
+              syncData('DELETE_DLC_HISTORY', dlc.id);
+              return prev.filter(d => d.id !== dlc.id).map(d => d.id === existing.id ? merged : d);
+          }
+          syncData('SAVE_DLC_HISTORY', dlc);
+          return prev.map(d => d.id === dlc.id ? dlc : d);
+      });
   };
 
   const handleAddDlc = (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION', isOpen: boolean = true, quantity: number = 1) => {
-      const item = items.find(i => i.id === itemId);
-      const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
-      
       const now = new Date().toISOString();
 
-      // Check for existing entry to merge
-      // For OPENING: always merge if same item/storage
-      // For PRODUCTION: merge if same item/storage AND created very recently (within 5 mins) to avoid accidental duplicates
-      const existing = dlcHistory.find(h => {
-          if (h.itemId !== itemId || h.storageId !== storageId) return false;
-          if (type === 'OPENING') return true;
-          
-          // For PRODUCTION, check if it's recent (within 5 mins)
-          const hTime = new Date(h.openedAt).getTime();
-          const nowTime = new Date(now).getTime();
-          return Math.abs(nowTime - hTime) < 5 * 60 * 1000;
-      });
+      // Check for existing entry to merge - always merge if same item/storage to avoid duplicates
+      const existing = dlcHistory.find(h => h.itemId === itemId && h.storageId === storageId);
 
       if (existing) {
           const updated: DLCHistory = { 
               ...existing, 
-              openedAt: (type === 'OPENING' && isOpen) ? now : existing.openedAt,
+              openedAt: now, // Always update to now as requested
               userName: currentUser?.name,
-              isNotOpened: type === 'OPENING' ? !isOpen : existing.isNotOpened,
-              quantity: parseFloat(((existing.quantity || 1) + quantity).toFixed(3))
+              isNotOpened: type === 'OPENING' ? !isOpen : false,
+              quantity: parseFloat(((existing.quantity || 0) + quantity).toFixed(3))
           };
           setDlcHistory(prev => prev.map(h => h.id === existing.id ? updated : h));
           syncData('SAVE_DLC_HISTORY', updated);
@@ -968,9 +1013,9 @@ const App: React.FC = () => {
 
       <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 relative">
           {isTestMode && <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-black uppercase px-2 py-1 z-[100] rounded-bl-lg">Mode Test Actif - Aucune Sauvegarde</div>}
-          {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} tasks={tasks} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} mealReservations={mealReservations} users={users} />}
+          {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} tasks={tasks} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} users={users} mealReservations={mealReservations} />}
           {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
-          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={saveConfig} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} mealReservations={mealReservations} setMealReservations={setMealReservations} users={users} />}
+          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={saveConfig} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} users={users} mealReservations={mealReservations} setMealReservations={setMealReservations} mealPlans={mealPlans} setMealPlans={setMealPlans} />}
           {view === 'bar_prep' && (
             <BarPrep 
               items={items} 
@@ -1079,8 +1124,9 @@ const App: React.FC = () => {
               absenceRequests={absenceRequests}
               scheduleConfig={scheduleConfig}
               events={events}
-              mealReservations={mealReservations}
               onSync={syncData}
+              mealReservations={mealReservations}
+              mealPlans={mealPlans}
               onSaveShift={(shift: WorkShift) => {
                 setWorkShifts(prev => {
                   const exists = prev.find(s => s.id === shift.id);
