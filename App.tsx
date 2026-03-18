@@ -21,6 +21,7 @@ import GlobalInventory from './components/GlobalInventory';
 import ProductKnowledge from './components/ProductKnowledge';
 import AdminLogbook from './components/AdminLogbook';
 import AdminPrices from './components/AdminPrices';
+import DailyBriefingModal from './components/DailyBriefingModal';
 
 const NavItem = ({ collapsed, active, onClick, label, icon, badge }: { collapsed: boolean, active: boolean, onClick: () => void, label: string, icon: string, badge?: number }) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all mb-1 group relative ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
@@ -100,6 +101,7 @@ const App: React.FC = () => {
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [dailyAlerts, setDailyAlerts] = useState<DailyAlert[]>([]);
   const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
+  const [showDailyBriefing, setShowDailyBriefing] = useState(false);
   const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
   const [activityMoments, setActivityMoments] = useState<ActivityMoment[]>([]);
   const [absenceRequests, setAbsenceRequests] = useState<any[]>([]);
@@ -876,6 +878,15 @@ const App: React.FC = () => {
           syncData('SAVE_LOG', logEntry);
           setUserLogs(prev => [logEntry, ...prev]);
 
+          // Check if first login of the day
+          const today = new Date().toISOString().split('T')[0];
+          const seenKey = `daily_briefing_seen_${found.id}_${today}`;
+          const alreadySeen = localStorage.getItem(seenKey);
+          
+          if (!alreadySeen) {
+              setShowDailyBriefing(true);
+          }
+
           setTimeout(() => { 
               setCurrentUser(found); 
               setLoginStatus('idle'); 
@@ -1317,6 +1328,23 @@ const App: React.FC = () => {
       )}
 
       {showAdminLogbook && currentUser && <AdminLogbook currentUser={currentUser} onSync={syncData} onClose={() => setShowAdminLogbook(false)} />}
+      
+      {showDailyBriefing && currentUser && (
+          <DailyBriefingModal 
+              user={currentUser}
+              dailyCocktails={dailyCocktails}
+              messages={messages}
+              tasks={tasks}
+              mealReservations={mealReservations}
+              users={users}
+              recipes={recipes}
+              onClose={() => {
+                  setShowDailyBriefing(false);
+                  const today = new Date().toISOString().split('T')[0];
+                  localStorage.setItem(`daily_briefing_seen_${currentUser.id}_${today}`, 'true');
+              }}
+          />
+      )}
     </div>
   );
 };
