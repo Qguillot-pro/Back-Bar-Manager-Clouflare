@@ -913,7 +913,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                               </tr>
                           </thead>
                           <tbody>
-                              {users.filter(u => u.showInPlanning).sort((a,b) => a.name.localeCompare(b.name)).map(user => (
+                              {users.filter(u => u.showInMealPlanning).sort((a,b) => a.name.localeCompare(b.name)).map(user => (
                                   <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
                                       <td className="p-4 border-b border-slate-100 sticky left-0 bg-white group-hover:bg-slate-50/50 z-20">
                                           <div className="flex items-center gap-3">

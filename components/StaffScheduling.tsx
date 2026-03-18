@@ -216,7 +216,7 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   };
 
   const filteredUsers = useMemo(() => {
-    return users.filter(u => u.showInPlanning === true);
+    return users.filter(u => u.showInMealPlanning === true);
   }, [users]);
 
   if (!isAdminUnlocked) {

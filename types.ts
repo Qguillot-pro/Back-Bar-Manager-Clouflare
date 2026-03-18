@@ -50,7 +50,7 @@ export interface User {
   role: UserRole;
   profileId?: string;
   pin: string;
-  showInPlanning?: boolean;
+  showInMealPlanning?: boolean;
 }
 
 export interface UserLog {
