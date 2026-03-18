@@ -54,6 +54,22 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       console.log("Migration tva_rate recipes skipped or already done");
   }
 
+  // Migration Users: Add show_in_meal_planning and profile_id if missing
+  try {
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS show_in_meal_planning BOOLEAN DEFAULT TRUE');
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_id TEXT');
+  } catch (e) {
+      console.log("Migration users columns skipped or already done");
+  }
+
+  // Migration Messages: Add is_archived and read_by if missing
+  try {
+      await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE');
+      await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_by TEXT DEFAULT \'[]\'');
+  } catch (e) {
+      console.log("Migration messages columns skipped or already done");
+  }
+
   // Migration V1.5: Add work_shifts and activity_moments tables
   try {
       await pool.query(`

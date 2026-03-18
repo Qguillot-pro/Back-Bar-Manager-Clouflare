@@ -139,6 +139,19 @@ const App: React.FC = () => {
     } catch (e) { console.error("Sync Error:", e); }
   };
 
+  const getBarDateStr = (d: Date = new Date()) => {
+      const shift = new Date(d);
+      const barDayStart = appConfig.barDayStart || '04:00';
+      const [h, m] = barDayStart.split(':').map(Number);
+      if (shift.getHours() < h || (shift.getHours() === h && shift.getMinutes() < m)) {
+          shift.setDate(shift.getDate() - 1);
+      }
+      const y = shift.getFullYear();
+      const mm = String(shift.getMonth() + 1).padStart(2, '0');
+      const dd = String(shift.getDate()).padStart(2, '0');
+      return `${y}-${mm}-${dd}`;
+  };
+
   const fetchAuthData = async () => {
     setLoading(true);
     try {
@@ -879,7 +892,7 @@ const App: React.FC = () => {
           setUserLogs(prev => [logEntry, ...prev]);
 
           // Check if first login of the day
-          const today = new Date().toISOString().split('T')[0];
+          const today = getBarDateStr();
           const seenKey = `daily_briefing_seen_${found.id}_${today}`;
           const alreadySeen = localStorage.getItem(seenKey);
           
@@ -1338,9 +1351,10 @@ const App: React.FC = () => {
               mealReservations={mealReservations}
               users={users}
               recipes={recipes}
+              appConfig={appConfig}
               onClose={() => {
                   setShowDailyBriefing(false);
-                  const today = new Date().toISOString().split('T')[0];
+                  const today = getBarDateStr();
                   localStorage.setItem(`daily_briefing_seen_${currentUser.id}_${today}`, 'true');
               }}
           />

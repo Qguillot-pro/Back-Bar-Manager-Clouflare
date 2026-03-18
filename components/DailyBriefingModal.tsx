@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, DailyCocktail, Message, Task, MealReservation, Recipe } from '../types';
+import { User, DailyCocktail, Message, Task, MealReservation, Recipe, AppConfig } from '../types';
 
 interface DailyBriefingModalProps {
     user: User;
@@ -10,6 +10,7 @@ interface DailyBriefingModalProps {
     mealReservations: MealReservation[];
     users: User[];
     recipes: Recipe[];
+    appConfig: AppConfig;
     onClose: () => void;
 }
 
@@ -21,6 +22,7 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
     mealReservations,
     users,
     recipes,
+    appConfig,
     onClose
 }) => {
     const [checkedItems, setCheckedItems] = useState({
@@ -30,8 +32,24 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
         meals: false
     });
 
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    // Helper Bar Day
+    const getBarDateStr = (d: Date = new Date()) => {
+        const shift = new Date(d);
+        const barDayStart = appConfig.barDayStart || '04:00';
+        const [h, m] = barDayStart.split(':').map(Number);
+        if (shift.getHours() < h || (shift.getHours() === h && shift.getMinutes() < m)) {
+            shift.setDate(shift.getDate() - 1);
+        }
+        const y = shift.getFullYear();
+        const mm = String(shift.getMonth() + 1).padStart(2, '0');
+        const dd = String(shift.getDate()).padStart(2, '0');
+        return `${y}-${mm}-${dd}`;
+    };
+
+    const today = getBarDateStr();
+    const yesterdayDate = new Date();
+    // To get yesterday's bar date, we subtract 24h from current time and get its bar date
+    const yesterday = getBarDateStr(new Date(Date.now() - 86400000));
 
     const todayCocktails = useMemo(() => {
         return dailyCocktails.filter(c => c.date === today && (c.type === 'OF_THE_DAY' || c.type === 'MOCKTAIL'));
@@ -111,7 +129,9 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
                                                 </div>
                                             )}
                                         </div>
-                                        <p className="font-black text-slate-800 truncate">{recipe?.name || 'Non défini'}</p>
+                                        <p className="font-black text-slate-800 truncate">
+                                            {recipe?.name || dc?.customName || 'Non défini'}
+                                        </p>
                                     </div>
                                 );
                             })}
