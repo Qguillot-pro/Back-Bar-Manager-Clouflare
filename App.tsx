@@ -553,15 +553,17 @@ const App: React.FC = () => {
           for (const target of targets) {
               if (remainingQty <= 0) break;
               
-              // Règle spéciale : ne pas ajouter si un stock est en décimale (sauf si c'est le seul espace possible ?)
-              // L'utilisateur dit : "ne pas ajouter si un stock est en décimale, ajouter à l'espace de stockage suivant dans ce cas"
+              // Règle spéciale : ne pas ajouter si un stock est en décimale
               if (target.current % 1 !== 0) continue;
 
               if (target.id === 's0') {
-                  commitTrans(target.id, remainingQty, 'IN', target.current + remainingQty);
-                  remainingQty = 0;
+                  const toAdd = Math.floor(remainingQty);
+                  if (toAdd > 0) {
+                      commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
+                      remainingQty -= toAdd;
+                  }
               } else {
-                  const toAdd = Math.min(remainingQty, target.availableSpace);
+                  const toAdd = Math.min(Math.floor(remainingQty), Math.floor(target.availableSpace));
                   if (toAdd > 0) {
                       commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
                       remainingQty -= toAdd;
@@ -591,13 +593,26 @@ const App: React.FC = () => {
 
           for (const ds of decimalStorages) {
               if (remainingQty <= 0) break;
-              const take = Math.min(remainingQty, ds.currentQuantity);
-              const newQ = ds.currentQuantity - take;
-              commitTrans(ds.storageId, take, 'OUT', newQ);
-              remainingQty -= take;
+              
+              let take = 0;
+              let finishedBottle = false;
 
-              // Règle : Si on vide une bouteille entamée, on déplace une bouteille du stock haut vers cet espace
-              if (newQ === 0) {
+              if (remainingQty >= 1) {
+                  // On finit la bouteille entamée
+                  take = ds.currentQuantity % 1;
+                  remainingQty -= 1;
+                  finishedBottle = true;
+              } else {
+                  // Sortie partielle (recette)
+                  take = Math.min(remainingQty, ds.currentQuantity);
+                  remainingQty -= take;
+              }
+
+              const newQ = parseFloat((ds.currentQuantity - take).toFixed(3));
+              commitTrans(ds.storageId, take, 'OUT', newQ);
+
+              // Règle : Si on finit une bouteille entamée, on déplace une bouteille du stock haut vers cet espace
+              if (finishedBottle || newQ === 0) {
                   const item = items.find(i => i.id === itemId);
                   const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
                   // On cherche une bouteille pleine (>= 1) dans un autre stockage (priorité haute)
