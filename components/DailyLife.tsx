@@ -242,16 +242,17 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(getBarDateStr(new Date(), appConfig?.barDayStart));
   const [activeMealSlot, setActiveMealSlot] = useState<'LUNCH' | 'DINNER'>('LUNCH');
 
-  const handleToggleMeal = (userId: string, date: string) => {
-      const existing = mealReservations?.find(r => r.userId === userId && r.date === date);
+  const handleToggleMeal = (userId: string, date: string, slot: 'LUNCH' | 'DINNER') => {
+      const existing = mealReservations?.find(r => r.userId === userId && r.date === date && r.slot === slot);
       if (existing) {
           setMealReservations?.(prev => prev.filter(r => r.id !== existing.id));
           onSync('DELETE_MEAL_RESERVATION', { id: existing.id });
       } else {
           const newRes: MealReservation = {
-              id: 'meal_' + Date.now(),
+              id: 'meal_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
               userId,
               date,
+              slot,
               createdAt: new Date().toISOString()
           };
           setMealReservations?.(prev => [...prev, newRes]);
@@ -260,6 +261,20 @@ const DailyLife: React.FC<DailyLifeProps> = ({
   };
 
   const currentBarDate = getBarDateStr(new Date(), appConfig?.barDayStart);
+
+  const weekDates = useMemo(() => {
+    const start = new Date();
+    // Adjust to Monday of current week
+    const day = start.getDay();
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    start.setDate(diff + (currentWeekOffset * 7));
+    
+    return [...Array(7)].map((_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d.toISOString().split('T')[0];
+    });
+  }, [currentWeekOffset]);
 
   // --- COCKTAIL LOGIC (Configuration et cycles) ---
   const getCycleConfig = (type: DailyCocktailType): CycleConfig => {
@@ -856,79 +871,97 @@ const DailyLife: React.FC<DailyLifeProps> = ({
 
       {activeTab === 'MEALS' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              {/* Inscriptions */}
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
                       <div>
-                          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Inscriptions Repas Staff</h2>
+                          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Planning Repas Staff</h2>
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                              Planning pour le {new Date(currentBarDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                              Semaine du {new Date(weekDates[0]).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} au {new Date(weekDates[6]).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
                           </p>
                       </div>
-                      <div className="bg-rose-100 text-rose-600 px-4 py-2 rounded-2xl font-black text-xs flex items-center gap-2 self-start">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
-                          {mealReservations?.filter(r => r.date === currentBarDate).length} inscrits
+                      <div className="flex items-center gap-2">
+                          <button onClick={() => setCurrentWeekOffset(prev => prev - 1)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                          </button>
+                          <button onClick={() => setCurrentWeekOffset(0)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50">Aujourd'hui</button>
+                          <button onClick={() => setCurrentWeekOffset(prev => prev + 1)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                          </button>
                       </div>
                   </div>
-                  <div className="p-8">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {users.sort((a,b) => a.name.localeCompare(b.name)).map(user => {
-                              const isRegistered = mealReservations?.some(r => r.userId === user.id && r.date === currentBarDate);
-                              return (
-                                  <button
-                                      key={user.id}
-                                      onClick={() => handleToggleMeal(user.id, currentBarDate)}
-                                      className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all text-left ${
-                                          isRegistered 
-                                          ? 'border-rose-50 border-rose-500 ring-4 ring-rose-50' 
-                                          : 'border-slate-100 hover:border-slate-200 bg-white'
-                                      }`}
-                                  >
-                                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg ${
-                                          isRegistered ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-400'
-                                      }`}>
-                                          {user.name.charAt(0)}
-                                      </div>
-                                      <div className="flex-1">
-                                          <p className={`font-black text-sm ${isRegistered ? 'text-rose-900' : 'text-slate-700'}`}>{user.name}</p>
-                                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{user.role}</p>
-                                      </div>
-                                      {isRegistered && <svg className="w-5 h-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
-                                  </button>
-                              );
-                          })}
-                      </div>
-                  </div>
-              </div>
-
-              {/* Prévisions */}
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8">
-                  <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 mb-6 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" /></svg>
-                      Prévisions 7 prochains jours
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-                      {[...Array(7)].map((_, i) => {
-                          const d = new Date(currentBarDate);
-                          d.setDate(d.getDate() + i);
-                          const dateStr = d.toISOString().split('T')[0];
-                          const count = mealReservations?.filter(r => r.date === dateStr).length || 0;
-                          return (
-                              <div key={i} className="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100">
-                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                      {d.toLocaleDateString('fr-FR', { weekday: 'short' })}
-                                  </p>
-                                  <p className="text-sm font-black text-slate-700 mb-3">
-                                      {d.getDate()} {d.toLocaleDateString('fr-FR', { month: 'short' })}
-                                  </p>
-                                  <div className={`flex items-center justify-center w-full py-2 rounded-xl font-black text-xs ${
-                                      count > 0 ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-slate-200 text-slate-400'
-                                  }`}>
-                                      {count} repas
-                                  </div>
-                              </div>
-                          );
-                      })}
+                  <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                          <thead>
+                              <tr className="bg-slate-50/30">
+                                  <th className="p-4 text-left border-b border-slate-100 sticky left-0 bg-white z-20 min-w-[200px]">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Collaborateur</span>
+                                  </th>
+                                  {weekDates.map(date => {
+                                      const d = new Date(date);
+                                      const isToday = date === currentBarDate;
+                                      return (
+                                          <th key={date} className={`p-4 text-center border-b border-slate-100 min-w-[120px] ${isToday ? 'bg-indigo-50/30' : ''}`}>
+                                              <p className={`text-[10px] font-black uppercase tracking-widest ${isToday ? 'text-indigo-500' : 'text-slate-400'}`}>
+                                                  {d.toLocaleDateString('fr-FR', { weekday: 'short' })}
+                                              </p>
+                                              <p className={`text-sm font-black ${isToday ? 'text-indigo-600' : 'text-slate-700'}`}>
+                                                  {d.getDate()} {d.toLocaleDateString('fr-FR', { month: 'short' })}
+                                              </p>
+                                          </th>
+                                      );
+                                  })}
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {users.filter(u => u.showInPlanning).sort((a,b) => a.name.localeCompare(b.name)).map(user => (
+                                  <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
+                                      <td className="p-4 border-b border-slate-100 sticky left-0 bg-white group-hover:bg-slate-50/50 z-20">
+                                          <div className="flex items-center gap-3">
+                                              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-black text-xs text-slate-500">
+                                                  {user.name.charAt(0)}
+                                              </div>
+                                              <div>
+                                                  <p className="font-black text-sm text-slate-700">{user.name}</p>
+                                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{user.role}</p>
+                                              </div>
+                                          </div>
+                                      </td>
+                                      {weekDates.map(date => {
+                                          const lunchRes = mealReservations?.find(r => r.userId === user.id && r.date === date && r.slot === 'LUNCH');
+                                          const dinnerRes = mealReservations?.find(r => r.userId === user.id && r.date === date && r.slot === 'DINNER');
+                                          const isToday = date === currentBarDate;
+                                          
+                                          return (
+                                              <td key={date} className={`p-2 border-b border-slate-100 text-center ${isToday ? 'bg-indigo-50/10' : ''}`}>
+                                                  <div className="flex flex-col gap-1">
+                                                      <button
+                                                          onClick={() => handleToggleMeal(user.id, date, 'LUNCH')}
+                                                          className={`py-1.5 px-2 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all ${
+                                                              lunchRes 
+                                                              ? 'bg-rose-500 text-white shadow-sm' 
+                                                              : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                                          }`}
+                                                      >
+                                                          Midi
+                                                      </button>
+                                                      <button
+                                                          onClick={() => handleToggleMeal(user.id, date, 'DINNER')}
+                                                          className={`py-1.5 px-2 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all ${
+                                                              dinnerRes 
+                                                              ? 'bg-rose-900 text-white shadow-sm' 
+                                                              : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                                          }`}
+                                                      >
+                                                          Soir
+                                                      </button>
+                                                  </div>
+                                              </td>
+                                          );
+                                      })}
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
                   </div>
               </div>
           </div>

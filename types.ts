@@ -360,6 +360,7 @@ export interface MealReservation {
     id: string;
     userId: string;
     date: string; // YYYY-MM-DD
+    slot: 'LUNCH' | 'DINNER';
     createdAt: string;
 }
 
