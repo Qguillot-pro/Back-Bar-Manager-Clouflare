@@ -12,6 +12,7 @@ interface DailyBriefingModalProps {
     recipes: Recipe[];
     appConfig: AppConfig;
     onClose: () => void;
+    todayDate?: string;
 }
 
 const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
@@ -23,7 +24,8 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
     users,
     recipes,
     appConfig,
-    onClose
+    onClose,
+    todayDate
 }) => {
     const [checkedItems, setCheckedItems] = useState({
         cocktails: false,
@@ -46,10 +48,22 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
         return `${y}-${mm}-${dd}`;
     };
 
-    const today = getBarDateStr();
-    const yesterdayDate = new Date();
-    // To get yesterday's bar date, we subtract 24h from current time and get its bar date
-    const yesterday = getBarDateStr(new Date(Date.now() - 86400000));
+    const today = todayDate || getBarDateStr();
+    
+    // Calculate yesterday based on today string
+    const yesterday = useMemo(() => {
+        const [y, m, d] = today.split('-').map(Number);
+        const date = new Date(Date.UTC(y, m - 1, d));
+        date.setUTCDate(date.getUTCDate() - 1);
+        const yy = date.getUTCFullYear();
+        const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(date.getUTCDate()).padStart(2, '0');
+        return `${yy}-${mm}-${dd}`;
+    }, [today]);
+
+    console.log('DailyBriefingModal - today:', today);
+    console.log('DailyBriefingModal - yesterday:', yesterday);
+    console.log('DailyBriefingModal - dailyCocktails:', dailyCocktails);
 
     const todayCocktails = useMemo(() => {
         return dailyCocktails.filter(c => c.date === today && (c.type === 'OF_THE_DAY' || c.type === 'MOCKTAIL'));

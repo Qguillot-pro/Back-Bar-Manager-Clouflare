@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, WorkShift, ActivityMoment, ScheduleConfig, MealReservation } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, WorkShift, ActivityMoment, ScheduleConfig, MealReservation, CycleConfig } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -151,6 +151,95 @@ const App: React.FC = () => {
       const dd = String(shift.getDate()).padStart(2, '0');
       return `${y}-${mm}-${dd}`;
   };
+
+  const getCalculatedCocktail = useCallback((type: DailyCocktailType, dateStr?: string): DailyCocktail | undefined => {
+    const targetDate = dateStr || getBarDateStr();
+    
+    // 1. Check manual entry first
+    const manualEntry = dailyCocktails.find(c => c.date === targetDate && c.type === type);
+    if (manualEntry) {
+        console.log(`getCalculatedCocktail(${type}, ${targetDate}) - Manual entry found:`, manualEntry);
+        return manualEntry;
+    }
+
+    // 2. Calculate cycle
+    const configStr = appConfig[`cycle_${type}`];
+    if (!configStr) {
+        console.log(`getCalculatedCocktail(${type}, ${targetDate}) - No config string for cycle_${type}`);
+        return undefined;
+    }
+    
+    try {
+      const config: CycleConfig = JSON.parse(configStr);
+      if (!config.isActive || config.recipeIds.length === 0) {
+          console.log(`getCalculatedCocktail(${type}, ${targetDate}) - Config inactive or no recipeIds:`, config);
+          return undefined;
+      }
+
+      const parseDate = (str: string) => {
+        const cleanStr = str.split('T')[0];
+        const [y, m, d] = cleanStr.split('-').map(Number);
+        return Date.UTC(y, m - 1, d);
+      };
+
+      const t1 = parseDate(targetDate);
+      const t2 = parseDate(config.startDate);
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const diffDays = Math.floor((t1 - t2) / msPerDay);
+
+      if (diffDays < 0) {
+          console.log(`getCalculatedCocktail(${type}, ${targetDate}) - diffDays < 0:`, { t1, t2, diffDays });
+          return undefined;
+      }
+
+      let index = 0;
+      const listLen = config.recipeIds.length;
+      
+      if (config.frequency === 'DAILY') { index = diffDays % listLen; } 
+      else if (config.frequency === '2_DAYS') { index = Math.floor(diffDays / 2) % listLen; } 
+      else if (config.frequency === 'WEEKLY') { index = Math.floor(diffDays / 7) % listLen; } 
+      else if (config.frequency === '2_WEEKS') { index = Math.floor(diffDays / 14) % listLen; } 
+      else if (config.frequency === 'MON_FRI') {
+          const cleanStartStr = config.startDate.split('T')[0];
+          const [sy, sm, sd] = cleanStartStr.split('-').map(Number);
+          const startDateObj = new Date(Date.UTC(sy, sm - 1, sd));
+          const startDayOfWeek = startDateObj.getUTCDay(); // 0=Sun, 1=Mon...
+          
+          const weeksPassed = Math.floor((diffDays + (startDayOfWeek + 6) % 7) / 7);
+          
+          const [ty, tm, td] = targetDate.split('-').map(Number);
+          const targetDayOfWeek = new Date(Date.UTC(ty, tm - 1, td)).getUTCDay();
+          const isSecondSlot = (targetDayOfWeek === 5 || targetDayOfWeek === 6 || targetDayOfWeek === 0);
+          const totalSlotsPassed = weeksPassed * 2 + (isSecondSlot ? 1 : 0);
+          index = totalSlotsPassed % listLen;
+      }
+      
+      const result = { id: `calc-${targetDate}-${type}`, date: targetDate, type, recipeId: config.recipeIds[index] };
+      console.log(`getCalculatedCocktail(${type}, ${targetDate}) - Calculated result:`, result);
+      return result;
+    } catch(e) {
+      console.error('Parse cycle config error', e);
+      return undefined;
+    }
+  }, [dailyCocktails, appConfig]);
+
+  const effectiveDailyCocktails = useMemo(() => {
+    const today = getBarDateStr();
+    const yesterday = getBarDateStr(new Date(Date.now() - 86400000));
+    
+    const types: DailyCocktailType[] = ['OF_THE_DAY', 'MOCKTAIL', 'WELCOME', 'THALASSO'];
+    const results: DailyCocktail[] = [];
+    
+    types.forEach(t => {
+      const todayC = getCalculatedCocktail(t, today);
+      if (todayC) results.push(todayC);
+      const yesterdayC = getCalculatedCocktail(t, yesterday);
+      if (yesterdayC) results.push(yesterdayC);
+    });
+    
+    console.log('Effective Daily Cocktails calculated:', { today, yesterday, results });
+    return results;
+  }, [getCalculatedCocktail, getBarDateStr]);
 
   const fetchAuthData = async () => {
     setLoading(true);
@@ -532,6 +621,11 @@ const App: React.FC = () => {
       };
 
       if (type === 'IN') {
+          // Ordre de remplissage : Haute Priorité -> Basse Priorité -> Surstock
+          // Règle : Uniquement des bouteilles entières (pas de décimales en entrée)
+          const wholeQty = Math.floor(qty);
+          if (wholeQty <= 0) return;
+
           const targets = storages
               .filter(s => s.id !== 's_global')
               .map(s => {
@@ -539,153 +633,155 @@ const App: React.FC = () => {
                   const consigne = consignes.find(c => c.itemId === itemId && c.storageId === s.id);
                   const max = consigne?.maxCapacity || 9999;
                   const prio = getPrio(s.id);
-                  return { ...s, current: level, max, prio, availableSpace: Math.max(0, Math.floor(max - level)) };
+                  return { id: s.id, current: level, max, prio, availableSpace: Math.max(0, Math.floor(max - level)) };
               })
               .filter(t => t.prio > 0 || t.id === 's0')
               .sort((a, b) => {
-                  if (a.id === 's0') return 1;
+                  if (a.id === 's0') return 1; // s0 en dernier
                   if (b.id === 's0') return -1;
-                  return a.prio - b.prio; // Priorité croissante
+                  return b.prio - a.prio; // Priorité décroissante (Haute > Basse)
               });
 
-          let remainingQty = qty;
+          let remainingQty = wholeQty;
 
           for (const target of targets) {
               if (remainingQty <= 0) break;
               
-              // Règle spéciale : ne pas ajouter si un stock est en décimale
+              // Règle : ne pas toucher à une décimale en entrée (on ne remplit pas une bouteille ouverte)
               if (target.current % 1 !== 0) continue;
 
               if (target.id === 's0') {
-                  const toAdd = Math.floor(remainingQty);
-                  if (toAdd > 0) {
-                      commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
-                      remainingQty -= toAdd;
-                  }
+                  const toAdd = remainingQty;
+                  commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
+                  remainingQty = 0;
               } else {
-                  const toAdd = Math.min(Math.floor(remainingQty), Math.floor(target.availableSpace));
+                  const toAdd = Math.min(remainingQty, target.availableSpace);
                   if (toAdd > 0) {
                       commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
                       remainingQty -= toAdd;
                   }
               }
           }
+          // Si surplus, on met tout dans s0 (ou le dernier recours)
           if (remainingQty > 0) {
-              // Si on a encore de la quantité et qu'on a sauté les décimaux, on force sur s0 ou le dernier
               const fallback = targets.find(t => t.id === 's0') || targets[targets.length - 1];
               if (fallback) commitTrans(fallback.id, remainingQty, 'IN', fallback.current + remainingQty);
           }
 
       } else {
           let remainingQty = qty;
+          let currentLevels = [...itemLevels];
           
-          // 1. D'abord vider les stocks décimaux (bouteilles ouvertes)
-          const decimalStorages = itemLevels
-              .filter(l => l.currentQuantity % 1 !== 0)
-              .map(l => ({ ...l, prio: getPrio(l.storageId) }))
-              .filter(t => t.prio > 0 || t.storageId === 's0')
-              .sort((a, b) => {
-                  // Priorité de sortie : Surstock (s0) > Haute > Basse
-                  if (a.storageId === 's0') return -1;
-                  if (b.storageId === 's0') return 1;
-                  return b.prio - a.prio; // Prio décroissante (Haute > Basse)
-              });
+          // Règle Spécifique : Si qty est un entier (ex: 1), on essaie de "finir" une bouteille
+          // Si qty est -1 (ou 1 en valeur absolue), on vide la décimale et on réapprovisionne.
+          
+          const isWholeUnit = Math.abs(qty % 1) < 0.0001;
 
-          for (const ds of decimalStorages) {
-              if (remainingQty <= 0) break;
-              
-              let take = 0;
-              let finishedBottle = false;
-
-              if (remainingQty >= 1) {
-                  // On finit la bouteille entamée
-                  take = ds.currentQuantity % 1;
-                  remainingQty -= 1;
-                  finishedBottle = true;
-              } else {
-                  // Sortie partielle (recette)
-                  take = Math.min(remainingQty, ds.currentQuantity);
-                  remainingQty -= take;
-              }
-
-              const newQ = parseFloat((ds.currentQuantity - take).toFixed(3));
-              commitTrans(ds.storageId, take, 'OUT', newQ);
-
-              // Règle : Si on finit une bouteille entamée, on déplace une bouteille du stock haut vers cet espace
-              if (finishedBottle || newQ === 0) {
-                  const item = items.find(i => i.id === itemId);
-                  const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
-                  // On cherche une bouteille pleine (>= 1) dans un autre stockage (priorité haute)
-                  const sourceStocks = itemLevels
-                      .filter(l => l.storageId !== ds.storageId && l.currentQuantity >= 1)
+          if (isWholeUnit) {
+              // On traite chaque unité séparément pour gérer les réapprovisionnements successifs
+              for (let i = 0; i < Math.floor(qty); i++) {
+                  // Trouver le stock avec une décimale le plus prioritaire
+                  const decimalStock = currentLevels
+                      .filter(l => (l.currentQuantity % 1) > 0.0001)
                       .map(l => ({ ...l, prio: getPrio(l.storageId) }))
                       .filter(t => t.prio > 0 || t.storageId === 's0')
                       .sort((a, b) => {
-                          if (a.storageId === 's0') return -1;
-                          if (b.storageId === 's0') return 1;
+                          if (a.storageId === 's0') return 1;
+                          if (b.storageId === 's0') return -1;
                           return b.prio - a.prio;
-                      });
-                  
-                  if (sourceStocks.length > 0) {
-                      const source = sourceStocks[0];
-                      // Transfert physique
-                      commitTrans(source.storageId, 1, 'OUT', source.currentQuantity - 1);
-                      commitTrans(ds.storageId, 1, 'IN', 1);
+                      })[0];
+
+                  if (decimalStock) {
+                      // On "finit" cette bouteille
+                      const openedPart = parseFloat((decimalStock.currentQuantity - Math.floor(decimalStock.currentQuantity)).toFixed(3));
+                      const newQ = Math.floor(decimalStock.currentQuantity);
                       
-                      // Transfert DLC si applicable
-                      if (profile && (profile.type === 'PRODUCTION' || (item && item.isDLC))) {
-                          const sourceBatches = dlcHistory.filter(h => h.itemId === itemId && h.storageId === source.storageId);
-                          if (sourceBatches.length > 0) {
-                              const furthestBatch = [...sourceBatches].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
-                              handleUpdateDlc({ ...furthestBatch, storageId: ds.storageId, openedAt: new Date().toISOString() });
+                      commitTrans(decimalStock.storageId, openedPart, 'OUT', newQ);
+                      currentLevels = currentLevels.map(l => l.storageId === decimalStock.storageId ? { ...l, currentQuantity: newQ } : l);
+
+                      // Réapprovisionnement automatique
+                      const sourceStocks = currentLevels
+                          .filter(l => l.storageId !== decimalStock.storageId && l.currentQuantity >= 1)
+                          .map(l => ({ ...l, prio: getPrio(l.storageId) }))
+                          .filter(t => t.prio > 0 || t.storageId === 's0')
+                          .sort((a, b) => {
+                              if (a.storageId === 's0') return -1;
+                              if (b.storageId === 's0') return 1;
+                              return a.prio - b.prio;
+                          });
+
+                      if (sourceStocks.length > 0) {
+                          const source = sourceStocks[0];
+                          const updatedTargetQ = parseFloat((newQ + 1).toFixed(3));
+                          const updatedSourceQ = source.currentQuantity - 1;
+                          
+                          commitTrans(source.storageId, 1, 'OUT', updatedSourceQ);
+                          commitTrans(decimalStock.storageId, 1, 'IN', updatedTargetQ);
+                          
+                          currentLevels = currentLevels.map(l => {
+                              if (l.storageId === decimalStock.storageId) return { ...l, currentQuantity: updatedTargetQ };
+                              if (l.storageId === source.storageId) return { ...l, currentQuantity: updatedSourceQ };
+                              return l;
+                          });
+
+                          // DLC Transfer
+                          const item = items.find(it => it.id === itemId);
+                          if (item && (item.isDLC || item.dlcProfileId)) {
+                              const sourceBatches = dlcHistory.filter(h => h.itemId === itemId && h.storageId === source.storageId);
+                              if (sourceBatches.length > 0) {
+                                  const furthestBatch = [...sourceBatches].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
+                                  handleUpdateDlc({ ...furthestBatch, storageId: decimalStock.storageId, openedAt: new Date().toISOString() });
+                              }
                           }
                       }
-                  }
-              }
-          }
-
-          // 2. Ensuite vider les stocks pleins par priorité
-          if (remainingQty > 0) {
-              const targets = itemLevels
-                  .filter(l => l.currentQuantity > 0)
-                  .map(l => ({ ...l, prio: getPrio(l.storageId) }))
-                  .filter(t => t.prio > 0 || t.storageId === 's0')
-                  .sort((a, b) => {
-                      if (a.storageId === 's0') return -1; // s0 (Surstock) en priorité
-                      if (b.storageId === 's0') return 1;
-                      return b.prio - a.prio; // Puis priorité décroissante (Haute > Basse)
-                  });
-
-              for (const target of targets) {
-                  if (remainingQty <= 0) break;
-                  const take = Math.min(remainingQty, target.currentQuantity);
-                  commitTrans(target.storageId, take, 'OUT', target.currentQuantity - take);
-                  remainingQty -= take;
-
-                  // NEW: If Bar Prep item, transfer a batch from highest priority to this storage
-                  const item = items.find(i => i.id === itemId);
-                  const profile = item?.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
-                  if (profile && profile.type === 'PRODUCTION' && take >= 1) {
-                      const sourceStocks = itemLevels
-                          .filter(l => l.storageId !== target.storageId && l.currentQuantity >= 1)
+                      // Si pas de source, on a juste vidé la décimale (ex: 1.3 -> 1.0)
+                  } else {
+                      // Pas de décimale, on retire 1 unité du stock le plus prioritaire
+                      const bestStock = currentLevels
+                          .filter(l => l.currentQuantity >= 1)
                           .map(l => ({ ...l, prio: getPrio(l.storageId) }))
                           .filter(t => t.prio > 0 || t.storageId === 's0')
                           .sort((a, b) => {
                               if (a.storageId === 's0') return 1;
                               if (b.storageId === 's0') return -1;
-                              return a.prio - b.prio;
-                          });
-                      
-                      if (sourceStocks.length > 0) {
-                          const source = sourceStocks[0];
-                          const sourceBatches = dlcHistory.filter(h => h.itemId === itemId && h.storageId === source.storageId);
-                          if (sourceBatches.length > 0) {
-                              const furthestBatch = [...sourceBatches].sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())[0];
-                              handleUpdateDlc({ ...furthestBatch, storageId: target.storageId });
-                              commitTrans(source.storageId, 1, 'OUT', source.currentQuantity - 1);
-                              commitTrans(target.storageId, 1, 'IN', target.currentQuantity + 1);
+                              return b.prio - a.prio;
+                          })[0];
+
+                      if (bestStock) {
+                          const newQ = bestStock.currentQuantity - 1;
+                          commitTrans(bestStock.storageId, 1, 'OUT', newQ);
+                          currentLevels = currentLevels.map(l => l.storageId === bestStock.storageId ? { ...l, currentQuantity: newQ } : l);
+                      } else {
+                          // Vraiment plus rien, on tape dans s0 même si < 1
+                          const fallback = currentLevels.find(l => l.storageId === 's0') || currentLevels[0];
+                          if (fallback) {
+                              const newQ = Math.max(0, fallback.currentQuantity - 1);
+                              commitTrans(fallback.storageId, 1, 'OUT', newQ);
+                              currentLevels = currentLevels.map(l => l.storageId === fallback.storageId ? { ...l, currentQuantity: newQ } : l);
                           }
                       }
+                  }
+              }
+          } else {
+              // Sortie décimale (ex: -0.1) : On retire simplement la quantité du stock le plus prioritaire
+              let remainingToTake = qty;
+              const targets = currentLevels
+                  .map(l => ({ ...l, prio: getPrio(l.storageId) }))
+                  .filter(t => t.prio > 0 || t.storageId === 's0')
+                  .sort((a, b) => {
+                      if (a.storageId === 's0') return 1;
+                      if (b.storageId === 's0') return -1;
+                      return b.prio - a.prio;
+                  });
+
+              for (const target of targets) {
+                  if (remainingToTake <= 0) break;
+                  const take = Math.min(remainingToTake, target.currentQuantity);
+                  if (take > 0) {
+                      const newQ = parseFloat((target.currentQuantity - take).toFixed(3));
+                      commitTrans(target.storageId, take, 'OUT', newQ);
+                      remainingToTake -= take;
+                      currentLevels = currentLevels.map(l => l.storageId === target.storageId ? { ...l, currentQuantity: newQ } : l);
                   }
               }
           }
@@ -1050,7 +1146,7 @@ const App: React.FC = () => {
 
       <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 relative">
           {isTestMode && <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-black uppercase px-2 py-1 z-[100] rounded-bl-lg">Mode Test Actif - Aucune Sauvegarde</div>}
-          {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} tasks={tasks} currentUserName={currentUser.name} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} users={users} mealReservations={mealReservations} />}
+          {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} tasks={tasks} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} users={users} mealReservations={mealReservations} />}
           {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
           {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={saveConfig} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} users={users} mealReservations={mealReservations} setMealReservations={setMealReservations} />}
           {view === 'bar_prep' && (
@@ -1360,7 +1456,8 @@ const App: React.FC = () => {
       {showDailyBriefing && currentUser && (
           <DailyBriefingModal 
               user={currentUser}
-              dailyCocktails={dailyCocktails}
+              dailyCocktails={effectiveDailyCocktails}
+              todayDate={getBarDateStr()}
               messages={messages}
               tasks={tasks}
               mealReservations={mealReservations}

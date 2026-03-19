@@ -15,7 +15,6 @@ interface DashboardProps {
   messages: Message[];
   events?: Event[];
   tasks?: Task[];
-  currentUserName: string;
   onNavigate: (view: string) => void;
   onSendMessage: (text: string) => void;
   onArchiveMessage: (id: string) => void;
@@ -29,7 +28,76 @@ interface DashboardProps {
   mealReservations?: MealReservation[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], currentUserName, onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, users = [], formats = [], mealReservations = [] }) => {
+const StatCard: React.FC<{
+  title: string;
+  value: string | number;
+  unit?: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  status?: 'ok' | 'warning' | 'info';
+  hoverColor?: string;
+}> = ({ title, value, unit, icon, onClick, status = 'info', hoverColor = 'hover:border-indigo-300' }) => {
+  const isOk = status === 'ok' || value === 0 || value === 'OK';
+  const isWarning = status === 'warning' || (typeof value === 'number' && value > 0);
+
+  return (
+    <div onClick={onClick} className={`bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer ${hoverColor} transition-all group`}>
+      <div>
+        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-indigo-500 transition-colors">{title}</p>
+        {isOk ? (
+          <div className="flex items-center gap-2">
+            <p className="text-4xl font-black text-emerald-500">OK</p>
+            <span className="bg-emerald-100 text-emerald-600 rounded-full p-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+            </span>
+          </div>
+        ) : (
+          <p className={`text-4xl font-black ${isWarning ? 'text-rose-500' : 'text-slate-900'}`}>
+            {value} {unit && <span className="text-lg opacity-50 font-bold">{unit}</span>}
+          </p>
+        )}
+      </div>
+      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isOk ? 'bg-emerald-50 text-emerald-500' : isWarning ? 'bg-rose-50 text-rose-500' : 'bg-indigo-50 text-indigo-500'}`}>
+        {icon}
+      </div>
+    </div>
+  );
+};
+
+const CocktailCard: React.FC<{
+  type: string;
+  info: any;
+  onClick: () => void;
+}> = ({ type, info, onClick }) => {
+  const labels: Record<string, string> = { OF_THE_DAY: 'Du Jour', MOCKTAIL: 'Mocktail', WELCOME: 'Accueil', THALASSO: 'Thalasso' };
+  const colors: Record<string, string> = { OF_THE_DAY: 'text-amber-400', MOCKTAIL: 'text-emerald-400', WELCOME: 'text-indigo-300', THALASSO: 'text-cyan-300' };
+  const icons: Record<string, string> = { OF_THE_DAY: '🍸', MOCKTAIL: '🍹' };
+
+  return (
+    <div 
+      onClick={onClick}
+      className="bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 transition-all relative hover:bg-white/20 cursor-pointer"
+    >
+      {info.hasWarning && (
+        <div className="absolute top-2 right-2 text-amber-400 animate-pulse" title="Saisie Manuelle">
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+        </div>
+      )}
+      <div className="flex justify-between items-start">
+        <span className={`text-[9px] font-black uppercase tracking-widest ${colors[type]}`}>{labels[type]}</span>
+        <div className="flex gap-1 items-center">
+          {info.hasThreshold && info.price > 0 && (
+            <span className={`font-black text-xs ${info.isOverThreshold ? 'text-rose-500 animate-bounce' : 'text-emerald-500'}`} title={info.isOverThreshold ? "Prix conseillé élevé" : "Prix conseillé OK"}>€</span>
+          )}
+          {icons[type] && <span className="text-[10px]">{icons[type]}</span>}
+        </div>
+      </div>
+      <p className={`font-bold text-sm leading-tight line-clamp-2 ${info.name === 'Non défini' ? 'opacity-50 italic' : ''}`}>{info.name}</p>
+    </div>
+  );
+};
+
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, users = [], formats = [], mealReservations = [] }) => {
   const [newMessageText, setNewMessageText] = useState('');
   const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
   const [selectedCocktailType, setSelectedCocktailType] = useState<string | null>(null);
@@ -109,7 +177,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
         data.push({ name: dayStr, value: dailyTotal });
     }
     return data;
-  }, [transactions]);
+  }, [transactions, appConfig.barDayStart]);
 
   // 4. Messages & Vie Quotidienne Data
   const activeMessages = useMemo(() => messages.filter(m => !m.isArchived).slice(0, 5), [messages]);
@@ -136,7 +204,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
           }
           return false;
       }).length;
-  }, [tasks]);
+  }, [tasks, appConfig.barDayStart]);
 
   // 5. Cocktails Data - CYCLE CALCULATION LOGIC DUPLICATED HERE FOR AUTONOMY
   const getCycleConfig = (type: DailyCocktailType): CycleConfig => {
@@ -313,43 +381,47 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 dashboard-container">
       
       {/* COCKTAIL DETAIL MODAL (READ ONLY) */}
       {selectedCocktailRecipe && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300 print-section-parent">
               <style>{`
                   @media print {
-                      .no-print { display: none !important; }
+                      /* Masquer tout par défaut */
+                      body * { visibility: hidden !important; }
                       
-                      /* Hide everything except the modal parent */
-                      body > #root > *:not(.print-section-parent) { display: none !important; }
+                      /* Afficher uniquement la section d'impression et ses enfants */
+                      .print-section-parent, 
+                      .print-section-parent * { 
+                          visibility: visible !important; 
+                      }
                       
+                      /* Positionner la section d'impression pour qu'elle occupe toute la page */
                       .print-section-parent {
-                          position: fixed !important;
-                          inset: 0 !important;
-                          z-index: 99999 !important;
+                          position: absolute !important;
+                          left: 0 !important;
+                          top: 0 !important;
+                          width: 100% !important;
+                          height: auto !important;
                           background: white !important;
                           display: block !important;
+                          z-index: 99999 !important;
                           padding: 0 !important;
                           margin: 0 !important;
-                          backdrop-filter: none !important;
                       }
 
                       #recipe-print-container {
                           position: relative !important;
                           width: 100% !important;
                           max-width: none !important;
-                          height: auto !important;
-                          margin: 0 !important;
                           padding: 40px !important;
                           background: white !important;
                           color: black !important;
-                          display: block !important;
-                          border: none !important;
                           box-shadow: none !important;
-                          overflow: visible !important;
+                          border: none !important;
                           max-height: none !important;
+                          overflow: visible !important;
                       }
 
                       #recipe-print-container * {
@@ -380,7 +452,14 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                       #recipe-print-container .text-white { color: black !important; }
                       #recipe-print-container .text-slate-400 { color: #64748b !important; }
                       
-                      #recipe-print-container .overflow-y-auto { overflow: visible !important; }
+                      .no-print { display: none !important; }
+                      .no-print-bg { background: none !important; }
+                      
+                      /* Forcer l'affichage du contenu scrollable */
+                      #recipe-print-container .overflow-y-auto { 
+                          overflow: visible !important; 
+                          max-height: none !important;
+                      }
                   }
               `}</style>
               <div id="recipe-print-container" className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] print-section">
@@ -493,67 +572,46 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                   <p className="text-indigo-200 text-xs font-bold uppercase tracking-widest">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full md:w-auto">
-                  {['OF_THE_DAY', 'MOCKTAIL', 'WELCOME', 'THALASSO'].map(type => {
-                      const info = getCocktailInfo(type);
-                      const labels: Record<string, string> = { OF_THE_DAY: 'Du Jour', MOCKTAIL: 'Mocktail', WELCOME: 'Accueil', THALASSO: 'Thalasso' };
-                      const colors: Record<string, string> = { OF_THE_DAY: 'text-amber-400', MOCKTAIL: 'text-emerald-400', WELCOME: 'text-indigo-300', THALASSO: 'text-cyan-300' };
-                      const icons: Record<string, string> = { OF_THE_DAY: '🍸', MOCKTAIL: '🍹' };
-                      
-                      return (
-                          <div 
-                            key={type} 
-                            onClick={() => handleCocktailClick(type)}
-                            className={`bg-white/10 p-4 rounded-2xl border border-white/10 flex flex-col justify-between h-32 transition-all relative hover:bg-white/20 cursor-pointer`}
-                          >
-                              {info.hasWarning && (
-                                  <div className="absolute top-2 right-2 text-amber-400 animate-pulse" title="Saisie Manuelle">
-                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                  </div>
-                              )}
-                              <div className="flex justify-between items-start">
-                                  <span className={`text-[9px] font-black uppercase tracking-widest ${colors[type]}`}>{labels[type]}</span>
-                                  <div className="flex gap-1 items-center">
-                                      {info.hasThreshold && info.price > 0 && (
-                                          <span className={`font-black text-xs ${info.isOverThreshold ? 'text-rose-500 animate-bounce' : 'text-emerald-500'}`} title={info.isOverThreshold ? "Prix conseillé élevé" : "Prix conseillé OK"}>€</span>
-                                      )}
-                                      {icons[type] && <span className="text-[10px]">{icons[type]}</span>}
-                                  </div>
-                              </div>
-                              <p className={`font-bold text-sm leading-tight line-clamp-2 ${info.name === 'Non défini' ? 'opacity-50 italic' : ''}`}>{info.name}</p>
-                              {/* Prix conseillé retiré comme demandé, remplacé par l'indicateur € */}
-                          </div>
-                      );
-                  })}
+                  {['OF_THE_DAY', 'MOCKTAIL', 'WELCOME', 'THALASSO'].map(type => (
+                      <CocktailCard 
+                        key={type} 
+                        type={type} 
+                        info={getCocktailInfo(type)} 
+                        onClick={() => handleCocktailClick(type)} 
+                      />
+                  ))}
               </div>
           </div>
       </div>
 
       {/* KPIS */}
       <div className={`grid grid-cols-1 md:grid-cols-3 gap-6`}>
-        <div onClick={() => onNavigate('restock')} className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-indigo-300 transition-all group">
-          <div>
-            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-indigo-500 transition-colors">Unités à Remonter</p>
-            {totalRestockNeeded === 0 ? (
-                <div className="flex items-center gap-2"><p className="text-4xl font-black text-emerald-500">OK</p><span className="bg-emerald-100 text-emerald-600 rounded-full p-1"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></span></div>
-            ) : (<p className="text-4xl font-black text-rose-500">{totalRestockNeeded} <span className="text-lg opacity-50 font-bold">UNIT.</span></p>)}
-          </div>
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${totalRestockNeeded > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg></div>
-        </div>
+        <StatCard 
+          title="Unités à Remonter"
+          value={totalRestockNeeded}
+          unit="UNIT."
+          icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>}
+          onClick={() => onNavigate('restock')}
+          status={totalRestockNeeded > 0 ? 'warning' : 'ok'}
+        />
         
-        <div onClick={() => onNavigate('dlc_tracking')} className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-indigo-300 transition-all group">
-            <div>
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-indigo-500 transition-colors">Alertes DLC Expirées</p>
-              {expiredDlcCount === 0 ? (
-                <div className="flex items-center gap-2"><p className="text-4xl font-black text-emerald-500">OK</p><span className="bg-emerald-100 text-emerald-600 rounded-full p-1"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></span></div>
-              ) : (<p className="text-4xl font-black text-rose-500">{expiredDlcCount} <span className="text-lg opacity-50 font-bold">PROD.</span></p>)}
-            </div>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${expiredDlcCount > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
-        </div>
+        <StatCard 
+          title="Alertes DLC Expirées"
+          value={expiredDlcCount}
+          unit="PROD."
+          icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+          onClick={() => onNavigate('dlc_tracking')}
+          status={expiredDlcCount > 0 ? 'warning' : 'ok'}
+        />
 
-        <div onClick={() => onNavigate('articles')} className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between cursor-pointer hover:border-indigo-300 transition-all group">
-          <div><p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 group-hover:text-indigo-500 transition-colors">Base Articles</p><p className="text-4xl font-black text-slate-900">{totalItemsCount} <span className="text-lg opacity-50 font-bold">RÉF.</span></p></div>
-          <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg></div>
-        </div>
+        <StatCard 
+          title="Base Articles"
+          value={totalItemsCount}
+          unit="RÉF."
+          icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>}
+          onClick={() => onNavigate('articles')}
+          status="info"
+        />
       </div>
 
       {/* VIE QUOTIDIENNE WIDGETS */}
