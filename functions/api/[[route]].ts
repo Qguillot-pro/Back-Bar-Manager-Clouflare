@@ -47,6 +47,37 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     max: 6 
   });
 
+  // Migration V1.3: Product Types and Product Sheets updates
+  try {
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS product_types (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              fields TEXT
+          )
+      `);
+      await pool.query('ALTER TABLE product_sheets ADD COLUMN IF NOT EXISTS full_name TEXT');
+      await pool.query('ALTER TABLE product_sheets ADD COLUMN IF NOT EXISTS custom_fields TEXT');
+      await pool.query('ALTER TABLE admin_notes ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()');
+      await pool.query('ALTER TABLE admin_notes ADD COLUMN IF NOT EXISTS user_name TEXT');
+      
+      // Initial data for product_types if empty
+      const typesCheck = await pool.query('SELECT COUNT(*) FROM product_types');
+      if (parseInt(typesCheck.rows[0].count) === 0) {
+          await pool.query(`
+              INSERT INTO product_types (id, name, fields) VALUES 
+              ('pt1', 'Vin', '["Cépage", "Millésime", "Degré"]'),
+              ('pt2', 'Spiritueux', '["Âge", "Fût", "Degré"]'),
+              ('pt3', 'Bière', '["Type", "Degré", "IBU"]'),
+              ('pt4', 'Cocktail', '["Base", "Profil"]'),
+              ('pt5', 'Autre', '[]')
+              ON CONFLICT (id) DO NOTHING
+          `);
+      }
+  } catch (e) {
+      console.log("Migration V1.3 skipped or already done", e);
+  }
+
   // Migration V1.4: Add tva_rate to recipes if missing
   try {
       await pool.query('ALTER TABLE recipes ADD COLUMN IF NOT EXISTS tva_rate NUMERIC');
@@ -563,6 +594,31 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'DELETE_PRODUCT_TYPE': {
             await pool.query('DELETE FROM product_types WHERE id = $1', [payload.id]);
             break;
+        }
+        case 'CHECK_DB_STRUCTURE': {
+            const tables = ['items', 'storage_spaces', 'formats', 'categories', 'dlc_profiles', 'stock_priorities', 'stock_levels', 'stock_consignes', 'transactions', 'orders', 'unfulfilled_orders', 'dlc_history', 'messages', 'losses', 'daily_stock_alerts', 'user_logs', 'tasks', 'events', 'event_comments', 'daily_cocktails', 'glassware', 'techniques', 'cocktail_categories', 'recipes', 'email_templates', 'product_sheets', 'product_types', 'admin_notes', 'work_shifts', 'activity_moments', 'absence_requests', 'meal_reservations'];
+            
+            const results: any = {};
+            for (const table of tables) {
+                const res = await pool.query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1)", [table]);
+                results[table] = res.rows[0].exists;
+            }
+            
+            // Check specific columns for V1.3/V1.4
+            const columnChecks = [
+                { table: 'product_sheets', column: 'full_name' },
+                { table: 'product_sheets', column: 'custom_fields' },
+                { table: 'recipes', column: 'tva_rate' },
+                { table: 'admin_notes', column: 'user_name' }
+            ];
+            
+            const colResults: any = {};
+            for (const check of columnChecks) {
+                const res = await pool.query("SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = $1 AND column_name = $2)", [check.table, check.column]);
+                colResults[`${check.table}.${check.column}`] = res.rows[0].exists;
+            }
+
+            return new Response(JSON.stringify({ success: true, tables: results, columns: colResults }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         }
         case 'SAVE_DLC_TRANSFER': {
             const { batchId, targetStorageId, newQuantity } = payload;

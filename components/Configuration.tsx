@@ -80,6 +80,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [newUserProfileId, setNewUserProfileId] = useState<string>('');
   const [newUserShowInMealPlanning, setNewUserShowInMealPlanning] = useState(true);
   const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
+  const [dbCheckResult, setDbCheckResult] = useState<{ tables: Record<string, boolean>, columns: Record<string, boolean> } | null>(null);
 
   // DLC Profile State
   const [newDlcName, setNewDlcName] = useState('');
@@ -334,6 +335,24 @@ const Configuration: React.FC<ConfigProps> = ({
           } catch (err) { alert("Format invalide."); }
       };
       reader.readAsText(file);
+  };
+
+  const handleCheckDbStructure = async () => {
+    try {
+      const response = await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'CHECK_DB_STRUCTURE' })
+      });
+      const result = await response.json();
+      if (result.success) {
+        setDbCheckResult(result.data);
+      } else {
+        alert("Erreur lors de la vérification : " + result.error);
+      }
+    } catch (err) {
+      alert("Erreur de connexion au serveur.");
+    }
   };
 
   return (
@@ -786,14 +805,54 @@ const Configuration: React.FC<ConfigProps> = ({
       )}
 
       {activeSubTab === 'backup' && (
-          <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
-              <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-slate-500 rounded-full"></span>Sauvegarde & Restauration</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <button onClick={handleExportBackup} className="bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700">Télécharger Sauvegarde (JSON)</button>
-                  <label className="bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200 cursor-pointer flex items-center justify-center">
-                      Restaurer (Upload)
-                      <input type="file" accept=".json" className="hidden" onChange={handleImportBackup} />
-                  </label>
+          <div className="max-w-4xl mx-auto space-y-8">
+              <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-slate-500 rounded-full"></span>Sauvegarde & Restauration</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <button onClick={handleExportBackup} className="bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700">Télécharger Sauvegarde (JSON)</button>
+                      <label className="bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-200 cursor-pointer flex items-center justify-center">
+                          Restaurer (Upload)
+                          <input type="file" accept=".json" className="hidden" onChange={handleImportBackup} />
+                      </label>
+                  </div>
+              </div>
+
+              <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-green-500 rounded-full"></span>Vérification de la Structure de la Base de Données</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <button onClick={handleCheckDbStructure} className="bg-green-500 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-green-600">Vérifier la Structure</button>
+                      {dbCheckResult && (
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 col-span-2">
+                              <h4 className="font-bold text-sm mb-2">Résultats de la Vérification:</h4>
+                              <div className="grid grid-cols-2 gap-4 text-xs">
+                                  <div>
+                                      <h5 className="font-bold text-slate-500 uppercase mb-2">Tables:</h5>
+                                      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                          {Object.entries(dbCheckResult.tables).map(([table, exists]) => (
+                                              <div key={table} className="flex items-center gap-1">
+                                                  <span className={`w-2 h-2 rounded-full ${exists ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                                  <span className={exists ? 'text-slate-700' : 'text-red-500 font-bold'}>{table}</span>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                                  <div>
+                                      <h5 className="font-bold text-slate-500 uppercase mb-2">Colonnes (V1.3/V1.4):</h5>
+                                      <ul className="space-y-1">
+                                          {Object.entries(dbCheckResult.columns).map(([col, exists]) => (
+                                              <li key={col} className="flex items-center gap-2">
+                                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${exists ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                      {exists ? 'OK' : 'MISSING'}
+                                                  </span>
+                                                  <span className="text-slate-600">{col}</span>
+                                              </li>
+                                          ))}
+                                      </ul>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+                  </div>
               </div>
           </div>
       )}
