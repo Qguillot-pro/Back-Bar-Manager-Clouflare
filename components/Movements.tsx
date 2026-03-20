@@ -15,7 +15,7 @@ interface MovementsProps {
   dlcProfiles?: DLCProfile[];
   onUndo?: () => void;
   dlcHistory?: DLCHistory[];
-  onDlcEntry?: (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION', isOpen?: boolean) => void;
+  onDlcEntry?: (itemId: string, storageId: string, type: 'OPENING' | 'PRODUCTION', isOpen?: boolean, quantity?: number) => void;
   onDlcConsumption?: (itemId: string) => void;
 }
 
@@ -70,11 +70,24 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
 
     // Logique DLC
     if ((item.isDLC || item.dlcProfileId) && dlcProfiles && onDlcEntry) {
-        setPendingDlcItem(item);
-        setPendingDlcAction(type);
-        setDlcStep('OPEN_QUESTION');
-        setDlcModalOpen(true);
-        return;
+        const profile = dlcProfiles.find(p => p.id === item.dlcProfileId);
+        const profileType = profile?.type || 'OPENING';
+        
+        // Ne pas faire le tracking DLC si le mouvement est une entrée, sauf pour les produits DLC à la production.
+        const shouldTrack = (type === 'IN' && profileType === 'PRODUCTION') || (type === 'OUT' && profileType === 'OPENING');
+
+        if (shouldTrack) {
+            setPendingDlcItem(item);
+            setPendingDlcAction(type);
+            // Pour la production, on passe directement au rappel d'étiquetage
+            if (profileType === 'PRODUCTION') {
+                setDlcStep('LABEL_REMINDER');
+            } else {
+                setDlcStep('OPEN_QUESTION');
+            }
+            setDlcModalOpen(true);
+            return;
+        }
     }
 
     // Logique Consigne (Popup)
@@ -148,8 +161,10 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       
       if (onDlcEntry) {
           const storageId = storages[0]?.id || 's0';
-          // We pass the openness to onDlcEntry
-          onDlcEntry(pendingDlcItem.id, storageId, 'OPENING', isOpen);
+          const profile = dlcProfiles.find(p => p.id === pendingDlcItem.dlcProfileId);
+          const type = profile?.type || 'OPENING';
+          // We pass the openness and quantity to onDlcEntry
+          onDlcEntry(pendingDlcItem.id, storageId, type, isOpen, quantity);
       }
       
       setDlcModalOpen(false);

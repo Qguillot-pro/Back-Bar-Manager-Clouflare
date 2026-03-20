@@ -346,7 +346,7 @@ const Configuration: React.FC<ConfigProps> = ({
       });
       const result = await response.json();
       if (result.success) {
-        setDbCheckResult(result.data);
+        setDbCheckResult(result);
       } else {
         alert("Erreur lors de la vérification : " + result.error);
       }

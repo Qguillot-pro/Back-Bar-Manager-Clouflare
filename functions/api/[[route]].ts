@@ -609,7 +609,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 { table: 'product_sheets', column: 'full_name' },
                 { table: 'product_sheets', column: 'custom_fields' },
                 { table: 'recipes', column: 'tva_rate' },
-                { table: 'admin_notes', column: 'user_name' }
+                { table: 'admin_notes', column: 'user_name' },
+                { table: 'dlc_profiles', column: 'type' }
             ];
             
             const colResults: any = {};

@@ -37,6 +37,36 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
   const [newTime, setNewTime] = useState('');
   const [isNotOpened, setIsNotOpened] = useState(false);
 
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [duplicates, setDuplicates] = useState<{ itemId: string; itemName: string; entries: DLCHistory[] }[]>([]);
+
+  const checkDuplicates = () => {
+    const groups: Record<string, DLCHistory[]> = {};
+    
+    dlcHistory.forEach(entry => {
+      const item = items.find(i => i.id === entry.itemId);
+      if (!item) return;
+      
+      const profile = item.dlcProfileId ? dlcProfiles.find(p => p.id === item.dlcProfileId) : null;
+      // Only check for OPENING type or items with isDLC but no profile
+      if ((profile && profile.type === 'OPENING') || (!profile && item.isDLC)) {
+        if (!groups[entry.itemId]) groups[entry.itemId] = [];
+        groups[entry.itemId].push(entry);
+      }
+    });
+
+    const foundDuplicates = Object.entries(groups)
+      .filter(([_, entries]) => entries.length > 1)
+      .map(([itemId, entries]) => ({
+        itemId,
+        itemName: items.find(i => i.id === itemId)?.name || 'Inconnu',
+        entries: entries.sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())
+      }));
+
+    setDuplicates(foundDuplicates);
+    setDuplicateModalOpen(true);
+  };
+
   const activeDlcs = useMemo(() => {
     if (!dlcHistory || !items) return [];
     
@@ -316,6 +346,77 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
           </div>
       )}
 
+      {duplicateModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white rounded-[2rem] p-8 max-w-2xl w-full shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center">
+                      <h3 className="text-xl font-black text-slate-900 uppercase">Doublons DLC Détectés</h3>
+                      <button onClick={() => setDuplicateModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                  </div>
+                  
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
+                      Les produits suivants ont plusieurs suivis actifs. Pour les bouteilles ouvertes, il ne devrait y en avoir qu'une seule.
+                  </p>
+
+                  <div className="space-y-6">
+                      {duplicates.length === 0 ? (
+                          <div className="text-center py-12 bg-emerald-50 rounded-2xl border border-emerald-100">
+                              <p className="text-emerald-600 font-black uppercase text-xs tracking-widest">Aucun doublon détecté ! ✨</p>
+                          </div>
+                      ) : (
+                          duplicates.map(group => (
+                              <div key={group.itemId} className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
+                                  <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
+                                      <span className="font-black text-slate-800 uppercase text-[10px] tracking-widest">{group.itemName}</span>
+                                      <span className="bg-amber-500 text-white px-2 py-0.5 rounded text-[8px] font-black">{group.entries.length} ENTRÉES</span>
+                                  </div>
+                                  <div className="divide-y divide-slate-200">
+                                      {group.entries.map((entry, idx) => {
+                                          const storage = storages.find(s => s.id === entry.storageId);
+                                          return (
+                                              <div key={entry.id} className="p-4 flex justify-between items-center hover:bg-white transition-colors">
+                                                  <div className="space-y-1">
+                                                      <div className="flex items-center gap-2">
+                                                          <span className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                                                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                                                              {idx === 0 ? 'Plus récent' : 'Ancien'}
+                                                          </span>
+                                                      </div>
+                                                      <p className="text-xs font-bold text-slate-800">
+                                                          Ouvert le {safeDateString(new Date(entry.openedAt))}
+                                                      </p>
+                                                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                                          Lieu: {storage?.name || 'Inconnu'} | Par: {entry.userName || 'N/A'}
+                                                      </p>
+                                                  </div>
+                                                  <button 
+                                                      onClick={() => {
+                                                          onDelete(entry.id, 0);
+                                                          setDuplicates(prev => prev.map(g => g.itemId === group.itemId ? { ...g, entries: g.entries.filter(e => e.id !== entry.id) } : g).filter(g => g.entries.length > 1));
+                                                      }}
+                                                      className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                                                      title="Supprimer ce doublon"
+                                                  >
+                                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                  </button>
+                                              </div>
+                                          );
+                                      })}
+                                  </div>
+                              </div>
+                          ))
+                      )}
+                  </div>
+
+                  <div className="pt-4">
+                      <button onClick={() => setDuplicateModalOpen(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl">Fermer</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="p-6 border-b bg-slate-50 flex flex-col gap-4">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
@@ -324,19 +425,27 @@ const DLCView: React.FC<DLCViewProps> = ({ items, dlcHistory = [], dlcProfiles =
             </h2>
             <div className="flex items-center gap-3">
                 {userRole === 'ADMIN' && (
-                    <button 
-                    onClick={() => {
-                        const now = new Date();
-                        setNewDate(now.toISOString().split('T')[0]);
-                        const hours = now.getHours().toString().padStart(2, '0');
-                        const minutes = now.getMinutes().toString().padStart(2, '0');
-                        setNewTime(`${hours}:${minutes}`);
-                        setAddModalOpen(true);
-                    }} 
-                    className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all shadow-lg"
-                    >
-                        + Ajouter Manuel
-                    </button>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={checkDuplicates}
+                            className="bg-amber-100 text-amber-700 px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-amber-200 transition-all border border-amber-200"
+                        >
+                            Vérifier Doublons
+                        </button>
+                        <button 
+                            onClick={() => {
+                                const now = new Date();
+                                setNewDate(now.toISOString().split('T')[0]);
+                                const hours = now.getHours().toString().padStart(2, '0');
+                                const minutes = now.getMinutes().toString().padStart(2, '0');
+                                setNewTime(`${hours}:${minutes}`);
+                                setAddModalOpen(true);
+                            }} 
+                            className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all shadow-lg"
+                        >
+                            + Ajouter Manuel
+                        </button>
+                    </div>
                 )}
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activeDlcs.length} lots actifs</span>
                 <div className={`w-3 h-3 rounded-full ${expiredCount > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`}></div>
