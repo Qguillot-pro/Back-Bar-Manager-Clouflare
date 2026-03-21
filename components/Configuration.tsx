@@ -66,6 +66,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [itemIsDlc, setItemIsDlc] = useState(false);
   const [itemDlcProfile, setItemDlcProfile] = useState('');
   const [itemIsConsigne, setItemIsConsigne] = useState(false);
+  const [itemIsNoStock, setItemIsNoStock] = useState(false);
 
   const [storageName, setStorageName] = useState('');
   const [formatName, setFormatName] = useState('');
@@ -124,7 +125,7 @@ const Configuration: React.FC<ConfigProps> = ({
       onSync('SAVE_CONFIG', { key, value: typeof value === 'object' ? JSON.stringify(value) : value });
   };
 
-  const addProduct = () => { if (!itemName) return; const newItem: StockItem = { id: Math.random().toString(36).substr(2, 9), articleCode: itemArticleCode, name: itemName, category: itemCat, formatId: itemFormat, pricePerUnit: 0, lastUpdated: new Date().toISOString(), isDLC: itemIsDlc, dlcProfileId: itemIsDlc ? itemDlcProfile : undefined, isConsigne: itemIsConsigne, order: items.length, isDraft: true }; setItems(prev => [...prev, newItem]); onSync('SAVE_ITEM', newItem); setItemName(''); setItemArticleCode(''); setItemIsDlc(false); };
+  const addProduct = () => { if (!itemName) return; const newItem: StockItem = { id: Math.random().toString(36).substr(2, 9), articleCode: itemArticleCode, name: itemName, category: itemCat, formatId: itemFormat, pricePerUnit: 0, lastUpdated: new Date().toISOString(), isDLC: itemIsDlc, dlcProfileId: itemIsDlc ? itemDlcProfile : undefined, isConsigne: itemIsConsigne, isNoStock: itemIsNoStock, order: items.length, isDraft: true }; setItems(prev => [...prev, newItem]); onSync('SAVE_ITEM', newItem); setItemName(''); setItemArticleCode(''); setItemIsDlc(false); setItemIsNoStock(false); };
   
   const addFormat = () => { if (!formatName) return; const newFormat: Format = { id: 'f' + Date.now(), name: formatName, value: formatValue, order: formats.length + 1 }; setFormats(prev => [...prev, newFormat]); onSync('SAVE_FORMAT', newFormat); setFormatName(''); setFormatValue(0); };
   const deleteFormat = (id: string) => { setFormats(prev => prev.filter(f => f.id !== id)); onSync('DELETE_FORMAT', { id }); };
@@ -507,6 +508,26 @@ const Configuration: React.FC<ConfigProps> = ({
                                 <select className="w-full bg-slate-50 p-4 border rounded-2xl font-bold outline-none" value={itemCat} onChange={e => setItemCat(e.target.value)}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
                                 <select className="w-full bg-slate-50 p-4 border rounded-2xl font-bold outline-none" value={itemFormat} onChange={e => setItemFormat(e.target.value)}>{formats.map(f => f && <option key={f.id} value={f.id}>{f.name}</option>)}</select>
                             </div>
+                            <div className="flex flex-wrap gap-4 pt-2">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={itemIsDlc} onChange={e => setItemIsDlc(e.target.checked)} />
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Tracking DLC</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" className="w-5 h-5 rounded text-blue-600" checked={itemIsConsigne} onChange={e => setItemIsConsigne(e.target.checked)} />
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Consigne</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" className="w-5 h-5 rounded text-rose-600" checked={itemIsNoStock} onChange={e => setItemIsNoStock(e.target.checked)} />
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Sans Stock</span>
+                                </label>
+                            </div>
+                            {itemIsDlc && (
+                                <select className="w-full bg-amber-50 p-4 border border-amber-100 rounded-2xl font-bold text-amber-700 outline-none" value={itemDlcProfile} onChange={e => setItemDlcProfile(e.target.value)}>
+                                    <option value="">Sélectionner Profil DLC...</option>
+                                    {dlcProfiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            )}
                         </div>
                         <button onClick={addProduct} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700">Ajouter</button>
                     </div>

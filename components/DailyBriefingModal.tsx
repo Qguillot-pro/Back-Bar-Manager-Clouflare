@@ -222,13 +222,43 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
                             />
                         </div>
                         <div className="flex gap-4">
-                            <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Midi</span>
-                                <span className="text-xl font-black text-rose-600">{lunchCount}</span>
+                            <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Midi</span>
+                                    <span className="text-xl font-black text-rose-600">{lunchCount}</span>
+                                </div>
+                                <div className="flex -space-x-1.5 overflow-hidden">
+                                    {todayMeals
+                                        .filter(r => r.slot === 'LUNCH')
+                                        .map(r => {
+                                            const u = users.find(u => u.id === r.userId);
+                                            if (!u) return null;
+                                            return (
+                                                <div key={r.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white bg-rose-50 flex items-center justify-center overflow-hidden" title={u.name}>
+                                                    <span className="text-[7px] font-black text-rose-600">{u.name.substring(0, 2).toUpperCase()}</span>
+                                                </div>
+                                            );
+                                        })}
+                                </div>
                             </div>
-                            <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Soir</span>
-                                <span className="text-xl font-black text-rose-900">{dinnerCount}</span>
+                            <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Soir</span>
+                                    <span className="text-xl font-black text-rose-900">{dinnerCount}</span>
+                                </div>
+                                <div className="flex -space-x-1.5 overflow-hidden">
+                                    {todayMeals
+                                        .filter(r => r.slot === 'DINNER')
+                                        .map(r => {
+                                            const u = users.find(u => u.id === r.userId);
+                                            if (!u) return null;
+                                            return (
+                                                <div key={r.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white bg-rose-50 flex items-center justify-center overflow-hidden" title={u.name}>
+                                                    <span className="text-[7px] font-black text-rose-600">{u.name.substring(0, 2).toUpperCase()}</span>
+                                                </div>
+                                            );
+                                        })}
+                                </div>
                             </div>
                         </div>
                     </div>

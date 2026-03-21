@@ -246,6 +246,18 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                     <label className="flex items-center gap-3 cursor-pointer">
                         <input 
                         type="checkbox"
+                        className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300"
+                        checked={item.isNoStock || false}
+                        onChange={e => updateItem(item.id, 'isNoStock', e.target.checked)}
+                        />
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${item.isNoStock ? 'text-rose-500' : 'text-slate-300'}`}>
+                            {item.isNoStock ? '🚫 Sans Stock' : 'Sans Stock'}
+                        </span>
+                    </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input 
+                        type="checkbox"
                         className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
                         checked={item.isConsigne || false}
                         onChange={e => updateItem(item.id, 'isConsigne', e.target.checked)}

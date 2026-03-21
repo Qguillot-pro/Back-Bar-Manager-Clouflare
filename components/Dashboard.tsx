@@ -664,35 +664,42 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                           <p className="text-2xl font-black text-rose-600">
                               {mealReservations.filter(r => r.date === currentBarDate && r.slot === 'LUNCH').length}
                           </p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Midi</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Midi</p>
+                          <div className="flex -space-x-1.5 overflow-hidden">
+                              {mealReservations
+                                .filter(r => r.date === currentBarDate && r.slot === 'LUNCH')
+                                .map(r => {
+                                    const u = users.find(u => u.id === r.userId);
+                                    if (!u) return null;
+                                    return (
+                                        <div key={r.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white bg-rose-50 flex items-center justify-center overflow-hidden" title={u.name}>
+                                            <span className="text-[7px] font-black text-rose-600">{u.name.substring(0, 2).toUpperCase()}</span>
+                                        </div>
+                                    );
+                                })
+                              }
+                          </div>
                       </div>
                       <div className="border-l border-slate-100 pl-6">
                           <p className="text-2xl font-black text-rose-900">
                               {mealReservations.filter(r => r.date === currentBarDate && r.slot === 'DINNER').length}
                           </p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Soir</p>
-                      </div>
-                  </div>
-                  <div className="flex -space-x-2 overflow-hidden">
-                      {Array.from(new Set(mealReservations
-                        .filter(r => r.date === currentBarDate)
-                        .map(r => r.userId)))
-                        .map(userId => {
-                            const user = users.find(u => u.id === userId);
-                            if (!user) return null;
-                            return (
-                                <div key={userId} className="inline-block h-6 w-6 rounded-full ring-2 ring-white bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500 uppercase" title={user.name}>
-                                    {user.name.charAt(0)}
-                                </div>
-                            );
-                        })
-                        .slice(0, 5)
-                      }
-                      {new Set(mealReservations.filter(r => r.date === currentBarDate).map(r => r.userId)).size > 5 && (
-                          <div className="inline-block h-6 w-6 rounded-full ring-2 ring-white bg-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600">
-                              +{new Set(mealReservations.filter(r => r.date === currentBarDate).map(r => r.userId)).size - 5}
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Soir</p>
+                          <div className="flex -space-x-1.5 overflow-hidden">
+                              {mealReservations
+                                .filter(r => r.date === currentBarDate && r.slot === 'DINNER')
+                                .map(r => {
+                                    const u = users.find(u => u.id === r.userId);
+                                    if (!u) return null;
+                                    return (
+                                        <div key={r.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white bg-rose-50 flex items-center justify-center overflow-hidden" title={u.name}>
+                                            <span className="text-[7px] font-black text-rose-600">{u.name.substring(0, 2).toUpperCase()}</span>
+                                        </div>
+                                    );
+                                })
+                              }
                           </div>
-                      )}
+                      </div>
                   </div>
               </div>
           </div>

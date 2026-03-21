@@ -52,7 +52,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
     }
 
     const searchNormalized = normalizeText(search.trim());
-    const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
+    const item = items.filter(i => !i.isNoStock).find(i => normalizeText(i.name.trim()) === searchNormalized);
 
     if (!item) {
         if (type === 'IN' && onCreateTemporaryItem) {
@@ -111,7 +111,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
       }
 
       const searchNormalized = normalizeText(unfulfilledSearch.trim());
-      const item = items.find(i => normalizeText(i.name.trim()) === searchNormalized);
+      const item = items.filter(i => !i.isNoStock).find(i => normalizeText(i.name.trim()) === searchNormalized);
 
       let quantity = parseInt(unfulfilledQty, 10);
       if (isNaN(quantity) || quantity <= 0) quantity = 1;
@@ -278,7 +278,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                       <div className="flex-1">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit</label>
                           <input list="movement-items" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-indigo-100" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} />
-                          <datalist id="movement-items">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
+                          <datalist id="movement-items">{items.filter(i => !i.isNoStock).map(i => <option key={i.id} value={i.name} />)}</datalist>
                       </div>
                       <button 
                         onClick={() => { setTempItemName(search); setTempItemAction('IN'); setIsTempItemModalOpen(true); }}
@@ -330,27 +330,55 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                           </button>
                       )}
                   </div>
-                  {transactions.slice(0, 20).map((t, idx) => {
-                      const item = items.find(i => i.id === t.itemId);
-                      const d = new Date(t.date);
-                      return (
-                          <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm animate-in slide-in-from-right duration-300" style={{animationDelay: `${idx*50}ms`}}>
-                              <div>
-                                  <p className="font-bold text-slate-800 text-sm">{item?.name || 'Inconnu'}</p>
-                                  <div className="flex flex-wrap gap-1 mt-0.5">
-                                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                                          {!isNaN(d.getTime()) ? d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'} • {t.userName}
-                                      </span>
-                                      {t.note === 'Régulation' && <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1.5 rounded uppercase tracking-wider">Régulation</span>}
-                                      {t.isServiceTransfer && <span className="text-[8px] font-black bg-purple-100 text-purple-700 px-1.5 rounded uppercase tracking-wider">Interservice</span>}
+                  {(() => {
+                      // Grouping logic
+                      const grouped: Transaction[] = [];
+                      transactions.forEach(t => {
+                          const existing = grouped.find(g => 
+                              g.itemId === t.itemId && 
+                              g.type === t.type && 
+                              g.storageId === t.storageId &&
+                              g.isServiceTransfer === t.isServiceTransfer &&
+                              g.note === t.note &&
+                              new Date(g.date).toDateString() === new Date(t.date).toDateString()
+                          );
+                          if (existing) {
+                              existing.quantity += t.quantity;
+                              if (new Date(t.date) > new Date(existing.date)) {
+                                  existing.date = t.date;
+                                  existing.userName = t.userName;
+                              }
+                          } else {
+                              grouped.push({ ...t });
+                          }
+                      });
+
+                      return grouped.slice(0, 20).map((t, idx) => {
+                          const item = items.find(i => i.id === t.itemId);
+                          const storage = storages.find(s => s.id === t.storageId);
+                          const d = new Date(t.date);
+                          return (
+                              <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm animate-in slide-in-from-right duration-300" style={{animationDelay: `${idx*50}ms`}}>
+                                  <div>
+                                      <p className="font-bold text-slate-800 text-sm">{item?.name || 'Inconnu'}</p>
+                                      <div className="flex flex-wrap gap-1 mt-0.5">
+                                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                              {!isNaN(d.getTime()) ? d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'} • {t.userName}
+                                          </span>
+                                          <span className={`text-[8px] font-black px-1.5 rounded uppercase tracking-wider ${t.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                              {t.type === 'IN' ? 'Entrée' : 'Sortie'} {storage?.name}
+                                          </span>
+                                          {t.note === 'Régulation' && <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1.5 rounded uppercase tracking-wider">Régulation</span>}
+                                          {t.isServiceTransfer && <span className="text-[8px] font-black bg-purple-100 text-purple-700 px-1.5 rounded uppercase tracking-wider">Interservice</span>}
+                                      </div>
+                                  </div>
+                                  <div className={`px-3 py-1.5 rounded-lg font-black text-xs ${t.type === 'IN' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                                      {t.type === 'IN' ? '+' : '-'}{t.quantity}
                                   </div>
                               </div>
-                              <div className={`px-3 py-1.5 rounded-lg font-black text-xs ${t.type === 'IN' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                                  {t.type === 'IN' ? '+' : '-'}{t.quantity}
-                              </div>
-                          </div>
-                      );
-                  })}
+                          );
+                      });
+                  })()}
               </div>
           </div>
       )}
@@ -363,7 +391,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
                       <div className="flex-1">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit en rupture</label>
                           <input list="unfulfilled-items" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-rose-100" placeholder="Rechercher ou saisir un nouveau produit..." value={unfulfilledSearch} onChange={(e) => setUnfulfilledSearch(e.target.value)} />
-                          <datalist id="unfulfilled-items">{items.map(i => <option key={i.id} value={i.name} />)}</datalist>
+                          <datalist id="unfulfilled-items">{items.filter(i => !i.isNoStock).map(i => <option key={i.id} value={i.name} />)}</datalist>
                       </div>
                       <div className="w-24">
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Qté</label>

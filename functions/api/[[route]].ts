@@ -101,6 +101,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       console.log("Migration messages columns skipped or already done");
   }
 
+  // Migration V1.6: Add is_no_stock to items
+  try {
+      await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS is_no_stock BOOLEAN DEFAULT FALSE');
+  } catch (e) {
+      console.log("Migration is_no_stock items skipped or already done");
+  }
+
   // Migration V1.5: Add work_shifts and activity_moments tables
   try {
       await pool.query(`
@@ -323,7 +330,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             id: row.id, articleCode: row.article_code, name: row.name, category: row.category, formatId: row.format_id,
             pricePerUnit: parseFloat(row.price_per_unit || '0'), lastUpdated: row.last_updated, createdAt: row.created_at,
             isDLC: row.is_dlc, dlcProfileId: row.dlc_profile_id, isConsigne: row.is_consigne, order: row.sort_order,
-            isDraft: row.is_draft, isTemporary: row.is_temporary, isInventoryOnly: row.is_inventory_only, inventoryLocation: row.inventory_location
+            isDraft: row.is_draft, isTemporary: row.is_temporary, isInventoryOnly: row.is_inventory_only, isNoStock: row.is_no_stock, inventoryLocation: row.inventory_location
         }));
         if (rawData.storages) responseBody.storages = rawData.storages.map((s: any) => ({ id: s.id, name: s.name, order: s.sort_order }));
         if (rawData.formats) responseBody.formats = rawData.formats.map((f: any) => ({ id: f.id, name: f.name, value: parseFloat(f.value || '0'), order: f.sort_order }));
@@ -435,7 +442,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_EVENT_COMMENT': { await pool.query(`INSERT INTO event_comments (id, event_id, user_name, content, created_at) VALUES ($1, $2, $3, $4, NOW())`, [payload.id, payload.eventId, payload.userName, payload.content]); break; }
         case 'SAVE_DAILY_COCKTAIL': { const { id, date, type, recipeId, customName, customDescription } = payload; await pool.query(`INSERT INTO daily_cocktails (id, date, type, recipe_id, custom_name, custom_description) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET recipe_id = EXCLUDED.recipe_id, custom_name = EXCLUDED.custom_name, custom_description = EXCLUDED.custom_description`, [id, date, type, recipeId, customName, customDescription]); break; }
         case 'SAVE_CONFIG': { await pool.query(`INSERT INTO app_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [payload.key, String(payload.value)]); break; }
-        case 'SAVE_ITEM': { const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt, isInventoryOnly, inventoryLocation } = payload; await pool.query(`INSERT INTO items (id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, is_consigne, sort_order, is_draft, is_temporary, is_inventory_only, inventory_location, created_at, last_updated) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, NOW()), NOW()) ON CONFLICT (id) DO UPDATE SET article_code = EXCLUDED.article_code, name = EXCLUDED.name, category = EXCLUDED.category, format_id = EXCLUDED.format_id, price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, dlc_profile_id = EXCLUDED.dlc_profile_id, is_consigne = EXCLUDED.is_consigne, sort_order = EXCLUDED.sort_order, is_draft = EXCLUDED.is_draft, is_temporary = EXCLUDED.is_temporary, is_inventory_only = EXCLUDED.is_inventory_only, inventory_location = EXCLUDED.inventory_location, last_updated = NOW()`, [id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, isInventoryOnly, inventoryLocation, createdAt]); break; }
+        case 'SAVE_ITEM': { const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt, isInventoryOnly, isNoStock, inventoryLocation } = payload; await pool.query(`INSERT INTO items (id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, is_consigne, sort_order, is_draft, is_temporary, is_inventory_only, is_no_stock, inventory_location, created_at, last_updated) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, NOW()), NOW()) ON CONFLICT (id) DO UPDATE SET article_code = EXCLUDED.article_code, name = EXCLUDED.name, category = EXCLUDED.category, format_id = EXCLUDED.format_id, price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, dlc_profile_id = EXCLUDED.dlc_profile_id, is_consigne = EXCLUDED.is_consigne, sort_order = EXCLUDED.sort_order, is_draft = EXCLUDED.is_draft, is_temporary = EXCLUDED.is_temporary, is_inventory_only = EXCLUDED.is_inventory_only, is_no_stock = EXCLUDED.is_no_stock, inventory_location = EXCLUDED.inventory_location, last_updated = NOW()`, [id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, isInventoryOnly, isNoStock, inventoryLocation, createdAt]); break; }
         case 'DELETE_ITEM': { await pool.query('DELETE FROM items WHERE id = $1', [payload.id]); break; }
         case 'SAVE_STOCK': { await pool.query(`INSERT INTO stock_levels (item_id, storage_id, quantity) VALUES ($1, $2, $3) ON CONFLICT (item_id, storage_id) DO UPDATE SET quantity = EXCLUDED.quantity`, [payload.itemId, payload.storageId, payload.currentQuantity]); break; }
         case 'SAVE_STOCK_LEVEL': { await pool.query(`INSERT INTO stock_levels (item_id, storage_id, quantity, "order") VALUES ($1, $2, $3, $4) ON CONFLICT (item_id, storage_id) DO UPDATE SET quantity = EXCLUDED.quantity, "order" = EXCLUDED."order"`, [payload.itemId, payload.storageId, payload.currentQuantity, payload.order || 0]); break; }
@@ -610,7 +617,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 { table: 'product_sheets', column: 'custom_fields' },
                 { table: 'recipes', column: 'tva_rate' },
                 { table: 'admin_notes', column: 'user_name' },
-                { table: 'dlc_profiles', column: 'type' }
+                { table: 'dlc_profiles', column: 'type' },
+                { table: 'items', column: 'is_no_stock' }
             ];
             
             const colResults: any = {};

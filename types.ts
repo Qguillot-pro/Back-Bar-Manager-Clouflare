@@ -97,6 +97,7 @@ export interface StockItem {
   isDraft?: boolean;
   isTemporary?: boolean; 
   isInventoryOnly?: boolean; 
+  isNoStock?: boolean; 
   inventoryLocation?: string;
 }
 
