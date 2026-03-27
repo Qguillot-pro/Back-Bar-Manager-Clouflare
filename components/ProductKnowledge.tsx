@@ -558,11 +558,17 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                       )}
                       {Object.keys(custom).length > 0 && (
                           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                              {Object.entries(custom).map(([key, val]) => {
-                                  let displayKey = key;
-                                  let displayVal = String(val ?? '');
+                              {Object.entries(custom)
+                                  .filter(([key]) => {
+                                      if (canEditStock) return true;
+                                      const lowerKey = key.toLowerCase();
+                                      return !['actualprice', 'suggestedprices', 'marginrate', 'tvarate', 'salesformat'].includes(lowerKey);
+                                  })
+                                  .map(([key, val]) => {
+                                      let displayKey = key;
+                                      let displayVal = String(val ?? '');
 
-                                  const lowerKey = key.toLowerCase();
+                                      const lowerKey = key.toLowerCase();
                                   if (lowerKey === 'glasswareids') {
                                       displayKey = 'Verrerie';
                                       // Resolve IDs to names if possible

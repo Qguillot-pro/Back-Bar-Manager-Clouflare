@@ -169,6 +169,8 @@ const Configuration: React.FC<ConfigProps> = ({
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [newProfileName, setNewProfileName] = useState('');
   const [newProfilePermissions, setNewProfilePermissions] = useState<Record<string, {view: boolean, edit: boolean}>>({});
+  const [newProfileWelcomeModalTiles, setNewProfileWelcomeModalTiles] = useState<string[]>(['cocktails', 'messages', 'tasks', 'meals']);
+  const [newProfileWelcomeModalMessage, setNewProfileWelcomeModalMessage] = useState('');
 
   const RESOURCES = [
     { id: 'dashboard', label: 'Tableau de bord' },
@@ -234,7 +236,9 @@ const Configuration: React.FC<ConfigProps> = ({
     const profile = {
         id: editingProfileId || 'prof_' + Date.now(),
         name: newProfileName,
-        permissions: newProfilePermissions
+        permissions: newProfilePermissions,
+        welcomeModalTiles: newProfileWelcomeModalTiles,
+        welcomeModalMessage: newProfileWelcomeModalMessage
     };
     if (editingProfileId) {
         setRoleProfiles(prev => prev.map(p => p.id === editingProfileId ? profile : p));
@@ -244,6 +248,8 @@ const Configuration: React.FC<ConfigProps> = ({
     onSync('SAVE_ROLE_PROFILE', profile);
     setNewProfileName('');
     setNewProfilePermissions({});
+    setNewProfileWelcomeModalTiles(['cocktails', 'messages', 'tasks', 'meals']);
+    setNewProfileWelcomeModalMessage('');
     setEditingProfileId(null);
   };
 
@@ -251,6 +257,8 @@ const Configuration: React.FC<ConfigProps> = ({
     setEditingProfileId(p.id);
     setNewProfileName(p.name);
     setNewProfilePermissions(p.permissions || {});
+    setNewProfileWelcomeModalTiles(p.welcomeModalTiles || ['cocktails', 'messages', 'tasks', 'meals']);
+    setNewProfileWelcomeModalMessage(p.welcomeModalMessage || '');
   };
 
   const deleteProfile = (id: string) => {
@@ -713,52 +721,6 @@ const Configuration: React.FC<ConfigProps> = ({
 
       {activeSubTab === 'profiles' && (
           <div className="max-w-4xl mx-auto space-y-8">
-              {/* WELCOME MODAL CONFIGURATION */}
-              <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
-                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>Configuration Modal de Bienvenue</h3>
-                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-6">
-                      <div className="space-y-4">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tuiles Visibles</p>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                              {[
-                                  { id: 'cocktails', label: 'Cocktails du Jour' },
-                                  { id: 'messages', label: 'Messages & Briefing' },
-                                  { id: 'tasks', label: 'Tâches du Jour' },
-                                  { id: 'meals', label: 'Repas Staff' }
-                              ].map(tile => {
-                                  const isVisible = (appConfig.welcomeModalTiles || ['cocktails', 'messages', 'tasks', 'meals']).includes(tile.id);
-                                  return (
-                                      <button 
-                                          key={tile.id}
-                                          onClick={() => {
-                                              const current = appConfig.welcomeModalTiles || ['cocktails', 'messages', 'tasks', 'meals'];
-                                              const updated = isVisible ? current.filter(t => t !== tile.id) : [...current, tile.id];
-                                              handleConfigChange('welcomeModalTiles', updated);
-                                          }}
-                                          className={`p-4 rounded-xl border font-black text-[10px] uppercase tracking-widest transition-all ${isVisible ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300'}`}
-                                      >
-                                          {tile.label}
-                                      </button>
-                                  );
-                              })}
-                          </div>
-                      </div>
-                      <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Message Fixe (Max 250 caractères)</label>
-                          <textarea 
-                              className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-medium text-sm outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
-                              placeholder="Écrivez un message qui s'affichera toujours dans la modal de bienvenue..."
-                              maxLength={250}
-                              value={appConfig.welcomeModalMessage || ''}
-                              onChange={e => handleConfigChange('welcomeModalMessage', e.target.value)}
-                          />
-                          <div className="flex justify-end">
-                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{(appConfig.welcomeModalMessage || '').length} / 250</span>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-
               <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
                   <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>Gestion des Profils & Permissions</h3>
                   
@@ -770,7 +732,53 @@ const Configuration: React.FC<ConfigProps> = ({
                           </div>
                           <div className="flex gap-2">
                             <button onClick={handleSaveProfile} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 shadow-md">{editingProfileId ? 'Modifier' : 'Créer Profil'}</button>
-                            {editingProfileId && <button onClick={() => { setEditingProfileId(null); setNewProfileName(''); setNewProfilePermissions({}); }} className="bg-slate-200 text-slate-600 px-4 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-300">Annuler</button>}
+                            {editingProfileId && <button onClick={() => { setEditingProfileId(null); setNewProfileName(''); setNewProfilePermissions({}); setNewProfileWelcomeModalTiles(['cocktails', 'messages', 'tasks', 'meals']); setNewProfileWelcomeModalMessage(''); }} className="bg-slate-200 text-slate-600 px-4 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-300">Annuler</button>}
+                          </div>
+                      </div>
+
+                      {/* WELCOME MODAL CONFIGURATION (PER PROFILE) */}
+                      <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-6">
+                          <h4 className="font-black text-[10px] uppercase tracking-widest text-indigo-600 flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              Configuration Modal de Bienvenue pour ce Profil
+                          </h4>
+                          <div className="space-y-4">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tuiles Visibles</p>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                  {[
+                                      { id: 'cocktails', label: 'Cocktails du Jour' },
+                                      { id: 'messages', label: 'Messages & Briefing' },
+                                      { id: 'tasks', label: 'Tâches du Jour' },
+                                      { id: 'meals', label: 'Repas Staff' }
+                                  ].map(tile => {
+                                      const isVisible = newProfileWelcomeModalTiles.includes(tile.id);
+                                      return (
+                                          <button 
+                                              key={tile.id}
+                                              onClick={() => {
+                                                  const updated = isVisible ? newProfileWelcomeModalTiles.filter(t => t !== tile.id) : [...newProfileWelcomeModalTiles, tile.id];
+                                                  setNewProfileWelcomeModalTiles(updated);
+                                              }}
+                                              className={`p-4 rounded-xl border font-black text-[10px] uppercase tracking-widest transition-all ${isVisible ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300'}`}
+                                          >
+                                              {tile.label}
+                                          </button>
+                                      );
+                                  })}
+                              </div>
+                          </div>
+                          <div className="space-y-2">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Message Fixe (Max 250 caractères)</label>
+                              <textarea 
+                                  className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-medium text-sm outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
+                                  placeholder="Écrivez un message qui s'affichera toujours dans la modal de bienvenue..."
+                                  maxLength={250}
+                                  value={newProfileWelcomeModalMessage}
+                                  onChange={e => setNewProfileWelcomeModalMessage(e.target.value)}
+                              />
+                              <div className="flex justify-end">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{newProfileWelcomeModalMessage.length} / 250</span>
+                              </div>
                           </div>
                       </div>
 

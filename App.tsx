@@ -1466,6 +1466,7 @@ const App: React.FC = () => {
               users={users}
               recipes={recipes}
               appConfig={appConfig}
+              roleProfiles={roleProfiles}
               onClose={() => {
                   setShowDailyBriefing(false);
                   const today = getBarDateStr();

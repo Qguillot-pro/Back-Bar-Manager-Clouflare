@@ -29,6 +29,8 @@ export interface RoleProfile {
   id: string;
   name: string;
   permissions: Record<string, Permission>;
+  welcomeModalTiles?: string[];
+  welcomeModalMessage?: string;
 }
 
 export interface AppConfig {

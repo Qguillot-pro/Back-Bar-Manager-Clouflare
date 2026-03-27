@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, DailyCocktail, Message, Task, MealReservation, Recipe, AppConfig } from '../types';
+import { User, DailyCocktail, Message, Task, MealReservation, Recipe, AppConfig, RoleProfile } from '../types';
 
 interface DailyBriefingModalProps {
     user: User;
@@ -11,6 +11,7 @@ interface DailyBriefingModalProps {
     users: User[];
     recipes: Recipe[];
     appConfig: AppConfig;
+    roleProfiles: RoleProfile[];
     onClose: () => void;
     todayDate?: string;
 }
@@ -24,6 +25,7 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
     users,
     recipes,
     appConfig,
+    roleProfiles,
     onClose,
     todayDate
 }) => {
@@ -93,9 +95,23 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
         return mealReservations.filter(r => r.date === today);
     }, [mealReservations, today]);
 
+    const profile = useMemo(() => {
+        return roleProfiles.find(p => p.id === user.profileId);
+    }, [user.profileId, roleProfiles]);
+
     const visibleTiles = useMemo(() => {
+        if (profile?.welcomeModalTiles && profile.welcomeModalTiles.length > 0) {
+            return profile.welcomeModalTiles;
+        }
         return appConfig.welcomeModalTiles || ['cocktails', 'messages', 'tasks', 'meals'];
-    }, [appConfig.welcomeModalTiles]);
+    }, [profile, appConfig.welcomeModalTiles]);
+
+    const welcomeMessage = useMemo(() => {
+        if (profile?.welcomeModalMessage) {
+            return profile.welcomeModalMessage;
+        }
+        return appConfig.welcomeModalMessage;
+    }, [profile, appConfig.welcomeModalMessage]);
 
     const lunchCount = todayMeals.filter(r => r.slot === 'LUNCH').length;
     const dinnerCount = todayMeals.filter(r => r.slot === 'DINNER').length;
@@ -120,13 +136,13 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
                 <div className="flex-1 overflow-y-auto p-8 space-y-8">
                     
                     {/* Fixed Message */}
-                    {appConfig.welcomeModalMessage && (
+                    {welcomeMessage && (
                         <div className="bg-amber-50 border border-amber-100 p-6 rounded-3xl relative overflow-hidden">
                             <div className="absolute top-0 right-0 p-2 opacity-10">
                                 <svg className="w-12 h-12 text-amber-900" fill="currentColor" viewBox="0 0 24 24"><path d="M14.017 21L14.017 18C14.017 16.8954 14.9124 16 16.017 16H19.017C19.5693 16 20.017 15.5523 20.017 15V9C20.017 8.44772 19.5693 8 19.017 8H14.017C13.4647 8 13.017 8.44772 13.017 9V12C13.017 12.5523 12.5693 13 12.017 13H11.017C10.4647 13 10.017 12.5523 10.017 12V9C10.017 8.44772 9.56931 8 9.01703 8H4.01703C3.46475 8 3.01703 8.44772 3.01703 9V15C3.01703 15.5523 3.46475 16 4.01703 16H7.01703C8.1216 16 9.01703 16.8954 9.01703 18V21L14.017 21Z" /></svg>
                             </div>
                             <p className="text-amber-900 font-bold text-sm italic relative z-10 leading-relaxed">
-                                "{appConfig.welcomeModalMessage}"
+                                "{welcomeMessage}"
                             </p>
                         </div>
                     )}

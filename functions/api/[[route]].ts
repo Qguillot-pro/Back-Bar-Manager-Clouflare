@@ -101,6 +101,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       console.log("Migration messages columns skipped or already done");
   }
 
+  // Migration Role Profiles: Add welcome_modal columns
+  try {
+      await pool.query('ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS welcome_modal_tiles TEXT');
+      await pool.query('ALTER TABLE role_profiles ADD COLUMN IF NOT EXISTS welcome_modal_message TEXT');
+  } catch (e) {
+      console.log("Migration role_profiles columns skipped or already done");
+  }
+
   // Migration V1.6: Add is_no_stock to items
   try {
       await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS is_no_stock BOOLEAN DEFAULT FALSE');
@@ -247,7 +255,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             permissions.rows.filter((perm: any) => perm.role_profile_id === p.id).forEach((perm: any) => {
                 pPermissions[perm.resource_name] = { view: perm.can_view, edit: perm.can_edit };
             });
-            return { id: p.id, name: p.name, permissions: pPermissions };
+            let welcomeModalTiles: string[] | undefined;
+            try { if (p.welcome_modal_tiles) welcomeModalTiles = JSON.parse(p.welcome_modal_tiles); } catch (e) {}
+            return { 
+                id: p.id, 
+                name: p.name, 
+                permissions: pPermissions,
+                welcomeModalTiles,
+                welcomeModalMessage: p.welcome_modal_message
+            };
         });
 
         const responseBody = {
@@ -479,10 +495,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_DAILY_STOCK_ALERT': { await pool.query(`INSERT INTO daily_stock_alerts (id, date, type, item_id, quantity, consigne) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.date, payload.type, payload.itemId, payload.quantity, payload.consigne]); break; }
         case 'SAVE_USER': { await pool.query(`INSERT INTO users (id, name, role, pin, show_in_meal_planning, profile_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role, pin = EXCLUDED.pin, show_in_meal_planning = EXCLUDED.show_in_meal_planning, profile_id = EXCLUDED.profile_id`, [payload.id, payload.name, payload.role, payload.pin, payload.showInMealPlanning, payload.profileId]); break; }
         case 'SAVE_ROLE_PROFILE': {
-            const { id, name, permissions } = payload;
+            const { id, name, permissions, welcomeModalTiles, welcomeModalMessage } = payload;
             await pool.query('BEGIN');
             try {
-                await pool.query(`INSERT INTO role_profiles (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [id, name]);
+                await pool.query(`
+                    INSERT INTO role_profiles (id, name, welcome_modal_tiles, welcome_modal_message) 
+                    VALUES ($1, $2, $3, $4) 
+                    ON CONFLICT (id) DO UPDATE SET 
+                    name = EXCLUDED.name, 
+                    welcome_modal_tiles = EXCLUDED.welcome_modal_tiles, 
+                    welcome_modal_message = EXCLUDED.welcome_modal_message
+                `, [id, name, welcomeModalTiles ? JSON.stringify(welcomeModalTiles) : null, welcomeModalMessage]);
                 await pool.query('DELETE FROM permissions WHERE role_profile_id = $1', [id]);
                 for (const [res, perms] of Object.entries(permissions)) {
                     const p = perms as any;
