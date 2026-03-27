@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Recipe, StockItem, Glassware, User, AppConfig, RecipeIngredient, Technique, CocktailCategory, StockLevel, Format } from '../types';
+import { Recipe, StockItem, Glassware, User, AppConfig, RecipeIngredient, Technique, CocktailCategory, StockLevel, Format, DailyCocktail } from '../types';
 import { generateCocktailWithAI } from '../services/geminiService';
 
 interface RecipesViewProps {
@@ -15,11 +15,13 @@ interface RecipesViewProps {
   cocktailCategories?: CocktailCategory[];
   stockLevels?: StockLevel[];
   formats?: Format[];
+  canEditStock?: boolean;
+  dailyCocktails?: DailyCocktail[];
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [], cocktailCategories = [], stockLevels = [], formats = [] }) => {
+const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [], cocktailCategories = [], stockLevels = [], formats = [], canEditStock = false, dailyCocktails = [] }) => {
   const [viewMode, setViewMode] = useState<'CATEGORIES' | 'LIST' | 'CREATE' | 'DETAIL'>('CATEGORIES');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
@@ -188,6 +190,24 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {/* Carte du Moment Tile */}
+                  <div 
+                    onClick={() => handleSelectCategory('Carte du Moment')}
+                    className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 shadow-xl hover:shadow-2xl hover:scale-[1.02] cursor-pointer transition-all flex flex-col items-center justify-center h-48 gap-3 group relative overflow-hidden"
+                  >
+                      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                      <div className="w-16 h-16 bg-white/10 text-white rounded-2xl flex items-center justify-center text-2xl font-black shadow-inner mb-2 group-hover:bg-white group-hover:text-slate-900 transition-colors">
+                          ✨
+                      </div>
+                      <h3 className="font-black text-lg text-white uppercase tracking-tight text-center relative z-10">Carte du Moment</h3>
+                      <span className="text-[10px] font-bold text-indigo-300 bg-white/5 px-3 py-1 rounded-full group-hover:bg-slate-800 group-hover:text-white transition-colors relative z-10">
+                          {(() => {
+                              const today = new Date().toISOString().split('T')[0];
+                              return dailyCocktails.filter(c => c.date === today && c.recipeId).length;
+                          })()} Cocktails
+                      </span>
+                  </div>
+
                   {counts.map(cat => (
                       <div 
                         key={cat.id} 
@@ -223,11 +243,17 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
 
   // --- VUE LISTE (FILTRÉE) ---
   if (viewMode === 'LIST') {
-      const filteredRecipes = recipes.filter(r => 
-          selectedCategoryFilter === 'Non Classé' 
+      const today = new Date().toISOString().split('T')[0];
+      const momentRecipeIds = dailyCocktails.filter(c => c.date === today && c.recipeId).map(c => c.recipeId);
+
+      const filteredRecipes = recipes.filter(r => {
+          if (selectedCategoryFilter === 'Carte du Moment') {
+              return momentRecipeIds.includes(r.id);
+          }
+          return selectedCategoryFilter === 'Non Classé' 
             ? !cocktailCategories.some(c => c.name === r.category)
-            : r.category === selectedCategoryFilter
-      );
+            : r.category === selectedCategoryFilter;
+      });
 
       return (
           <div className="space-y-6">
@@ -253,7 +279,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           <p className="text-xs text-slate-500 mt-2 line-clamp-2 italic font-medium leading-relaxed">"{r.description}"</p>
                           <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
                               <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{r.technique}</span>
-                              <span className="font-black text-slate-900 text-sm">{r.sellingPrice?.toFixed(2)} €</span>
+                              {canEditStock && <span className="font-black text-slate-900 text-sm">{r.sellingPrice?.toFixed(2)} €</span>}
                           </div>
                       </div>
                   ))}
@@ -351,22 +377,24 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                               </div>
                           ))}
                       </div>
-                      <div className="pt-6 border-t border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6">
-                          <div className="flex gap-8">
-                            <div className="text-center md:text-left">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Coût Matière Théorique</p>
-                                <p className="text-2xl font-black text-slate-900">{totalCost.toFixed(2)} €</p>
+                      {canEditStock && (
+                        <div className="pt-6 border-t border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6">
+                            <div className="flex gap-8">
+                                <div className="text-center md:text-left">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Coût Matière Théorique</p>
+                                    <p className="text-2xl font-black text-slate-900">{totalCost.toFixed(2)} €</p>
+                                </div>
+                                <div className="text-center md:text-left">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Coût / Prix (%)</p>
+                                    <p className="text-2xl font-black text-slate-400">{suggestedPrice > 0 ? ((totalCost / suggestedPrice)*100).toFixed(1) : 0}%</p>
+                                </div>
                             </div>
-                            <div className="text-center md:text-left">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Coût / Prix (%)</p>
-                                <p className="text-2xl font-black text-slate-400">{suggestedPrice > 0 ? ((totalCost / suggestedPrice)*100).toFixed(1) : 0}%</p>
+                            <div className="text-center md:text-right bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
+                                <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1">Prix de Vente Min. Conseillé ({margin}% marge)</p>
+                                <p className="text-3xl font-black text-indigo-700">{suggestedPrice.toFixed(2)} € <span className="text-xs opacity-50 uppercase tracking-tighter">TTC</span></p>
                             </div>
-                          </div>
-                          <div className="text-center md:text-right bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
-                              <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1">Prix de Vente Min. Conseillé ({margin}% marge)</p>
-                              <p className="text-3xl font-black text-indigo-700">{suggestedPrice.toFixed(2)} € <span className="text-xs opacity-50 uppercase tracking-tighter">TTC</span></p>
-                          </div>
-                      </div>
+                        </div>
+                      )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

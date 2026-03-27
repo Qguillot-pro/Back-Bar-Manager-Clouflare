@@ -40,6 +40,8 @@ export interface AppConfig {
   barDayStart?: string; // "04:00"
   emailSender?: string;
   tvaRates?: number[]; // [5.5, 10, 20]
+  welcomeModalTiles?: string[]; // ["cocktails", "messages", "tasks", "meals"]
+  welcomeModalMessage?: string; // Max 250 chars
   // Stockage des configurations de cycles en JSON string dans la DB, mais typé ici si besoin
   [key: string]: any; 
 }

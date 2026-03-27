@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice, StockLevel, StockConsigne } from '../types';
+import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice, StockLevel, StockConsigne, DailyCocktail, Recipe } from '../types';
 import { generateProductSheetWithAI } from '../services/geminiService';
 
 interface ProductKnowledgeProps {
@@ -13,9 +13,12 @@ interface ProductKnowledgeProps {
   formats?: Format[];
   stockLevels?: StockLevel[];
   consignes?: StockConsigne[];
+  canEditStock?: boolean;
+  dailyCocktails?: DailyCocktail[];
+  recipes?: Recipe[];
 }
 
-const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [], stockLevels = [], consignes = [] }) => {
+const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [], stockLevels = [], consignes = [], canEditStock = false, dailyCocktails = [], recipes = [] }) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<ProductSheet | null>(null);
@@ -168,11 +171,18 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                      s.type.toLowerCase().includes(term) ||
                      s.region?.toLowerCase().includes(term);
           });
+      } else if (selectedCategory === 'Carte du Moment') {
+          const today = new Date().toISOString().split('T')[0];
+          const momentRecipeIds = dailyCocktails.filter(c => c.date === today && c.recipeId).map(c => c.recipeId);
+          const momentRecipes = recipes.filter(r => momentRecipeIds.includes(r.id));
+          const productIds = new Set<string>();
+          momentRecipes.forEach(r => r.ingredients.forEach((ing: any) => { if (ing.itemId) productIds.add(ing.itemId); }));
+          res = res.filter(s => productIds.has(s.itemId));
       } else if (selectedCategory) {
           res = res.filter(s => s.type === selectedCategory);
       }
       return res;
-  }, [sheets, items, search, selectedCategory]);
+  }, [sheets, items, search, selectedCategory, dailyCocktails, recipes]);
 
   const activeTypes = useMemo(() => {
       return productTypes; 
@@ -223,6 +233,28 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
 
               {!search && !selectedCategory && (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-2">
+                      {/* Carte du Moment Tile */}
+                      <div 
+                        onClick={() => setSelectedCategory('Carte du Moment')}
+                        className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-xl hover:shadow-2xl hover:scale-[1.02] cursor-pointer transition-all flex flex-col items-center justify-center h-40 text-center gap-3 group relative overflow-hidden"
+                      >
+                          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                          <div className="w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                              <span className="text-xl">✨</span>
+                          </div>
+                          <h3 className="font-black text-white text-sm uppercase tracking-wider relative z-10">Carte du Moment</h3>
+                          <span className="text-[10px] text-indigo-300 font-bold bg-white/5 px-2 py-1 rounded-full group-hover:bg-slate-800 group-hover:text-white transition-colors relative z-10">
+                              {(() => {
+                                  const today = new Date().toISOString().split('T')[0];
+                                  const momentRecipeIds = dailyCocktails.filter(c => c.date === today && c.recipeId).map(c => c.recipeId);
+                                  const momentRecipes = recipes.filter(r => momentRecipeIds.includes(r.id));
+                                  const productIds = new Set<string>();
+                                  momentRecipes.forEach(r => r.ingredients.forEach((ing: any) => { if (ing.itemId) productIds.add(ing.itemId); }));
+                                  return sheets.filter(s => productIds.has(s.itemId)).length;
+                              })()} Fiches
+                          </span>
+                      </div>
+
                       {activeTypes.map(pt => (
                           <div 
                             key={pt.id} 
@@ -371,7 +403,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                       </div>
                   </div>
                   
-                  {currentUserRole === 'ADMIN' && (
+                  {canEditStock && (
                       <div className="bg-emerald-50 p-4 rounded-xl space-y-3 border border-emerald-100">
                           <div className="flex justify-between items-center">
                               <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Prix Conseillés (Admin)</p>
@@ -509,7 +541,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                   <div className="flex-1 overflow-y-auto p-8 space-y-8">
                       <p className="text-lg text-slate-700 font-medium leading-relaxed">{selectedSheet.description}</p>
                       
-                      {currentUserRole === 'ADMIN' && (selectedSheet.salesFormat || 0) > 0 && (selectedSheet.actualPrice || 0) > 0 && (
+                      {canEditStock && (selectedSheet.salesFormat || 0) > 0 && (selectedSheet.actualPrice || 0) > 0 && (
                           <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
                               <h3 className="font-black text-sm uppercase text-emerald-600 tracking-widest border-b border-emerald-200 pb-2 mb-4">Prix Conseillés (Admin)</h3>
                               <div className="grid grid-cols-2 gap-4 text-center">

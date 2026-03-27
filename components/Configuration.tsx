@@ -713,6 +713,52 @@ const Configuration: React.FC<ConfigProps> = ({
 
       {activeSubTab === 'profiles' && (
           <div className="max-w-4xl mx-auto space-y-8">
+              {/* WELCOME MODAL CONFIGURATION */}
+              <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>Configuration Modal de Bienvenue</h3>
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-6">
+                      <div className="space-y-4">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tuiles Visibles</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                              {[
+                                  { id: 'cocktails', label: 'Cocktails du Jour' },
+                                  { id: 'messages', label: 'Messages & Briefing' },
+                                  { id: 'tasks', label: 'Tâches du Jour' },
+                                  { id: 'meals', label: 'Repas Staff' }
+                              ].map(tile => {
+                                  const isVisible = (appConfig.welcomeModalTiles || ['cocktails', 'messages', 'tasks', 'meals']).includes(tile.id);
+                                  return (
+                                      <button 
+                                          key={tile.id}
+                                          onClick={() => {
+                                              const current = appConfig.welcomeModalTiles || ['cocktails', 'messages', 'tasks', 'meals'];
+                                              const updated = isVisible ? current.filter(t => t !== tile.id) : [...current, tile.id];
+                                              handleConfigChange('welcomeModalTiles', updated);
+                                          }}
+                                          className={`p-4 rounded-xl border font-black text-[10px] uppercase tracking-widest transition-all ${isVisible ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300'}`}
+                                      >
+                                          {tile.label}
+                                      </button>
+                                  );
+                              })}
+                          </div>
+                      </div>
+                      <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Message Fixe (Max 250 caractères)</label>
+                          <textarea 
+                              className="w-full bg-white border border-slate-200 rounded-2xl p-4 font-medium text-sm outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
+                              placeholder="Écrivez un message qui s'affichera toujours dans la modal de bienvenue..."
+                              maxLength={250}
+                              value={appConfig.welcomeModalMessage || ''}
+                              onChange={e => handleConfigChange('welcomeModalMessage', e.target.value)}
+                          />
+                          <div className="flex justify-end">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{(appConfig.welcomeModalMessage || '').length} / 250</span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
               <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm space-y-6">
                   <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-600 rounded-full"></span>Gestion des Profils & Permissions</h3>
                   

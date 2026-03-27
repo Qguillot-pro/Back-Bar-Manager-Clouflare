@@ -93,10 +93,16 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
         return mealReservations.filter(r => r.date === today);
     }, [mealReservations, today]);
 
+    const visibleTiles = useMemo(() => {
+        return appConfig.welcomeModalTiles || ['cocktails', 'messages', 'tasks', 'meals'];
+    }, [appConfig.welcomeModalTiles]);
+
     const lunchCount = todayMeals.filter(r => r.slot === 'LUNCH').length;
     const dinnerCount = todayMeals.filter(r => r.slot === 'DINNER').length;
 
-    const allChecked = Object.values(checkedItems).every(v => v);
+    const allChecked = useMemo(() => {
+        return visibleTiles.every(tileId => checkedItems[tileId as keyof typeof checkedItems]);
+    }, [visibleTiles, checkedItems]);
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
@@ -113,155 +119,175 @@ const DailyBriefingModal: React.FC<DailyBriefingModalProps> = ({
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-8">
                     
+                    {/* Fixed Message */}
+                    {appConfig.welcomeModalMessage && (
+                        <div className="bg-amber-50 border border-amber-100 p-6 rounded-3xl relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-2 opacity-10">
+                                <svg className="w-12 h-12 text-amber-900" fill="currentColor" viewBox="0 0 24 24"><path d="M14.017 21L14.017 18C14.017 16.8954 14.9124 16 16.017 16H19.017C19.5693 16 20.017 15.5523 20.017 15V9C20.017 8.44772 19.5693 8 19.017 8H14.017C13.4647 8 13.017 8.44772 13.017 9V12C13.017 12.5523 12.5693 13 12.017 13H11.017C10.4647 13 10.017 12.5523 10.017 12V9C10.017 8.44772 9.56931 8 9.01703 8H4.01703C3.46475 8 3.01703 8.44772 3.01703 9V15C3.01703 15.5523 3.46475 16 4.01703 16H7.01703C8.1216 16 9.01703 16.8954 9.01703 18V21L14.017 21Z" /></svg>
+                            </div>
+                            <p className="text-amber-900 font-bold text-sm italic relative z-10 leading-relaxed">
+                                "{appConfig.welcomeModalMessage}"
+                            </p>
+                        </div>
+                    )}
+
                     {/* Cocktails */}
-                    <div className={`p-6 rounded-3xl border-2 transition-all ${checkedItems.cocktails ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center gap-2">
-                                <span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>
-                                Cocktails du Jour
-                            </h3>
-                            <input 
-                                type="checkbox" 
-                                checked={checkedItems.cocktails} 
-                                onChange={(e) => setCheckedItems(p => ({ ...p, cocktails: e.target.checked }))}
-                                className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                            />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {['OF_THE_DAY', 'MOCKTAIL'].map(type => {
-                                const dc = todayCocktails.find(c => c.type === type);
-                                const recipe = recipes.find(r => r.id === dc?.recipeId);
-                                const changed = hasCocktailChanged(type);
-                                return (
-                                    <div key={type} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{type === 'OF_THE_DAY' ? 'Cocktail' : 'Mocktail'}</span>
-                                            {changed && (
-                                                <div className="animate-pulse flex items-center gap-1 text-amber-500">
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                                                    <span className="text-[8px] font-black uppercase">Nouveau !</span>
-                                                </div>
-                                            )}
+                    {visibleTiles.includes('cocktails') && (
+                        <div className={`p-6 rounded-3xl border-2 transition-all ${checkedItems.cocktails ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                                    <span className="w-1.5 h-4 bg-amber-500 rounded-full"></span>
+                                    Cocktails du Jour
+                                </h3>
+                                <input 
+                                    type="checkbox" 
+                                    checked={checkedItems.cocktails} 
+                                    onChange={(e) => setCheckedItems(p => ({ ...p, cocktails: e.target.checked }))}
+                                    className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {['OF_THE_DAY', 'MOCKTAIL'].map(type => {
+                                    const dc = todayCocktails.find(c => c.type === type);
+                                    const recipe = recipes.find(r => r.id === dc?.recipeId);
+                                    const changed = hasCocktailChanged(type);
+                                    return (
+                                        <div key={type} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{type === 'OF_THE_DAY' ? 'Cocktail' : 'Mocktail'}</span>
+                                                {changed && (
+                                                    <div className="animate-pulse flex items-center gap-1 text-amber-500">
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                                        <span className="text-[8px] font-black uppercase">Nouveau !</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <p className="font-black text-slate-800 truncate">
+                                                {recipe?.name || dc?.customName || 'Non défini'}
+                                            </p>
                                         </div>
-                                        <p className="font-black text-slate-800 truncate">
-                                            {recipe?.name || dc?.customName || 'Non défini'}
-                                        </p>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Messages */}
-                    <div className={`p-6 rounded-3xl border-2 transition-all ${checkedItems.messages ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center gap-2">
-                                <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
-                                Messages d'équipe
-                            </h3>
-                            <input 
-                                type="checkbox" 
-                                checked={checkedItems.messages} 
-                                onChange={(e) => setCheckedItems(p => ({ ...p, messages: e.target.checked }))}
-                                className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                            />
-                        </div>
-                        <div className="space-y-3">
-                            {latestMessages.length > 0 ? latestMessages.map(m => (
-                                <div key={m.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">{m.userName}</span>
-                                        <span className="text-[9px] text-slate-400 font-bold">{new Date(m.date).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    {visibleTiles.includes('messages') && (
+                        <div className={`p-6 rounded-3xl border-2 transition-all ${checkedItems.messages ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                                    <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
+                                    Messages d'équipe
+                                </h3>
+                                <input 
+                                    type="checkbox" 
+                                    checked={checkedItems.messages} 
+                                    onChange={(e) => setCheckedItems(p => ({ ...p, messages: e.target.checked }))}
+                                    className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+                            </div>
+                            <div className="space-y-3">
+                                {latestMessages.length > 0 ? latestMessages.map(m => (
+                                    <div key={m.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">{m.userName}</span>
+                                            <span className="text-[9px] text-slate-400 font-bold">{new Date(m.date).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-600 font-medium line-clamp-2 italic">"{m.content}"</p>
                                     </div>
-                                    <p className="text-xs text-slate-600 font-medium line-clamp-2 italic">"{m.content}"</p>
-                                </div>
-                            )) : (
-                                <p className="text-xs text-slate-400 font-bold text-center py-2">Aucun message récent</p>
-                            )}
+                                )) : (
+                                    <p className="text-xs text-slate-400 font-bold text-center py-2">Aucun message récent</p>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Tasks */}
-                    <div className={`p-6 rounded-3xl border-2 transition-all ${checkedItems.tasks ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center gap-2">
-                                <span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>
-                                Tâches à faire
-                            </h3>
-                            <input 
-                                type="checkbox" 
-                                checked={checkedItems.tasks} 
-                                onChange={(e) => setCheckedItems(p => ({ ...p, tasks: e.target.checked }))}
-                                className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                            />
+                    {visibleTiles.includes('tasks') && (
+                        <div className={`p-6 rounded-3xl border-2 transition-all ${checkedItems.tasks ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                                    <span className="w-1.5 h-4 bg-emerald-500 rounded-full"></span>
+                                    Tâches à faire
+                                </h3>
+                                <input 
+                                    type="checkbox" 
+                                    checked={checkedItems.tasks} 
+                                    onChange={(e) => setCheckedItems(p => ({ ...p, tasks: e.target.checked }))}
+                                    className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                {pendingTasks.length > 0 ? pendingTasks.map(t => (
+                                    <div key={t.id} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex items-center gap-3">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+                                        <p className="text-xs font-bold text-slate-700">{t.content}</p>
+                                    </div>
+                                )) : (
+                                    <p className="text-xs text-slate-400 font-bold text-center py-2">Toutes les tâches sont terminées !</p>
+                                )}
+                            </div>
                         </div>
-                        <div className="space-y-2">
-                            {pendingTasks.length > 0 ? pendingTasks.map(t => (
-                                <div key={t.id} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex items-center gap-3">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
-                                    <p className="text-xs font-bold text-slate-700">{t.content}</p>
-                                </div>
-                            )) : (
-                                <p className="text-xs text-slate-400 font-bold text-center py-2">Toutes les tâches sont terminées !</p>
-                            )}
-                        </div>
-                    </div>
+                    )}
 
                     {/* Meals */}
-                    <div className={`p-6 rounded-3xl border-2 transition-all ${checkedItems.meals ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center gap-2">
-                                <span className="w-1.5 h-4 bg-rose-500 rounded-full"></span>
-                                Repas du Jour
-                            </h3>
-                            <input 
-                                type="checkbox" 
-                                checked={checkedItems.meals} 
-                                onChange={(e) => setCheckedItems(p => ({ ...p, meals: e.target.checked }))}
-                                className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                            />
-                        </div>
-                        <div className="flex gap-4">
-                            <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Midi</span>
-                                    <span className="text-xl font-black text-rose-600">{lunchCount}</span>
+                    {visibleTiles.includes('meals') && (
+                        <div className={`p-6 rounded-3xl border-2 transition-all ${checkedItems.meals ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-black text-sm uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                                    <span className="w-1.5 h-4 bg-rose-500 rounded-full"></span>
+                                    Repas du Jour
+                                </h3>
+                                <input 
+                                    type="checkbox" 
+                                    checked={checkedItems.meals} 
+                                    onChange={(e) => setCheckedItems(p => ({ ...p, meals: e.target.checked }))}
+                                    className="w-6 h-6 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+                            </div>
+                            <div className="flex gap-4">
+                                <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Midi</span>
+                                        <span className="text-xl font-black text-rose-600">{lunchCount}</span>
+                                    </div>
+                                    <div className="flex -space-x-1.5 overflow-hidden">
+                                        {todayMeals
+                                            .filter(r => r.slot === 'LUNCH')
+                                            .map(r => {
+                                                const u = users.find(u => u.id === r.userId);
+                                                if (!u) return null;
+                                                return (
+                                                    <div key={r.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white bg-rose-50 flex items-center justify-center overflow-hidden" title={u.name}>
+                                                        <span className="text-[7px] font-black text-rose-600">{u.name.substring(0, 2).toUpperCase()}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                    </div>
                                 </div>
-                                <div className="flex -space-x-1.5 overflow-hidden">
-                                    {todayMeals
-                                        .filter(r => r.slot === 'LUNCH')
-                                        .map(r => {
-                                            const u = users.find(u => u.id === r.userId);
-                                            if (!u) return null;
-                                            return (
-                                                <div key={r.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white bg-rose-50 flex items-center justify-center overflow-hidden" title={u.name}>
-                                                    <span className="text-[7px] font-black text-rose-600">{u.name.substring(0, 2).toUpperCase()}</span>
-                                                </div>
-                                            );
-                                        })}
+                                <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Soir</span>
+                                        <span className="text-xl font-black text-rose-900">{dinnerCount}</span>
+                                    </div>
+                                    <div className="flex -space-x-1.5 overflow-hidden">
+                                        {todayMeals
+                                            .filter(r => r.slot === 'DINNER')
+                                            .map(r => {
+                                                const u = users.find(u => u.id === r.userId);
+                                                if (!u) return null;
+                                                return (
+                                                    <div key={r.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white bg-rose-50 flex items-center justify-center overflow-hidden" title={u.name}>
+                                                        <span className="text-[7px] font-black text-rose-600">{u.name.substring(0, 2).toUpperCase()}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                    </div>
                                 </div>
                             </div>
-                            <div className="flex-1 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Soir</span>
-                                    <span className="text-xl font-black text-rose-900">{dinnerCount}</span>
-                                </div>
-                                <div className="flex -space-x-1.5 overflow-hidden">
-                                    {todayMeals
-                                        .filter(r => r.slot === 'DINNER')
-                                        .map(r => {
-                                            const u = users.find(u => u.id === r.userId);
-                                            if (!u) return null;
-                                            return (
-                                                <div key={r.id} className="inline-block h-5 w-5 rounded-full ring-2 ring-white bg-rose-50 flex items-center justify-center overflow-hidden" title={u.name}>
-                                                    <span className="text-[7px] font-black text-rose-600">{u.name.substring(0, 2).toUpperCase()}</span>
-                                                </div>
-                                            );
-                                        })}
-                                </div>
-                            </div>
                         </div>
-                    </div>
+                    )}
 
                 </div>
 

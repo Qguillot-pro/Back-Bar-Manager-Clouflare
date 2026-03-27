@@ -227,6 +227,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     console.error("Error parsing schedule_config", e);
                 }
             }
+            if (row.key === 'welcome_modal_tiles') {
+                try {
+                    configMap.welcomeModalTiles = JSON.parse(row.value);
+                } catch (e) {
+                    configMap.welcomeModalTiles = ['cocktails', 'messages', 'tasks', 'meals'];
+                }
+            }
+            if (row.key === 'welcome_modal_message') configMap.welcomeModalMessage = row.value;
         });
 
         // Les configurations de cycles
