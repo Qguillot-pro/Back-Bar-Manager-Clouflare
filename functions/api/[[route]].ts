@@ -119,14 +119,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   // Migration V1.5: Add work_shifts and activity_moments tables
   try {
       await pool.query(`
-          CREATE TABLE IF NOT EXISTS work_shifts (
+          CREATE TABLE IF NOT EXISTS staff_shifts (
               id TEXT PRIMARY KEY,
               user_id TEXT NOT NULL,
               date TEXT NOT NULL,
               start_time TEXT NOT NULL,
               end_time TEXT NOT NULL,
-              break_minutes INTEGER NOT NULL,
-              is_split_shift BOOLEAN DEFAULT FALSE
+              type TEXT NOT NULL
+          )
+      `);
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS daily_affluence (
+              id TEXT PRIMARY KEY,
+              date TEXT NOT NULL,
+              time TEXT NOT NULL,
+              level TEXT NOT NULL
           )
       `);
       await pool.query(`
@@ -320,7 +327,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'unfulfilledOrders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM unfulfilled_orders ORDER BY date DESC LIMIT 500) t),
                     'orders', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM orders WHERE status = 'PENDING' OR status = 'ORDERED') t),
                     'mealReservations', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM meal_reservations) t),
-                    'workShifts', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM work_shifts WHERE date >= (CURRENT_DATE - INTERVAL '30 days')::text) t),
+                    'staffShifts', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM staff_shifts WHERE date >= (CURRENT_DATE - INTERVAL '30 days')::text) t),
+                    'dailyAffluence', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM daily_affluence WHERE date >= (CURRENT_DATE - INTERVAL '30 days')::text) t),
                     'activityMoments', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM activity_moments) t),
                     'absenceRequests', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM absence_requests) t),
                     'adminNotes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM admin_notes ORDER BY created_at DESC LIMIT 50) t)
@@ -416,8 +424,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         if (rawData.mealReservations) responseBody.mealReservations = rawData.mealReservations.map((r: any) => ({ 
             id: r.id, userId: r.user_id, date: r.date, slot: r.slot 
         }));
-        if (rawData.workShifts) responseBody.workShifts = rawData.workShifts.map((s: any) => ({
-            id: s.id, userId: s.user_id, date: s.date, startTime: s.start_time, endTime: s.end_time, breakMinutes: s.break_minutes, isSplitShift: s.is_split_shift
+        if (rawData.staffShifts) responseBody.staffShifts = rawData.staffShifts.map((s: any) => ({
+            id: s.id, userId: s.user_id, date: s.date, startTime: s.start_time, endTime: s.end_time, type: s.type
+        }));
+        if (rawData.dailyAffluence) responseBody.dailyAffluence = rawData.dailyAffluence.map((a: any) => ({
+            id: a.id, date: a.date, time: a.time, level: a.level
         }));
         if (rawData.activityMoments) responseBody.activityMoments = rawData.activityMoments.map((m: any) => ({
             id: m.id, dayOfWeek: m.day_of_week, startTime: m.start_time, endTime: m.end_time, level: m.level
@@ -551,6 +562,28 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_MEAL_RESERVATION': { await pool.query(`INSERT INTO meal_reservations (id, user_id, date, slot) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date, payload.slot]); break; }
         case 'DELETE_MEAL_RESERVATION': { await pool.query('DELETE FROM meal_reservations WHERE id = $1', [payload.id]); break; }
 
+        case 'SAVE_STAFF_SHIFT': {
+            const { id, userId, date, startTime, endTime, type } = payload;
+            await pool.query(`
+                INSERT INTO staff_shifts (id, user_id, date, start_time, end_time, type)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (id) DO UPDATE SET
+                user_id = EXCLUDED.user_id, date = EXCLUDED.date, start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time, type = EXCLUDED.type
+            `, [id, userId, date, startTime, endTime, type]);
+            break;
+        }
+        case 'DELETE_STAFF_SHIFT': { await pool.query('DELETE FROM staff_shifts WHERE id = $1', [payload.id]); break; }
+        case 'SAVE_DAILY_AFFLUENCE': {
+            const { id, date, time, level } = payload;
+            await pool.query(`
+                INSERT INTO daily_affluence (id, date, time, level)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (id) DO UPDATE SET
+                level = EXCLUDED.level
+            `, [id, date, time, level]);
+            break;
+        }
         case 'SAVE_WORK_SHIFT': {
             const { id, userId, date, startTime, endTime, breakMinutes, isSplitShift } = payload;
             await pool.query(`
@@ -634,7 +667,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'CHECK_DB_STRUCTURE': {
-            const tables = ['items', 'storage_spaces', 'formats', 'categories', 'dlc_profiles', 'stock_priorities', 'stock_levels', 'stock_consignes', 'transactions', 'orders', 'unfulfilled_orders', 'dlc_history', 'messages', 'losses', 'daily_stock_alerts', 'user_logs', 'tasks', 'events', 'event_comments', 'daily_cocktails', 'glassware', 'techniques', 'cocktail_categories', 'recipes', 'email_templates', 'product_sheets', 'product_types', 'admin_notes', 'work_shifts', 'activity_moments', 'absence_requests', 'meal_reservations'];
+            const tables = ['items', 'storage_spaces', 'formats', 'categories', 'dlc_profiles', 'stock_priorities', 'stock_levels', 'stock_consignes', 'transactions', 'orders', 'unfulfilled_orders', 'dlc_history', 'messages', 'losses', 'daily_stock_alerts', 'user_logs', 'tasks', 'events', 'event_comments', 'daily_cocktails', 'glassware', 'techniques', 'cocktail_categories', 'recipes', 'email_templates', 'product_sheets', 'product_types', 'admin_notes', 'staff_shifts', 'daily_affluence', 'activity_moments', 'absence_requests', 'meal_reservations'];
             
             const results: any = {};
             for (const table of tables) {

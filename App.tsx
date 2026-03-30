@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, WorkShift, ActivityMoment, ScheduleConfig, MealReservation, CycleConfig } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, StaffShift, DailyAffluence, ActivityMoment, ScheduleConfig, MealReservation, CycleConfig } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -102,7 +102,8 @@ const App: React.FC = () => {
   const [dailyAlerts, setDailyAlerts] = useState<DailyAlert[]>([]);
   const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
   const [showDailyBriefing, setShowDailyBriefing] = useState(false);
-  const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
+  const [staffShifts, setStaffShifts] = useState<StaffShift[]>([]);
+  const [dailyAffluence, setDailyAffluence] = useState<DailyAffluence[]>([]);
   const [activityMoments, setActivityMoments] = useState<ActivityMoment[]>([]);
   const [absenceRequests, setAbsenceRequests] = useState<any[]>([]);
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
@@ -290,7 +291,8 @@ const App: React.FC = () => {
           if (dataSt.unfulfilledOrders) setUnfulfilledOrders(dataSt.unfulfilledOrders);
           if (dataSt.orders) setOrders(dataSt.orders);
           if (dataSt.mealReservations) setMealReservations(dataSt.mealReservations);
-          if (dataSt.workShifts) setWorkShifts(dataSt.workShifts);
+          if (dataSt.staffShifts) setStaffShifts(dataSt.staffShifts);
+          if (dataSt.dailyAffluence) setDailyAffluence(dataSt.dailyAffluence);
           if (dataSt.activityMoments) setActivityMoments(dataSt.activityMoments);
           if (dataSt.absenceRequests) setAbsenceRequests(dataSt.absenceRequests);
 
@@ -1246,32 +1248,41 @@ const App: React.FC = () => {
                     const updated = { ...o, status: 'RECEIVED' as const, receivedAt: new Date().toISOString(), quantity: q }; 
                     setOrders(p => p.map(x => x.id === id ? updated : x)); 
                     syncData('SAVE_ORDER', updated); 
-                  } 
-                }); 
-              }} 
+                  }
+                });
+              }}
             />
           )}
           {view === 'staff_scheduling' && (
             <StaffScheduling
               users={users}
-              workShifts={workShifts}
+              staffShifts={staffShifts}
+              dailyAffluence={dailyAffluence}
               activityMoments={activityMoments}
               absenceRequests={absenceRequests}
               scheduleConfig={scheduleConfig}
               events={events}
               onSync={syncData}
               mealReservations={mealReservations}
-              onSaveShift={(shift: WorkShift) => {
-                setWorkShifts(prev => {
+              onSaveShift={(shift: StaffShift) => {
+                setStaffShifts(prev => {
                   const exists = prev.find(s => s.id === shift.id);
                   if (exists) return prev.map(s => s.id === shift.id ? shift : s);
                   return [...prev, shift];
                 });
-                syncData('SAVE_WORK_SHIFT', shift);
+                syncData('SAVE_STAFF_SHIFT', shift);
               }}
               onDeleteShift={(id: string) => {
-                setWorkShifts(prev => prev.filter(s => s.id !== id));
-                syncData('DELETE_WORK_SHIFT', { id });
+                setStaffShifts(prev => prev.filter(s => s.id !== id));
+                syncData('DELETE_STAFF_SHIFT', { id });
+              }}
+              onSaveDailyAffluence={(affluence: DailyAffluence) => {
+                setDailyAffluence(prev => {
+                  const exists = prev.find(a => a.id === affluence.id);
+                  if (exists) return prev.map(a => a.id === affluence.id ? affluence : a);
+                  return [...prev, affluence];
+                });
+                syncData('SAVE_DAILY_AFFLUENCE', affluence);
               }}
               onSaveActivityMoment={(moment: ActivityMoment) => {
                 setActivityMoments(prev => {
@@ -1299,7 +1310,7 @@ const App: React.FC = () => {
               }}
               onSaveConfig={(config: ScheduleConfig) => {
                 setScheduleConfig(config);
-                saveConfig('schedule_config', config);
+                saveConfig('scheduleConfig', config);
               }}
             />
           )}

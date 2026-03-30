@@ -1,19 +1,21 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, WorkShift, ActivityMoment, ScheduleConfig, Event, MealReservation } from '../types';
-import { Calendar, Clock, Settings, TrendingUp, Plus, Trash2, Save, Printer, Sparkles, ChevronLeft, ChevronRight, Lock, Loader2, Search, Sun, Cloud, CloudRain, CloudLightning, Wind } from 'lucide-react';
+import { User, StaffShift, DailyAffluence, ActivityMoment, ScheduleConfig, Event, MealReservation } from '../types';
+import { Calendar, Clock, Settings, TrendingUp, Plus, Trash2, Save, Printer, Sparkles, ChevronLeft, ChevronRight, Lock, Loader2, Search, Sun, Cloud, CloudRain, CloudLightning, Wind, AlertTriangle } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
 interface StaffSchedulingProps {
   users: User[];
-  workShifts: WorkShift[];
+  staffShifts: StaffShift[];
+  dailyAffluence: DailyAffluence[];
   activityMoments: ActivityMoment[];
   scheduleConfig: ScheduleConfig;
   events: Event[];
   absenceRequests: any[];
   onSync: (action: string, payload: any) => void;
-  onSaveShift: (shift: WorkShift) => void;
+  onSaveShift: (shift: StaffShift) => void;
   onDeleteShift: (id: string) => void;
+  onSaveDailyAffluence: (affluence: DailyAffluence) => void;
   onSaveActivityMoment: (moment: ActivityMoment) => void;
   onDeleteActivityMoment: (id: string) => void;
   onSaveAbsenceRequest: (request: any) => void;
@@ -24,7 +26,8 @@ interface StaffSchedulingProps {
 
 const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   users,
-  workShifts,
+  staffShifts,
+  dailyAffluence,
   activityMoments,
   scheduleConfig,
   events,
@@ -32,6 +35,7 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   onSync,
   onSaveShift,
   onDeleteShift,
+  onSaveDailyAffluence,
   onSaveActivityMoment,
   onDeleteActivityMoment,
   onSaveAbsenceRequest,
@@ -149,8 +153,8 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
                 <tr>
                   <td><strong>${u.name}</strong></td>
                   ${weekDates.map(date => {
-                    const shifts = workShifts.filter(s => s.userId === u.id && s.date === date);
-                    return `<td>${shifts.map(s => `<div class="shift">${s.startTime} - ${s.endTime}</div>`).join('')}</td>`;
+                    const shifts = staffShifts.filter((s: StaffShift) => s.date === date && s.userId === u.id);
+                    return `<td>${shifts.map((s: StaffShift) => `<div class="shift">${s.startTime} - ${s.endTime}</div>`).join('')}</td>`;
                   }).join('')}
                 </tr>
               `).join('')}
@@ -169,29 +173,29 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
     setIsOptimizing(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
-      const prompt = `Génère un planning de travail optimisé pour la semaine du ${weekDates[0]} au ${weekDates[6]}.
+      const prompt = `Optimise le planning du staff pour la semaine du ${weekDates[0]} au ${weekDates[6]}.
       
-      Paramètres:
+      CONTRAINTES:
       - Horaires d'ouverture: ${JSON.stringify(scheduleConfig.openingHours)}
-      - Temps de mise en place: ${scheduleConfig.setupTimeMinutes} min
+      - Temps de préparation: ${scheduleConfig.setupTimeMinutes} min
       - Temps de fermeture: ${scheduleConfig.closingTimeMinutes} min
-      - Type de contrat: ${scheduleConfig.contractType}
-      - Coupures autorisées: ${scheduleConfig.splitShiftAllowed}
+      - Amplitude max: ${scheduleConfig.maxAmplitude} min
+      - Travail max/jour: ${scheduleConfig.maxWorkedTime} min
+      - Coupure max: ${scheduleConfig.maxSplitTime} min
+      - Travail continu max: ${scheduleConfig.maxContinuousWorkTime} min
+      - Agents disponibles: ${users.map(u => u.name).join(', ')}
+      - Affluence prévue: ${JSON.stringify(dailyAffluence)}
+      - Absences approuvées: ${JSON.stringify(absenceRequests.filter(a => a.status === 'APPROVED'))}
       
-      Employés: ${users.map(u => u.name).join(', ')}
-      Moments d'activité: ${JSON.stringify(activityMoments)}
-      Évènements: ${JSON.stringify(events)}
+      OBJECTIF:
+      Générer un planning équilibré respectant toutes les contraintes.
+      Utilise les types de tuiles: SHIFT (travail), PAUSE (pause non payée), SPLIT (coupure).
       
-      Règles:
-      1. Respecte la législation française (repos quotidien de 11h, durée max 10h/jour).
-      2. Aligne le staff sur les moments de forte activité.
-      3. Prévois une pause de 30 min après 6h de travail.
-      
-      Réponds UNIQUEMENT avec un tableau JSON d'objets WorkShift:
-      [{ "userId": "id", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "breakMinutes": 30, "isSplitShift": false }]`;
+      Réponds UNIQUEMENT en JSON (tableau d'objets StaffShift):
+      [{ "userId": "Nom de l'agent", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "type": "SHIFT/PAUSE/SPLIT" }]`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-pro-preview",
         contents: prompt,
         config: { responseMimeType: "application/json" }
       });
@@ -203,7 +207,8 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
           onSaveShift({
             ...s,
             id: `shift_ai_${Date.now()}_${Math.random()}`,
-            userId: user.id
+            userId: user.id,
+            type: s.type || 'SHIFT'
           });
         });
       }
@@ -267,6 +272,33 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
         </div>
 
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-2xl border border-white/5">
+            <button
+              onClick={() => {
+                const d = new Date(currentDate);
+                d.setDate(d.getDate() - 7);
+                setCurrentDate(d);
+              }}
+              className="p-2 text-slate-400 hover:text-white transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <div className="px-4 py-2 bg-slate-900 rounded-xl border border-white/10 flex flex-col items-center min-w-[160px]">
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Semaine du</span>
+              <span className="text-sm font-black text-white">{new Date(weekDates[0]).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</span>
+            </div>
+            <button
+              onClick={() => {
+                const d = new Date(currentDate);
+                d.setDate(d.getDate() + 7);
+                setCurrentDate(d);
+              }}
+              className="p-2 text-slate-400 hover:text-white transition-colors"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+
           {externalContext.weather && (
             <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-slate-900/50 rounded-xl border border-white/5">
               <TrendingUp className="w-4 h-4 text-emerald-400" />
@@ -327,7 +359,10 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       {activeTab === 'planning' && (
         <PlanningGrid
           users={filteredUsers}
-          workShifts={workShifts}
+          staffShifts={staffShifts}
+          dailyAffluence={dailyAffluence}
+          activityMoments={activityMoments}
+          onSaveDailyAffluence={onSaveDailyAffluence}
           weekDates={weekDates}
           days={days}
           timeSlots={timeSlots}
@@ -341,6 +376,7 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
           absenceRequests={absenceRequests}
           dailyWeather={externalContext.dailyWeather}
           mealReservations={mealReservations}
+          config={scheduleConfig}
         />
       )}
 
@@ -387,13 +423,16 @@ const WeatherIcon = ({ type }: { type: string }) => {
   }
 };
 
-const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrint, absenceRequests, dailyWeather, mealReservations }: {
+const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onSaveDailyAffluence, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrint, absenceRequests, dailyWeather, mealReservations, config }: {
   users: User[],
-  workShifts: WorkShift[],
+  staffShifts: StaffShift[],
+  dailyAffluence: DailyAffluence[],
+  activityMoments: ActivityMoment[],
+  onSaveDailyAffluence: (a: DailyAffluence) => void,
   weekDates: string[],
   days: string[],
   timeSlots: string[],
-  onSaveShift: (s: WorkShift) => void,
+  onSaveShift: (s: StaffShift) => void,
   onDeleteShift: (id: string) => void,
   currentDate: Date,
   setCurrentDate: (d: Date) => void,
@@ -402,29 +441,161 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
   onPrint: () => void,
   absenceRequests: any[],
   dailyWeather?: { date: string, morning: string, afternoon: string }[],
-  mealReservations: MealReservation[]
+  mealReservations: MealReservation[],
+  config: ScheduleConfig
 }) => {
-  const [selectedShift, setSelectedShift] = useState<WorkShift | null>(null);
+  const [selectedShift, setSelectedShift] = useState<StaffShift | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
 
-  const handleAddShift = (date: string, time: string) => {
-    const newShift: WorkShift = {
+  const currentDayDate = weekDates[selectedDayIndex];
+
+  const handleAddShift = (userId: string, time: string) => {
+    const newShift: StaffShift = {
       id: `shift_${Date.now()}`,
-      userId: users[0]?.id || '',
-      date,
+      userId,
+      date: currentDayDate,
       startTime: time,
       endTime: `${(parseInt(time.split(':')[0]) + 7).toString().padStart(2, '0')}:00`,
-      breakMinutes: 30,
-      isSplitShift: false
+      type: 'SHIFT'
     };
     setSelectedShift(newShift);
     setIsModalOpen(true);
   };
 
+  const getAffluenceColor = (level: string) => {
+    switch (level) {
+      case 'LOW': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+      case 'MEDIUM': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+      case 'HIGH': return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
+      default: return 'bg-slate-800 text-slate-400 border-white/5';
+    }
+  };
+
+  const getShiftColor = (type: string) => {
+    switch (type) {
+      case 'SHIFT': return 'bg-indigo-600 border-indigo-400';
+      case 'PAUSE': return 'bg-emerald-600 border-emerald-400';
+      case 'SPLIT': return 'bg-amber-600 border-amber-400';
+      case 'REST': return 'bg-slate-600 border-slate-400';
+      case 'ABSENCE': return 'bg-rose-600 border-rose-400';
+      default: return 'bg-indigo-600 border-indigo-400';
+    }
+  };
+
+  const calculateAgentsPresent = (time: string) => {
+    const timeHour = parseInt(time.split(':')[0]);
+    const timeMin = parseInt(time.split(':')[1]);
+    const totalMinutes = timeHour * 60 + timeMin;
+
+    return staffShifts.filter(s => {
+      if (s.date !== currentDayDate) return false;
+      if (s.type !== 'SHIFT' && s.type !== 'SPLIT') return false;
+      
+      const [startH, startM] = s.startTime.split(':').map(Number);
+      const [endH, endM] = s.endTime.split(':').map(Number);
+      const startTotal = startH * 60 + startM;
+      const endTotal = endH * 60 + endM;
+
+      return totalMinutes >= startTotal && totalMinutes < endTotal;
+    }).length;
+  };
+
+  const calculateTotalWorkTime = (userId: string, date: string) => {
+    const userShifts = staffShifts.filter(s => s.userId === userId && s.date === date && s.type === 'SHIFT');
+    let totalMinutes = 0;
+    userShifts.forEach(s => {
+      const [startH, startM] = s.startTime.split(':').map(Number);
+      const [endH, endM] = s.endTime.split(':').map(Number);
+      totalMinutes += (endH * 60 + endM) - (startH * 60 + startM);
+    });
+    return totalMinutes;
+  };
+
+  const checkViolations = (userId: string, date: string) => {
+    const userShifts = staffShifts
+      .filter(s => s.userId === userId && s.date === date)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    
+    if (userShifts.length === 0) return [];
+    
+    const violations: string[] = [];
+    const workShifts = userShifts.filter(s => s.type === 'SHIFT');
+    
+    // 1. Max Worked Time
+    const maxWorkedTime = config.maxWorkedTime;
+    const totalWorked = calculateTotalWorkTime(userId, date);
+    if (maxWorkedTime && totalWorked > maxWorkedTime) {
+      violations.push(`Temps de travail max dépassé (${formatDuration(totalWorked)} > ${formatDuration(maxWorkedTime)})`);
+    }
+
+    // 2. Max Amplitude
+    const maxAmplitude = config.maxAmplitude;
+    if (userShifts.length > 0 && maxAmplitude) {
+      const first = userShifts[0];
+      const last = userShifts[userShifts.length - 1];
+      const [sh, sm] = first.startTime.split(':').map(Number);
+      const [eh, em] = last.endTime.split(':').map(Number);
+      const amplitude = (eh * 60 + em) - (sh * 60 + sm);
+      if (amplitude > maxAmplitude) {
+        violations.push(`Amplitude max dépassée (${formatDuration(amplitude)} > ${formatDuration(maxAmplitude)})`);
+      }
+    }
+
+    // 3. Max Continuous Work
+    const maxContinuousWorkTime = config.maxContinuousWorkTime;
+    if (maxContinuousWorkTime) {
+      workShifts.forEach(s => {
+        const [sh, sm] = s.startTime.split(':').map(Number);
+        const [eh, em] = s.endTime.split(':').map(Number);
+        const duration = (eh * 60 + em) - (sh * 60 + sm);
+        if (duration > maxContinuousWorkTime) {
+          violations.push(`Travail continu max dépassé (${formatDuration(duration)} > ${formatDuration(maxContinuousWorkTime)})`);
+        }
+      });
+    }
+
+    // 4. Max Split Time
+    const maxSplitTime = config.maxSplitTime;
+    if (maxSplitTime) {
+      const splitShifts = userShifts.filter(s => s.type === 'SPLIT');
+      splitShifts.forEach(s => {
+        const [sh, sm] = s.startTime.split(':').map(Number);
+        const [eh, em] = s.endTime.split(':').map(Number);
+        const duration = (eh * 60 + em) - (sh * 60 + sm);
+        if (duration > maxSplitTime) {
+          violations.push(`Coupure max dépassée (${formatDuration(duration)} > ${formatDuration(maxSplitTime)})`);
+        }
+      });
+    }
+
+    return violations;
+  };
+
+  const formatDuration = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}h${m.toString().padStart(2, '0')}`;
+  };
+
+  const timeToPercent = (time: string) => {
+    const [h, m] = time.split(':').map(Number);
+    return ((h * 60 + m) / (24 * 60)) * 100;
+  };
+
+  const durationToPercent = (start: string, end: string) => {
+    const [sh, sm] = start.split(':').map(Number);
+    const [eh, em] = end.split(':').map(Number);
+    const startMin = sh * 60 + sm;
+    const endMin = eh * 60 + em;
+    return ((endMin - startMin) / (24 * 60)) * 100;
+  };
+
   return (
-    <div className="bg-slate-900 rounded-3xl border border-white/20 overflow-hidden shadow-2xl">
-      <div className="p-6 border-b border-white/10 flex items-center justify-between bg-slate-800/50">
-        <div className="flex items-center gap-4">
+    <div className="bg-slate-900 rounded-3xl border border-white/20 overflow-hidden shadow-2xl flex flex-col h-[800px]">
+      {/* Header with Day Tabs */}
+      <div className="p-4 border-b border-white/10 bg-slate-800/50 flex items-center justify-between shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-2">
           <button 
             onClick={() => {
               const d = new Date(currentDate);
@@ -433,11 +604,20 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
             }}
             className="p-2 hover:bg-white/5 rounded-xl transition-all text-slate-400 hover:text-white"
           >
-            <ChevronLeft className="w-6 h-6" />
+            <ChevronLeft className="w-5 h-5" />
           </button>
-          <h2 className="text-xl font-black text-white uppercase tracking-tight">
-            Semaine du {new Date(weekDates[0]).toLocaleDateString('fr-FR')}
-          </h2>
+          <div className="flex gap-1 bg-slate-950 p-1 rounded-2xl border border-white/5">
+            {weekDates.map((date, i) => (
+              <button
+                key={date}
+                onClick={() => setSelectedDayIndex(i)}
+                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-tight transition-all flex flex-col items-center min-w-[80px] ${selectedDayIndex === i ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <span>{days[i]}</span>
+                <span className="text-lg leading-none mt-1">{new Date(date).getDate()}</span>
+              </button>
+            ))}
+          </div>
           <button 
             onClick={() => {
               const d = new Date(currentDate);
@@ -446,7 +626,7 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
             }}
             className="p-2 hover:bg-white/5 rounded-xl transition-all text-slate-400 hover:text-white"
           >
-            <ChevronRight className="w-6 h-6" />
+            <ChevronRight className="w-5 h-5" />
           </button>
         </div>
 
@@ -469,120 +649,208 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[1000px]">
-          <div className="grid grid-cols-8 border-b border-white/20">
-            <div className="p-4 border-r border-white/20 bg-slate-950/50"></div>
-            {days.map((day: string, i: number) => {
-              const weather = dailyWeather?.find(w => w.date === weekDates[i]);
-              return (
-                <div key={day} className="p-4 text-center border-r border-white/20 last:border-r-0 bg-slate-950/50">
-                  <div className="flex justify-center gap-2 mb-2">
-                    {weather && (
-                      <>
-                        <div title="Matin"><WeatherIcon type={weather.morning} /></div>
-                        <div title="Après-midi"><WeatherIcon type={weather.afternoon} /></div>
-                      </>
-                    )}
-                  </div>
-                  <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">{day}</span>
-                  <span className="block text-lg font-black text-white">{new Date(weekDates[i]).getDate()}</span>
-                  
-                  <div className="flex justify-center gap-2 mt-2">
-                    <div className="flex items-center gap-1 bg-rose-500/20 px-1.5 py-0.5 rounded-md border border-rose-500/30" title="Repas Staff">
-                      <span className="text-[8px] font-black text-rose-400">R</span>
-                      <span className="text-[9px] font-black text-white">{mealReservations.filter((r: MealReservation) => r.date === weekDates[i]).length}</span>
+      {/* Timeline Grid */}
+      <div className="flex-1 overflow-auto relative custom-scrollbar">
+        <div className="min-w-[1200px] h-full flex flex-col">
+          {/* Time Markers Header */}
+          <div className="sticky top-0 z-40 bg-slate-900 border-b border-white/10 flex">
+            <div className="w-48 shrink-0 border-r border-white/10 bg-slate-950/50 p-4 flex items-center justify-center">
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Temps</span>
+            </div>
+            <div className="flex-1 relative h-12">
+              {timeSlots.map((time, i) => (
+                <div 
+                  key={time} 
+                  className="absolute top-0 bottom-0 border-l border-white/5 flex flex-col justify-end pb-1 pl-1"
+                  style={{ left: `${(i / 24) * 100}%` }}
+                >
+                  <span className="text-[9px] font-black text-slate-600">{time}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Affluence Row (Granular) */}
+          <div className="flex border-b border-white/10 bg-slate-950/30">
+            <div className="w-48 shrink-0 border-r border-white/10 p-4 flex flex-col justify-center">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Affluence</span>
+            </div>
+            <div className="flex-1 relative h-12">
+              {timeSlots.map((time, i) => {
+                const moment = activityMoments.find((momentItem: ActivityMoment) => {
+                  const dayOfWeek = new Date(currentDayDate).getDay();
+                  const [h, min] = time.split(':').map(Number);
+                  const totalMinutes = h * 60 + min;
+                  const [sh, sm] = momentItem.startTime.split(':').map(Number);
+                  const [eh, em] = momentItem.endTime.split(':').map(Number);
+                  return momentItem.dayOfWeek === dayOfWeek && totalMinutes >= (sh * 60 + sm) && totalMinutes < (eh * 60 + em);
+                });
+                const level = moment?.level || 'LOW';
+                return (
+                  <div 
+                    key={time} 
+                    className={`absolute top-0 bottom-0 border-l border-white/5 transition-colors ${getAffluenceColor(level)} opacity-30`}
+                    style={{ left: `${(i / 24) * 100}%`, width: `${(1 / 24) * 100}%` }}
+                  />
+                );
+              })}
+              {/* Overlay for manual setting if needed, but let's stick to ActivityMoments for now or allow clicking to set */}
+            </div>
+          </div>
+
+          {/* Agents Present Row */}
+          <div className="flex border-b border-white/10 bg-slate-950/10">
+            <div className="w-48 shrink-0 border-r border-white/10 p-4 flex flex-col justify-center">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Agents Présents</span>
+            </div>
+            <div className="flex-1 relative h-12">
+              {timeSlots.map((time, i) => {
+                const count = calculateAgentsPresent(time);
+                return (
+                  <div 
+                    key={time} 
+                    className="absolute top-0 bottom-0 flex items-center justify-center border-l border-white/5"
+                    style={{ left: `${(i / 24) * 100}%`, width: `${(1 / 24) * 100}%` }}
+                  >
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
+                      count > 0 ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'text-slate-700'
+                    }`}>
+                      {count}
                     </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* User Rows */}
+          <div className="flex-1">
+            {users.map((user) => {
+              const userShifts = staffShifts.filter(s => s.userId === user.id && s.date === currentDayDate);
+              const totalWorkTime = calculateTotalWorkTime(user.id, currentDayDate);
+              const violations = checkViolations(user.id, currentDayDate);
+              const hasViolations = violations.length > 0;
+
+              return (
+                <div key={user.id} className="flex border-b border-white/5 hover:bg-white/[0.02] transition-colors group min-h-[80px]">
+                  <div className="w-48 shrink-0 border-r border-white/10 p-4 flex flex-col justify-center bg-slate-950/20">
+                    <div className="text-sm font-black text-white uppercase tracking-tight truncate">{user.name}</div>
+                    <div className={`text-[10px] font-bold mt-1 flex items-center gap-1 ${hasViolations ? 'text-rose-400' : 'text-slate-500'}`}>
+                      <Clock className="w-3 h-3" />
+                      {formatDuration(totalWorkTime)}
+                      {hasViolations && (
+                        <div className="group/alert relative">
+                          <AlertTriangle className="w-3 h-3 cursor-help" />
+                          <div className="absolute left-0 bottom-full mb-2 w-64 bg-rose-900 border border-rose-500/50 rounded-xl p-3 text-[10px] text-rose-100 shadow-2xl opacity-0 group-hover/alert:opacity-100 pointer-events-none transition-opacity z-[100]">
+                            <div className="font-black uppercase tracking-widest mb-2 border-b border-rose-500/30 pb-1">Alertes de conformité</div>
+                            <ul className="space-y-1 list-disc pl-3">
+                              {violations.map((v, i) => <li key={i}>{v}</li>)}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div 
+                    className="flex-1 relative cursor-crosshair"
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const x = e.clientX - rect.left;
+                      const percent = x / rect.width;
+                      const totalMinutes = Math.floor(percent * 24 * 60);
+                      const hours = Math.floor(totalMinutes / 60);
+                      const snap = config.planningScale || 15;
+                      const minutes = Math.floor((totalMinutes % 60) / snap) * snap;
+                      const time = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                      handleAddShift(user.id, time);
+                    }}
+                  >
+                    {/* Vertical Hour Lines */}
+                    {timeSlots.map((_, i) => (
+                      <div 
+                        key={i} 
+                        className="absolute top-0 bottom-0 border-l border-white/[0.03] pointer-events-none"
+                        style={{ left: `${(i / 24) * 100}%` }}
+                      />
+                    ))}
+
+                    {/* Opening Hours Overlay */}
+                    {(() => {
+                      const dayOfWeek = new Date(currentDayDate).getDay();
+                      const hours = config.openingHours[dayOfWeek];
+                      if (!hours || !hours.isOpen) return null;
+                      
+                      const [openH, openM] = hours.open.split(':').map(Number);
+                      const [closeH, closeM] = hours.close.split(':').map(Number);
+                      const openMin = openH * 60 + openM;
+                      const closeMin = closeH * 60 + closeM;
+                      
+                      const prepStart = openMin - config.setupTimeMinutes;
+                      const closingEnd = closeMin + config.closingTimeMinutes;
+                      
+                      return (
+                        <>
+                          {/* Prep Time */}
+                          <div 
+                            className="absolute top-0 bottom-0 bg-indigo-500/5 border-x border-indigo-500/20 pointer-events-none"
+                            style={{ 
+                              left: `${(prepStart / (24 * 60)) * 100}%`, 
+                              width: `${(config.setupTimeMinutes / (24 * 60)) * 100}%` 
+                            }}
+                          >
+                            <div className="absolute top-0 left-0 text-[8px] font-black text-indigo-400/50 uppercase tracking-tighter -rotate-90 origin-top-left translate-y-8 ml-1">Prep</div>
+                          </div>
+                          
+                          {/* Opening Hours */}
+                          <div 
+                            className="absolute top-0 bottom-0 bg-emerald-500/[0.02] border-x border-emerald-500/10 pointer-events-none"
+                            style={{ 
+                              left: `${(openMin / (24 * 60)) * 100}%`, 
+                              width: `${((closeMin - openMin) / (24 * 60)) * 100}%` 
+                            }}
+                          />
+                          
+                          {/* Closing Time */}
+                          <div 
+                            className="absolute top-0 bottom-0 bg-amber-500/5 border-x border-amber-500/20 pointer-events-none"
+                            style={{ 
+                              left: `${(closeMin / (24 * 60)) * 100}%`, 
+                              width: `${(config.closingTimeMinutes / (24 * 60)) * 100}%` 
+                            }}
+                          >
+                            <div className="absolute top-0 left-0 text-[8px] font-black text-amber-400/50 uppercase tracking-tighter -rotate-90 origin-top-left translate-y-8 ml-1">Close</div>
+                          </div>
+                        </>
+                      );
+                    })()}
+
+                    {/* Shifts */}
+                    {userShifts.map((shift) => (
+                      <div
+                        key={shift.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedShift(shift);
+                          setIsModalOpen(true);
+                        }}
+                        className={`absolute top-1/2 -translate-y-1/2 h-10 rounded-lg border shadow-lg cursor-pointer transition-all hover:scale-[1.02] hover:z-50 flex flex-col justify-center px-2 overflow-hidden ${getShiftColor(shift.type)}`}
+                        style={{ 
+                          left: `${timeToPercent(shift.startTime)}%`, 
+                          width: `${durationToPercent(shift.startTime, shift.endTime)}%` 
+                        }}
+                      >
+                        <div className="text-[10px] font-black text-white uppercase truncate leading-none">
+                          {shift.type === 'SHIFT' ? 'Travail' : shift.type === 'PAUSE' ? 'Pause' : shift.type === 'SPLIT' ? 'Coupure' : shift.type === 'REST' ? 'Repos' : 'Absence'}
+                        </div>
+                        <div className="text-[9px] font-bold text-white/70 leading-none mt-0.5">
+                          {shift.startTime} - {shift.endTime}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
             })}
-          </div>
-
-          <div className="relative h-[800px] overflow-y-auto custom-scrollbar">
-            {timeSlots.map((time: string) => (
-              <div key={time} className="grid grid-cols-8 border-b border-white/10 h-16 group">
-                <div className="p-2 border-r border-white/20 text-[11px] font-black text-slate-400 text-right pr-4 bg-slate-950/20 flex items-center justify-end">
-                  {time}
-                </div>
-                {weekDates.map((date: string) => {
-                  const isRestDay = !workShifts.some(s => s.date === date);
-                  const timeHour = parseInt(time.split(':')[0]);
-                  
-                  // Find absences for this specific hour
-                  const hourAbsences = absenceRequests.filter(a => {
-                    if (a.status !== 'APPROVED' && a.status !== 'PENDING') return false;
-                    if (a.startDate > date || a.endDate < date) return false;
-                    
-                    // If it's a single day absence with times
-                    if (a.startDate === date && a.endDate === date && a.startTime && a.endTime) {
-                      const startH = parseInt(a.startTime.split(':')[0]);
-                      const endH = parseInt(a.endTime.split(':')[0]);
-                      return timeHour >= startH && timeHour < endH;
-                    }
-                    // Full day absence
-                    return true;
-                  });
-
-                  // Find shifts covering this hour
-                  const hourShifts = workShifts.filter(s => {
-                    if (s.date !== date) return false;
-                    const startH = parseInt(s.startTime.split(':')[0]);
-                    const endH = parseInt(s.endTime.split(':')[0]);
-                    // Handle shifts crossing midnight (though unlikely here)
-                    if (endH < startH) return timeHour >= startH || timeHour < endH;
-                    return timeHour >= startH && timeHour < endH;
-                  });
-
-                  return (
-                    <div 
-                      key={`${date}-${time}`} 
-                      className={`border-r border-white/10 last:border-r-0 relative hover:bg-indigo-500/10 cursor-pointer transition-colors ${isRestDay ? 'bg-slate-950/30' : 'bg-slate-900/20'}`}
-                      onClick={() => handleAddShift(date, time)}
-                    >
-                      {isRestDay && time === '12:00' && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
-                          <span className="text-[10px] font-black uppercase tracking-[0.3em] rotate-45 text-white">Repos</span>
-                        </div>
-                      )}
-                      
-                      {hourAbsences.map(abs => (
-                        <div key={abs.id} className={`absolute inset-0 ${abs.status === 'APPROVED' ? 'bg-rose-500/30' : 'bg-amber-500/20'} border-l-2 ${abs.status === 'APPROVED' ? 'border-rose-500' : 'border-amber-500'} z-0 flex items-center justify-center`}>
-                          <span className="text-[8px] font-black uppercase tracking-tighter text-white/60 rotate-90 whitespace-nowrap">
-                            {abs.status === 'APPROVED' ? 'ABSENCE' : 'ATTENTE'}
-                          </span>
-                        </div>
-                      ))}
-
-                      <div className="absolute inset-0 p-1 flex flex-col gap-1 overflow-y-auto custom-scrollbar z-10">
-                        {hourShifts.map((shift: WorkShift) => {
-                          const user = users.find((u: User) => u.id === shift.userId);
-                          const isStart = shift.startTime === time;
-                          return (
-                            <div
-                              key={shift.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedShift(shift);
-                                setIsModalOpen(true);
-                              }}
-                              className={`w-full min-h-[20px] bg-indigo-600 rounded-md px-1.5 py-0.5 text-white shadow-md border border-white/20 flex flex-col justify-center ${!isStart ? 'opacity-80' : ''}`}
-                            >
-                              {isStart && (
-                                <div className="text-[9px] font-black uppercase truncate leading-none mb-0.5">{user?.name}</div>
-                              )}
-                              <div className="text-[8px] font-bold opacity-70 leading-none">
-                                {shift.startTime}-{shift.endTime}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -592,7 +860,7 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
           shift={selectedShift}
           users={users}
           onClose={() => setIsModalOpen(false)}
-          onSave={(s: WorkShift) => {
+          onSave={(s: StaffShift) => {
             onSaveShift(s);
             setIsModalOpen(false);
           }}
@@ -607,13 +875,13 @@ const PlanningGrid = ({ users, workShifts, weekDates, days, timeSlots, onSaveShi
 };
 
 const ShiftModal = ({ shift, users, onClose, onSave, onDelete }: {
-  shift: WorkShift,
+  shift: StaffShift,
   users: User[],
   onClose: () => void,
-  onSave: (s: WorkShift) => void,
+  onSave: (s: StaffShift) => void,
   onDelete: (id: string) => void
 }) => {
-  const [editedShift, setEditedShift] = useState<WorkShift>({ ...shift });
+  const [editedShift, setEditedShift] = useState<StaffShift>({ ...shift });
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -625,7 +893,7 @@ const ShiftModal = ({ shift, users, onClose, onSave, onDelete }: {
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-6">
           <div>
             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Employé</label>
             <select
@@ -637,6 +905,32 @@ const ShiftModal = ({ shift, users, onClose, onSave, onDelete }: {
                 <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Type de tuile</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: 'SHIFT', label: 'Travail', color: 'bg-indigo-600' },
+                { id: 'PAUSE', label: 'Pause', color: 'bg-emerald-600' },
+                { id: 'SPLIT', label: 'Coupure', color: 'bg-amber-600' },
+                { id: 'REST', label: 'Repos', color: 'bg-slate-600' },
+                { id: 'ABSENCE', label: 'Absence', color: 'bg-rose-600' }
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setEditedShift({ ...editedShift, type: t.id as any })}
+                  className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all flex items-center gap-2 ${
+                    editedShift.type === t.id 
+                      ? `${t.color} text-white border-white/20 shadow-lg` 
+                      : 'bg-slate-800 text-slate-400 border-white/5 hover:border-white/10'
+                  }`}
+                >
+                  <div className={`w-2 h-2 rounded-full ${t.color}`} />
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -659,40 +953,19 @@ const ShiftModal = ({ shift, users, onClose, onSave, onDelete }: {
               />
             </div>
           </div>
-
-          <div>
-            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Pause (minutes)</label>
-            <input
-              type="number"
-              value={editedShift.breakMinutes}
-              onChange={(e) => setEditedShift({ ...editedShift, breakMinutes: parseInt(e.target.value) })}
-              className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div className="flex items-center gap-3 p-4 bg-slate-800/50 rounded-2xl border border-white/5">
-            <input
-              type="checkbox"
-              id="isSplit"
-              checked={editedShift.isSplitShift}
-              onChange={(e) => setEditedShift({ ...editedShift, isSplitShift: e.target.checked })}
-              className="w-5 h-5 rounded border-white/10 bg-slate-900 text-indigo-600 focus:ring-indigo-500"
-            />
-            <label htmlFor="isSplit" className="text-sm font-bold text-slate-300">Coupure autorisée</label>
-          </div>
         </div>
 
-        <div className="p-6 bg-slate-800/30 flex gap-3">
+        <div className="p-6 bg-slate-800/50 border-t border-white/10 flex gap-3">
           <button
             onClick={() => onDelete(editedShift.id)}
-            className="flex-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+            className="flex-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 font-black py-3 rounded-xl transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
           >
             <Trash2 className="w-4 h-4" />
             Supprimer
           </button>
           <button
             onClick={() => onSave(editedShift)}
-            className="flex-[2] bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 rounded-xl transition-all shadow-lg shadow-indigo-900/50 flex items-center justify-center gap-2"
+            className="flex-[2] bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 rounded-xl transition-all shadow-lg shadow-indigo-900/50 uppercase tracking-widest text-xs flex items-center justify-center gap-2"
           >
             <Save className="w-4 h-4" />
             Enregistrer
@@ -881,44 +1154,20 @@ const ConfigManager = ({ config, onSave }: {
   };
 
   return (
-    <div className="bg-slate-900 p-8 rounded-3xl border border-white/20 shadow-2xl space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <div className="space-y-8 bg-slate-800/50 p-8 rounded-3xl border border-white/10 shadow-2xl">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        {/* Horaires d'ouverture */}
         <div className="space-y-6">
-          <h3 className="text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
-            <Clock className="w-5 h-5 text-indigo-400" />
-            Horaires d'ouverture
+          <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-3">
+            <Clock className="w-6 h-6 text-indigo-400" />
+            Horaires d'Ouverture
           </h3>
           <div className="space-y-3">
             {Object.entries(editedConfig.openingHours).map(([day, hours]: [string, any]) => (
-              <div key={day} className="flex items-center gap-4 p-3 bg-slate-950/50 rounded-xl border border-white/10">
-                <div className="w-24 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              <div key={day} className="flex items-center gap-4 p-3 bg-slate-900/50 rounded-2xl border border-white/5">
+                <div className="w-24 text-xs font-black text-slate-400 uppercase tracking-widest">
                   {['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][parseInt(day)]}
                 </div>
-                <input
-                  type="time"
-                  value={hours.open}
-                  onChange={(e) => setEditedConfig({
-                    ...editedConfig,
-                    openingHours: {
-                      ...editedConfig.openingHours,
-                      [day]: { ...hours, open: e.target.value }
-                    }
-                  })}
-                  className="bg-slate-800 border border-white/10 rounded-lg p-1.5 text-xs text-white focus:ring-1 focus:ring-indigo-500"
-                />
-                <span className="text-slate-600">à</span>
-                <input
-                  type="time"
-                  value={hours.close}
-                  onChange={(e) => setEditedConfig({
-                    ...editedConfig,
-                    openingHours: {
-                      ...editedConfig.openingHours,
-                      [day]: { ...hours, close: e.target.value }
-                    }
-                  })}
-                  className="bg-slate-800 border border-white/10 rounded-lg p-1.5 text-xs text-white focus:ring-1 focus:ring-indigo-500"
-                />
                 <input
                   type="checkbox"
                   checked={hours.isOpen}
@@ -929,26 +1178,82 @@ const ConfigManager = ({ config, onSave }: {
                       [day]: { ...hours, isOpen: e.target.checked }
                     }
                   })}
-                  className="w-4 h-4 rounded border-white/10 bg-slate-900 text-indigo-600"
+                  className="w-5 h-5 rounded border-white/10 bg-slate-900 text-indigo-600"
                 />
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="time"
+                    value={hours.open}
+                    disabled={!hours.isOpen}
+                    onChange={(e) => setEditedConfig({
+                      ...editedConfig,
+                      openingHours: {
+                        ...editedConfig.openingHours,
+                        [day]: { ...hours, open: e.target.value }
+                      }
+                    })}
+                    className="bg-slate-800 border border-white/10 rounded-lg p-2 text-white text-xs disabled:opacity-30"
+                  />
+                  <span className="text-slate-600">à</span>
+                  <input
+                    type="time"
+                    value={hours.close}
+                    disabled={!hours.isOpen}
+                    onChange={(e) => setEditedConfig({
+                      ...editedConfig,
+                      openingHours: {
+                        ...editedConfig.openingHours,
+                        [day]: { ...hours, close: e.target.value }
+                      }
+                    })}
+                    className="bg-slate-800 border border-white/10 rounded-lg p-2 text-white text-xs disabled:opacity-30"
+                  />
+                </div>
               </div>
             ))}
           </div>
         </div>
 
+        {/* Paramètres de Planning */}
         <div className="space-y-6">
-          <h3 className="text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
-            <Settings className="w-5 h-5 text-indigo-400" />
-            Paramètres Généraux
+          <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-3">
+            <Settings className="w-6 h-6 text-indigo-400" />
+            Paramètres de Planning
           </h3>
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Mise en place (min)</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Durée du planning</label>
+              <select
+                value={editedConfig.planningWeeks}
+                onChange={(e) => setEditedConfig({ ...editedConfig, planningWeeks: parseInt(e.target.value) })}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              >
+                <option value={1}>1 Semaine</option>
+                <option value={2}>2 Semaines</option>
+                <option value={3}>3 Semaines</option>
+                <option value={4}>4 Semaines</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Échelle du planning</label>
+              <select
+                value={editedConfig.planningScale}
+                onChange={(e) => setEditedConfig({ ...editedConfig, planningScale: parseInt(e.target.value) })}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              >
+                <option value={60}>1 Heure</option>
+                <option value={30}>30 Minutes</option>
+                <option value={15}>15 Minutes</option>
+                <option value={5}>5 Minutes</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Préparation (min)</label>
               <input
                 type="number"
                 value={editedConfig.setupTimeMinutes}
                 onChange={(e) => setEditedConfig({ ...editedConfig, setupTimeMinutes: parseInt(e.target.value) })}
-                className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
             <div>
@@ -957,11 +1262,47 @@ const ConfigManager = ({ config, onSave }: {
                 type="number"
                 value={editedConfig.closingTimeMinutes}
                 onChange={(e) => setEditedConfig({ ...editedConfig, closingTimeMinutes: parseInt(e.target.value) })}
-                className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Localisation (Météo)</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Amplitude Max (min)</label>
+              <input
+                type="number"
+                value={editedConfig.maxAmplitude}
+                onChange={(e) => setEditedConfig({ ...editedConfig, maxAmplitude: parseInt(e.target.value) })}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Travail Max / Jour (min)</label>
+              <input
+                type="number"
+                value={editedConfig.maxWorkedTime}
+                onChange={(e) => setEditedConfig({ ...editedConfig, maxWorkedTime: parseInt(e.target.value) })}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Coupure Max (min)</label>
+              <input
+                type="number"
+                value={editedConfig.maxSplitTime}
+                onChange={(e) => setEditedConfig({ ...editedConfig, maxSplitTime: parseInt(e.target.value) })}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Travail Continu Max (min)</label>
+              <input
+                type="number"
+                value={editedConfig.maxContinuousWorkTime}
+                onChange={(e) => setEditedConfig({ ...editedConfig, maxContinuousWorkTime: parseInt(e.target.value) })}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Ville (Météo)</label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -970,7 +1311,7 @@ const ConfigManager = ({ config, onSave }: {
                     value={editedConfig.location}
                     onChange={(e) => setEditedConfig({ ...editedConfig, location: e.target.value })}
                     placeholder="Ville, Pays..."
-                    className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 pl-10 text-white focus:ring-2 focus:ring-indigo-500"
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 pl-10 text-white focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
                 <button
@@ -981,38 +1322,6 @@ const ConfigManager = ({ config, onSave }: {
                   {isSearchingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                 </button>
               </div>
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Type de contrat</label>
-              <select
-                value={editedConfig.contractType}
-                onChange={(e) => setEditedConfig({ ...editedConfig, contractType: e.target.value as any })}
-                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
-              >
-                <option value="35H">35 Heures</option>
-                <option value="39H">39 Heures</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Jours de repos</label>
-              <select
-                value={editedConfig.restDayPattern}
-                onChange={(e) => setEditedConfig({ ...editedConfig, restDayPattern: e.target.value as any })}
-                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
-              >
-                <option value="CONTINUOUS">Continus</option>
-                <option value="SPLIT">Fractionnés</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Ville (Météo)</label>
-              <input
-                type="text"
-                value={editedConfig.location}
-                onChange={(e) => setEditedConfig({ ...editedConfig, location: e.target.value })}
-                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
-                placeholder="Ex: Paris"
-              />
             </div>
             <div className="flex items-center gap-3 p-4 bg-slate-900/50 rounded-2xl border border-white/5">
               <input

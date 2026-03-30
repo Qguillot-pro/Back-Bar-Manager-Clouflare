@@ -369,14 +369,20 @@ export interface MealReservation {
     createdAt: string;
 }
 
-export interface WorkShift {
+export interface StaffShift {
     id: string;
     userId: string;
     date: string; // YYYY-MM-DD
     startTime: string; // HH:mm
     endTime: string; // HH:mm
-    breakMinutes: number;
-    isSplitShift?: boolean;
+    type: 'SHIFT' | 'PAUSE' | 'SPLIT' | 'REST' | 'ABSENCE';
+}
+
+export interface DailyAffluence {
+    id: string;
+    date: string; // YYYY-MM-DD
+    time: string; // HH:mm
+    level: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 export interface ActivityMoment {
@@ -409,4 +415,12 @@ export interface ScheduleConfig {
     contractType: '35H' | '39H';
     location: string;
     restDayPattern: 'CONTINUOUS' | 'SPLIT';
+    planningWeeks?: number; // 1, 2, 3, 4
+    planningScale?: number; // 60, 30, 15, 5 (minutes)
+    maxAmplitude?: number; // minutes
+    maxWorkedTime?: number; // minutes
+    maxSplitTime?: number; // minutes
+    maxContinuousWorkTime?: number; // minutes
 }
+
+export type StaffShiftType = 'SHIFT' | 'PAUSE' | 'SPLIT' | 'REST' | 'ABSENCE';
