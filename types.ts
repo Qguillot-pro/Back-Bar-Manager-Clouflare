@@ -376,6 +376,8 @@ export interface StaffShift {
     startTime: string; // HH:mm
     endTime: string; // HH:mm
     type: 'SHIFT' | 'PAUSE' | 'SPLIT' | 'REST' | 'ABSENCE';
+    role?: 'BAR' | 'SALLE' | 'SOUTIEN';
+    isValidated?: boolean;
 }
 
 export interface DailyAffluence {

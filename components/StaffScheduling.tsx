@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { User, StaffShift, DailyAffluence, ActivityMoment, ScheduleConfig, Event, MealReservation } from '../types';
-import { Calendar, Clock, Settings, TrendingUp, Plus, Trash2, Save, Printer, Sparkles, ChevronLeft, ChevronRight, Lock, Loader2, Search, Sun, Cloud, CloudRain, CloudLightning, Wind, AlertTriangle } from 'lucide-react';
+import { Calendar, Clock, Settings, TrendingUp, Plus, Trash2, Save, Printer, Sparkles, ChevronLeft, ChevronRight, Lock, Loader2, Search, Sun, Cloud, CloudRain, CloudLightning, Wind, AlertTriangle, Copy } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
 interface StaffSchedulingProps {
@@ -167,6 +167,34 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
     printWindow.document.write(content);
     printWindow.document.close();
     printWindow.print();
+  };
+
+  const handlePrefill = () => {
+    const planningWeeks = scheduleConfig.planningWeeks || 1;
+    const daysToSubtract = planningWeeks * 7;
+    const previousPeriodStart = new Date(currentDate);
+    previousPeriodStart.setDate(previousPeriodStart.getDate() - daysToSubtract);
+    
+    const previousPeriodEnd = new Date(previousPeriodStart);
+    previousPeriodEnd.setDate(previousPeriodEnd.getDate() + daysToSubtract - 1);
+
+    const previousShifts = staffShifts.filter(s => {
+      const d = new Date(s.date);
+      return d >= previousPeriodStart && d <= previousPeriodEnd;
+    });
+
+    const newShifts: StaffShift[] = previousShifts.map(s => {
+      const d = new Date(s.date);
+      d.setDate(d.getDate() + daysToSubtract);
+      return {
+        ...s,
+        id: `shift_prefill_${Date.now()}_${Math.random()}`,
+        date: d.toISOString().split('T')[0],
+        isValidated: false
+      };
+    });
+
+    newShifts.forEach(s => onSaveShift(s));
   };
 
   const handleOptimize = async () => {
@@ -357,27 +385,37 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       )}
 
       {activeTab === 'planning' && (
-        <PlanningGrid
-          users={filteredUsers}
-          staffShifts={staffShifts}
-          dailyAffluence={dailyAffluence}
-          activityMoments={activityMoments}
-          onSaveDailyAffluence={onSaveDailyAffluence}
-          weekDates={weekDates}
-          days={days}
-          timeSlots={timeSlots}
-          onSaveShift={onSaveShift}
-          onDeleteShift={onDeleteShift}
-          currentDate={currentDate}
-          setCurrentDate={setCurrentDate}
-          onOptimize={handleOptimize}
-          isOptimizing={isOptimizing}
-          onPrint={handlePrint}
-          absenceRequests={absenceRequests}
-          dailyWeather={externalContext.dailyWeather}
-          mealReservations={mealReservations}
-          config={scheduleConfig}
-        />
+        <>
+          <WeeklySummary 
+            users={filteredUsers}
+            staffShifts={staffShifts}
+            weekDates={weekDates}
+            planningWeeks={scheduleConfig.planningWeeks || 1}
+          />
+          <PlanningGrid
+            users={filteredUsers}
+            staffShifts={staffShifts}
+            dailyAffluence={dailyAffluence}
+            activityMoments={activityMoments}
+            onSaveDailyAffluence={onSaveDailyAffluence}
+            weekDates={weekDates}
+            days={days}
+            timeSlots={timeSlots}
+            onSaveShift={onSaveShift}
+            onDeleteShift={onDeleteShift}
+            currentDate={currentDate}
+            setCurrentDate={setCurrentDate}
+            onOptimize={handleOptimize}
+            isOptimizing={isOptimizing}
+            onPrefill={handlePrefill}
+            onPrint={handlePrint}
+            absenceRequests={absenceRequests}
+            dailyWeather={externalContext.dailyWeather}
+            mealReservations={mealReservations}
+            config={scheduleConfig}
+            events={events}
+          />
+        </>
       )}
 
       {activeTab === 'activity' && (
@@ -412,6 +450,56 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
 
 // --- Sub-components ---
 
+const WeeklySummary = ({ users, staffShifts, weekDates, planningWeeks }: {
+  users: User[],
+  staffShifts: StaffShift[],
+  weekDates: string[],
+  planningWeeks: number
+}) => {
+  const calculateWeeklyHours = (userId: string, dates: string[]) => {
+    const shifts = staffShifts.filter(s => s.userId === userId && dates.includes(s.date) && s.type === 'SHIFT');
+    let totalMinutes = 0;
+    shifts.forEach(s => {
+      const [sh, sm] = s.startTime.split(':').map(Number);
+      const [eh, em] = s.endTime.split(':').map(Number);
+      totalMinutes += (eh * 60 + em) - (sh * 60 + sm);
+    });
+    return totalMinutes / 60;
+  };
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+      {users.map(user => {
+        const weeklyHours = calculateWeeklyHours(user.id, weekDates);
+        // For average, we'd need more data than just the current week, but let's assume we have it or calculate based on what we have
+        // The user said "moyenne semaine sur la période 'durée du planning'"
+        // We might need to fetch more shifts or just use the current ones if they cover the period
+        const totalPeriodShifts = staffShifts.filter(s => s.userId === user.id && s.type === 'SHIFT');
+        let totalPeriodMinutes = 0;
+        totalPeriodShifts.forEach(s => {
+          const [sh, sm] = s.startTime.split(':').map(Number);
+          const [eh, em] = s.endTime.split(':').map(Number);
+          totalPeriodMinutes += (eh * 60 + em) - (sh * 60 + sm);
+        });
+        const avgHours = (totalPeriodMinutes / 60) / planningWeeks;
+
+        return (
+          <div key={user.id} className="bg-slate-900/50 border border-white/10 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{user.name}</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-black text-white">{weeklyHours.toFixed(1)}h</span>
+              <span className="text-[10px] font-bold text-slate-400">/ sem</span>
+            </div>
+            <div className="text-[9px] font-bold text-indigo-400 mt-1 uppercase tracking-tighter">
+              Moy: {avgHours.toFixed(1)}h
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const WeatherIcon = ({ type }: { type: string }) => {
   switch (type) {
     case 'SUN': return <Sun className="w-4 h-4 text-amber-400" />;
@@ -423,7 +511,7 @@ const WeatherIcon = ({ type }: { type: string }) => {
   }
 };
 
-const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onSaveDailyAffluence, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrint, absenceRequests, dailyWeather, mealReservations, config }: {
+const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onSaveDailyAffluence, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrefill, onPrint, absenceRequests, dailyWeather, mealReservations, config, events }: {
   users: User[],
   staffShifts: StaffShift[],
   dailyAffluence: DailyAffluence[],
@@ -438,15 +526,20 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
   setCurrentDate: (d: Date) => void,
   onOptimize: () => void,
   isOptimizing: boolean,
+  onPrefill: () => void,
   onPrint: () => void,
   absenceRequests: any[],
   dailyWeather?: { date: string, morning: string, afternoon: string }[],
   mealReservations: MealReservation[],
-  config: ScheduleConfig
+  config: ScheduleConfig,
+  events: Event[]
 }) => {
   const [selectedShift, setSelectedShift] = useState<StaffShift | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [showSchedules, setShowSchedules] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
 
   const currentDayDate = weekDates[selectedDayIndex];
 
@@ -457,17 +550,64 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
       date: currentDayDate,
       startTime: time,
       endTime: `${(parseInt(time.split(':')[0]) + 7).toString().padStart(2, '0')}:00`,
-      type: 'SHIFT'
+      type: 'SHIFT',
+      role: 'BAR'
     };
     setSelectedShift(newShift);
     setIsModalOpen(true);
   };
 
+  const handleSaveShiftWithSplitting = (newShift: StaffShift) => {
+    // If it's a PAUSE or SPLIT, check if it cuts an existing SHIFT
+    if (newShift.type === 'PAUSE' || newShift.type === 'SPLIT') {
+      const existingShifts = staffShifts.filter(s => 
+        s.userId === newShift.userId && 
+        s.date === newShift.date && 
+        s.type === 'SHIFT'
+      );
+
+      const [newStartH, newStartM] = newShift.startTime.split(':').map(Number);
+      const [newEndH, newEndM] = newShift.endTime.split(':').map(Number);
+      const newStartTotal = newStartH * 60 + newStartM;
+      const newEndTotal = newEndH * 60 + newEndM;
+
+      existingShifts.forEach(s => {
+        const [sStartH, sStartM] = s.startTime.split(':').map(Number);
+        const [sEndH, sEndM] = s.endTime.split(':').map(Number);
+        const sStartTotal = sStartH * 60 + sStartM;
+        const sEndTotal = sEndH * 60 + sEndM;
+
+        // If the new shift is strictly inside the existing shift
+        if (newStartTotal > sStartTotal && newEndTotal < sEndTotal) {
+          // Split the existing shift into two
+          const firstShift: StaffShift = {
+            ...s,
+            endTime: newShift.startTime
+          };
+          const secondShift: StaffShift = {
+            ...s,
+            id: `shift_split_${Date.now()}_${Math.random()}`,
+            startTime: newShift.endTime
+          };
+          onSaveShift(firstShift);
+          onSaveShift(secondShift);
+        } else if (newStartTotal <= sStartTotal && newEndTotal > sStartTotal && newEndTotal < sEndTotal) {
+          // New shift overlaps the start of existing shift
+          onSaveShift({ ...s, startTime: newShift.endTime });
+        } else if (newStartTotal > sStartTotal && newStartTotal < sEndTotal && newEndTotal >= sEndTotal) {
+          // New shift overlaps the end of existing shift
+          onSaveShift({ ...s, endTime: newShift.startTime });
+        }
+      });
+    }
+    onSaveShift(newShift);
+  };
+
   const getAffluenceColor = (level: string) => {
     switch (level) {
-      case 'LOW': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-      case 'MEDIUM': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-      case 'HIGH': return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
+      case 'LOW': return 'bg-emerald-600/40 text-emerald-100 border-emerald-500/50';
+      case 'MEDIUM': return 'bg-amber-600/40 text-amber-100 border-amber-500/50';
+      case 'HIGH': return 'bg-rose-600/40 text-rose-100 border-rose-500/50';
       default: return 'bg-slate-800 text-slate-400 border-white/5';
     }
   };
@@ -631,6 +771,16 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
         </div>
 
         <div className="flex gap-2">
+          <div className="flex items-center gap-2 px-4 py-2 bg-slate-800 rounded-xl border border-white/10">
+            <input 
+              type="checkbox" 
+              id="showSchedules" 
+              checked={showSchedules} 
+              onChange={(e) => setShowSchedules(e.target.checked)}
+              className="w-4 h-4 rounded border-white/10 bg-slate-900 text-indigo-600"
+            />
+            <label htmlFor="showSchedules" className="text-xs font-bold text-slate-300 cursor-pointer">Horaires</label>
+          </div>
           <button 
             onClick={onOptimize}
             disabled={isOptimizing}
@@ -638,6 +788,13 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
           >
             {isOptimizing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             Optimisation IA
+          </button>
+          <button 
+            onClick={onPrefill}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-sm transition-all border border-white/10"
+          >
+            <Copy className="w-4 h-4" />
+            Pré-remplir
           </button>
           <button 
             onClick={onPrint}
@@ -689,12 +846,68 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
                 return (
                   <div 
                     key={time} 
-                    className={`absolute top-0 bottom-0 border-l border-white/5 transition-colors ${getAffluenceColor(level)} opacity-30`}
+                    className={`absolute top-0 bottom-0 border-l border-white/5 transition-colors ${getAffluenceColor(level)}`}
                     style={{ left: `${(i / 24) * 100}%`, width: `${(1 / 24) * 100}%` }}
                   />
                 );
               })}
-              {/* Overlay for manual setting if needed, but let's stick to ActivityMoments for now or allow clicking to set */}
+            </div>
+          </div>
+
+          {/* Weather Row */}
+          <div className="flex border-b border-white/10 bg-slate-950/20">
+            <div className="w-48 shrink-0 border-r border-white/10 p-4 flex flex-col justify-center">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Météo</span>
+            </div>
+            <div className="flex-1 relative h-12">
+              {(() => {
+                const weather = dailyWeather?.find(w => w.date === currentDayDate);
+                if (!weather) return null;
+                return (
+                  <>
+                    <div className="absolute top-0 bottom-0 left-0 w-1/2 flex items-center justify-center border-r border-white/5">
+                      <div className="flex flex-col items-center">
+                        <span className="text-[8px] font-black text-slate-500 uppercase mb-1">Matin</span>
+                        <WeatherIcon type={weather.morning} />
+                      </div>
+                    </div>
+                    <div className="absolute top-0 bottom-0 left-1/2 w-1/2 flex items-center justify-center">
+                      <div className="flex flex-col items-center">
+                        <span className="text-[8px] font-black text-slate-500 uppercase mb-1">A-M</span>
+                        <WeatherIcon type={weather.afternoon} />
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Events Row */}
+          <div className="flex border-b border-white/10 bg-slate-950/10">
+            <div className="w-48 shrink-0 border-r border-white/10 p-4 flex flex-col justify-center">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Événements</span>
+            </div>
+            <div className="flex-1 relative h-12">
+              {events.filter(e => e.startTime.split('T')[0] === currentDayDate).map(evt => {
+                const [sh, sm] = evt.startTime.split('T')[1].split(':').map(Number);
+                const [eh, em] = evt.endTime.split('T')[1].split(':').map(Number);
+                const startPercent = ((sh * 60 + sm) / (24 * 60)) * 100;
+                const endPercent = ((eh * 60 + em) / (24 * 60)) * 100;
+                return (
+                  <div 
+                    key={evt.id}
+                    onClick={() => {
+                      setSelectedEvent(evt);
+                      setIsEventModalOpen(true);
+                    }}
+                    className="absolute top-2 bottom-2 bg-indigo-500/20 border border-indigo-500/40 rounded-lg px-2 flex items-center cursor-pointer hover:bg-indigo-500/30 transition-all overflow-hidden"
+                    style={{ left: `${startPercent}%`, width: `${endPercent - startPercent}%` }}
+                  >
+                    <span className="text-[9px] font-black text-indigo-300 uppercase truncate">{evt.title}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -730,11 +943,15 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
               const totalWorkTime = calculateTotalWorkTime(user.id, currentDayDate);
               const violations = checkViolations(user.id, currentDayDate);
               const hasViolations = violations.length > 0;
+              const isAbsent = absenceRequests.some(a => a.userId === user.id && a.status === 'APPROVED' && currentDayDate >= a.startDate && currentDayDate <= a.endDate);
 
               return (
-                <div key={user.id} className="flex border-b border-white/5 hover:bg-white/[0.02] transition-colors group min-h-[80px]">
-                  <div className="w-48 shrink-0 border-r border-white/10 p-4 flex flex-col justify-center bg-slate-950/20">
-                    <div className="text-sm font-black text-white uppercase tracking-tight truncate">{user.name}</div>
+                <div key={user.id} className={`flex border-b border-white/5 hover:bg-white/[0.02] transition-colors group min-h-[80px] ${isAbsent ? 'bg-rose-500/5' : ''}`}>
+                  <div className={`w-48 shrink-0 border-r border-white/10 p-4 flex flex-col justify-center ${isAbsent ? 'bg-rose-950/20' : 'bg-slate-950/20'}`}>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-black text-white uppercase tracking-tight truncate">{user.name}</div>
+                      {isAbsent && <div className="px-1.5 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded uppercase tracking-tighter">Absent</div>}
+                    </div>
                     <div className={`text-[10px] font-bold mt-1 flex items-center gap-1 ${hasViolations ? 'text-rose-400' : 'text-slate-500'}`}>
                       <Clock className="w-3 h-3" />
                       {formatDuration(totalWorkTime)}
@@ -825,7 +1042,7 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
                     })()}
 
                     {/* Shifts */}
-                    {userShifts.map((shift) => (
+                    {showSchedules && userShifts.map((shift) => (
                       <div
                         key={shift.id}
                         onClick={(e) => {
@@ -833,14 +1050,15 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
                           setSelectedShift(shift);
                           setIsModalOpen(true);
                         }}
-                        className={`absolute top-1/2 -translate-y-1/2 h-10 rounded-lg border shadow-lg cursor-pointer transition-all hover:scale-[1.02] hover:z-50 flex flex-col justify-center px-2 overflow-hidden ${getShiftColor(shift.type)}`}
+                        className={`absolute top-1/2 -translate-y-1/2 h-10 rounded-lg border shadow-lg cursor-pointer transition-all hover:scale-[1.02] hover:z-50 flex flex-col justify-center px-2 overflow-hidden ${getShiftColor(shift.type)} ${shift.isValidated ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}`}
                         style={{ 
                           left: `${timeToPercent(shift.startTime)}%`, 
                           width: `${durationToPercent(shift.startTime, shift.endTime)}%` 
                         }}
                       >
-                        <div className="text-[10px] font-black text-white uppercase truncate leading-none">
+                        <div className="text-[10px] font-black text-white uppercase truncate leading-none flex items-center gap-1">
                           {shift.type === 'SHIFT' ? 'Travail' : shift.type === 'PAUSE' ? 'Pause' : shift.type === 'SPLIT' ? 'Coupure' : shift.type === 'REST' ? 'Repos' : 'Absence'}
+                          {shift.role && <span className="text-[8px] opacity-70">({shift.role})</span>}
                         </div>
                         <div className="text-[9px] font-bold text-white/70 leading-none mt-0.5">
                           {shift.startTime} - {shift.endTime}
@@ -861,7 +1079,7 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
           users={users}
           onClose={() => setIsModalOpen(false)}
           onSave={(s: StaffShift) => {
-            onSaveShift(s);
+            handleSaveShiftWithSplitting(s);
             setIsModalOpen(false);
           }}
           onDelete={(id: string) => {
@@ -869,6 +1087,50 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
             setIsModalOpen(false);
           }}
         />
+      )}
+
+      {isEventModalOpen && selectedEvent && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-6 border-b border-white/10 bg-slate-800/50 flex items-center justify-between">
+              <h3 className="text-xl font-black text-white uppercase tracking-tight">Détails de l'Événement</h3>
+              <button onClick={() => setIsEventModalOpen(false)} className="text-slate-400 hover:text-white">
+                <Plus className="w-6 h-6 rotate-45" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Titre</div>
+                <div className="text-lg font-black text-white">{selectedEvent.title}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Début</div>
+                  <div className="text-sm font-bold text-slate-300">{new Date(selectedEvent.startTime).toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Fin</div>
+                  <div className="text-sm font-bold text-slate-300">{new Date(selectedEvent.endTime).toLocaleString()}</div>
+                </div>
+              </div>
+              {selectedEvent.location && (
+                <div>
+                  <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Lieu</div>
+                  <div className="text-sm font-bold text-slate-300">{selectedEvent.location}</div>
+                </div>
+              )}
+              {selectedEvent.description && (
+                <div>
+                  <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Description</div>
+                  <div className="text-sm text-slate-400">{selectedEvent.description}</div>
+                </div>
+              )}
+            </div>
+            <div className="p-6 bg-slate-800/50 border-t border-white/10">
+              <button onClick={() => setIsEventModalOpen(false)} className="w-full bg-slate-700 hover:bg-slate-600 text-white font-black py-3 rounded-xl transition-all uppercase tracking-widest text-xs">Fermer</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -952,6 +1214,44 @@ const ShiftModal = ({ shift, users, onClose, onSave, onDelete }: {
                 className="w-full bg-slate-800 border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
+          </div>
+
+          {editedShift.type === 'SHIFT' && (
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Poste</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'BAR', label: 'Bar' },
+                  { id: 'SALLE', label: 'Salle' },
+                  { id: 'SOUTIEN', label: 'Soutien' }
+                ].map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setEditedShift({ ...editedShift, role: r.id as any })}
+                    className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                      editedShift.role === r.id 
+                        ? 'bg-indigo-600 text-white border-white/20' 
+                        : 'bg-slate-800 text-slate-400 border-white/5'
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-2xl border border-white/5">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Validation</span>
+              <span className="text-xs font-bold text-slate-500">Marquer comme validé</span>
+            </div>
+            <button
+              onClick={() => setEditedShift({ ...editedShift, isValidated: !editedShift.isValidated })}
+              className={`w-12 h-6 rounded-full transition-all relative ${editedShift.isValidated ? 'bg-indigo-600' : 'bg-slate-700'}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${editedShift.isValidated ? 'left-7' : 'left-1'}`} />
+            </button>
           </div>
         </div>
 

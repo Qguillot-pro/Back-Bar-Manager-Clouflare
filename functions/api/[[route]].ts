@@ -693,6 +693,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             return new Response(JSON.stringify({ success: true, tables: results, columns: colResults }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         }
+        case 'EXECUTE_SQL': {
+            const { query, params } = payload;
+            try {
+                const res = await pool.query(query, params || []);
+                return new Response(JSON.stringify({ success: true, rows: res.rows, fields: res.fields, rowCount: res.rowCount }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            } catch (e: any) {
+                return new Response(JSON.stringify({ success: false, error: e.message }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+        }
         case 'SAVE_DLC_TRANSFER': {
             const { batchId, targetStorageId, newQuantity } = payload;
             await pool.query('UPDATE dlc_history SET storage_id = $1, quantity = $2 WHERE id = $3', [targetStorageId, newQuantity, batchId]);
