@@ -50,6 +50,7 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   const [showPinError, setShowPinError] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isFetchingContext, setIsFetchingContext] = useState(false);
+  const [isRestrictedView, setIsRestrictedView] = useState(true);
   const [externalContext, setExternalContext] = useState<{ holidays: string[], weather: string, legislation: string, dailyWeather?: { date: string, morning: string, afternoon: string }[] }>({
     holidays: [],
     weather: '',
@@ -74,6 +75,43 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       return d.toISOString().split('T')[0];
     });
   }, [startOfWeek]);
+
+  const visibleRange = useMemo(() => {
+    if (!isRestrictedView) return { start: 0, end: 24 * 60 };
+    
+    let minStart = 24 * 60;
+    let maxEnd = 0;
+    
+    Object.values(scheduleConfig.openingHours).forEach((hours: any) => {
+      if (hours.isOpen) {
+        const [sh, sm] = hours.open.split(':').map(Number);
+        const [eh, em] = hours.close.split(':').map(Number);
+        const start = (sh * 60 + sm) - scheduleConfig.setupTimeMinutes;
+        const end = (eh * 60 + em) + scheduleConfig.closingTimeMinutes;
+        minStart = Math.min(minStart, start);
+        maxEnd = Math.max(maxEnd, end);
+      }
+    });
+    
+    if (minStart === 24 * 60) return { start: 8 * 60, end: 20 * 60 };
+    
+    return { 
+      start: Math.max(0, Math.floor(minStart / 60) * 60), 
+      end: Math.min(24 * 60, Math.ceil(maxEnd / 60) * 60) 
+    };
+  }, [isRestrictedView, scheduleConfig]);
+
+  const visibleDuration = useMemo(() => visibleRange.end - visibleRange.start, [visibleRange]);
+
+  const visibleTimeSlots = useMemo(() => {
+    const slots = [];
+    const startHour = Math.floor(visibleRange.start / 60);
+    const endHour = Math.ceil(visibleRange.end / 60);
+    for (let i = startHour; i <= endHour; i++) {
+      slots.push(`${i.toString().padStart(2, '0')}:00`);
+    }
+    return slots;
+  }, [visibleRange]);
 
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -401,6 +439,11 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
             weekDates={weekDates}
             days={days}
             timeSlots={timeSlots}
+            visibleTimeSlots={visibleTimeSlots}
+            visibleRange={visibleRange}
+            visibleDuration={visibleDuration}
+            isRestrictedView={isRestrictedView}
+            setIsRestrictedView={setIsRestrictedView}
             onSaveShift={onSaveShift}
             onDeleteShift={onDeleteShift}
             currentDate={currentDate}
@@ -511,7 +554,7 @@ const WeatherIcon = ({ type }: { type: string }) => {
   }
 };
 
-const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onSaveDailyAffluence, weekDates, days, timeSlots, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrefill, onPrint, absenceRequests, dailyWeather, mealReservations, config, events }: {
+const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onSaveDailyAffluence, weekDates, days, timeSlots, visibleTimeSlots, visibleRange, visibleDuration, isRestrictedView, setIsRestrictedView, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrefill, onPrint, absenceRequests, dailyWeather, mealReservations, config, events }: {
   users: User[],
   staffShifts: StaffShift[],
   dailyAffluence: DailyAffluence[],
@@ -520,6 +563,11 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
   weekDates: string[],
   days: string[],
   timeSlots: string[],
+  visibleTimeSlots: string[],
+  visibleRange: { start: number, end: number },
+  visibleDuration: number,
+  isRestrictedView: boolean,
+  setIsRestrictedView: (v: boolean) => void,
   onSaveShift: (s: StaffShift) => void,
   onDeleteShift: (id: string) => void,
   currentDate: Date,
@@ -552,6 +600,36 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
       endTime: `${(parseInt(time.split(':')[0]) + 7).toString().padStart(2, '0')}:00`,
       type: 'SHIFT',
       role: 'BAR'
+    };
+    setSelectedShift(newShift);
+    setIsModalOpen(true);
+  };
+
+  const handleAddRest = (userId: string) => {
+    const userShifts = staffShifts.filter(s => s.userId === userId && s.date === currentDayDate && s.type === 'SHIFT');
+    let startTime = '08:00';
+    let duration = 24 * 60; // Default 24h
+
+    if (userShifts.length > 0) {
+      const lastShift = [...userShifts].sort((a, b) => b.endTime.localeCompare(a.endTime))[0];
+      startTime = lastShift.endTime;
+      duration = 35 * 60; // 35h if work shift exists
+    }
+
+    const [sh, sm] = startTime.split(':').map(Number);
+    const endTotal = sh * 60 + sm + duration;
+    const eh = Math.floor(endTotal / 60) % 24;
+    const em = endTotal % 60;
+    const endTime = `${eh.toString().padStart(2, '0')}:${em.toString().padStart(2, '0')}`;
+
+    const newShift: StaffShift = {
+      id: `shift_rest_${Date.now()}`,
+      userId,
+      date: currentDayDate,
+      startTime,
+      endTime,
+      type: 'REST',
+      isValidated: false
     };
     setSelectedShift(newShift);
     setIsModalOpen(true);
@@ -605,9 +683,9 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
 
   const getAffluenceColor = (level: string) => {
     switch (level) {
-      case 'LOW': return 'bg-emerald-600/40 text-emerald-100 border-emerald-500/50';
-      case 'MEDIUM': return 'bg-amber-600/40 text-amber-100 border-amber-500/50';
-      case 'HIGH': return 'bg-rose-600/40 text-rose-100 border-rose-500/50';
+      case 'LOW': return 'bg-emerald-500 text-white border-emerald-400';
+      case 'MEDIUM': return 'bg-amber-500 text-white border-amber-400';
+      case 'HIGH': return 'bg-rose-500 text-white border-rose-400';
       default: return 'bg-slate-800 text-slate-400 border-white/5';
     }
   };
@@ -774,12 +852,12 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
           <div className="flex items-center gap-2 px-4 py-2 bg-slate-800 rounded-xl border border-white/10">
             <input 
               type="checkbox" 
-              id="showSchedules" 
-              checked={showSchedules} 
-              onChange={(e) => setShowSchedules(e.target.checked)}
+              id="isRestrictedView" 
+              checked={isRestrictedView} 
+              onChange={(e) => setIsRestrictedView(e.target.checked)}
               className="w-4 h-4 rounded border-white/10 bg-slate-900 text-indigo-600"
             />
-            <label htmlFor="showSchedules" className="text-xs font-bold text-slate-300 cursor-pointer">Horaires</label>
+            <label htmlFor="isRestrictedView" className="text-xs font-bold text-slate-300 cursor-pointer">Vue Restreinte</label>
           </div>
           <button 
             onClick={onOptimize}
@@ -815,15 +893,18 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Temps</span>
             </div>
             <div className="flex-1 relative h-12">
-              {timeSlots.map((time, i) => (
-                <div 
-                  key={time} 
-                  className="absolute top-0 bottom-0 border-l border-white/5 flex flex-col justify-end pb-1 pl-1"
-                  style={{ left: `${(i / 24) * 100}%` }}
-                >
-                  <span className="text-[9px] font-black text-slate-600">{time}</span>
-                </div>
-              ))}
+              {visibleTimeSlots.map((time) => {
+                const i = parseInt(time.split(':')[0]);
+                return (
+                  <div 
+                    key={time} 
+                    className="absolute top-0 bottom-0 border-l border-white/5 flex flex-col justify-end pb-1 pl-1"
+                    style={{ left: `${((i * 60 - visibleRange.start) / visibleDuration) * 100}%` }}
+                  >
+                    <span className="text-[9px] font-black text-slate-600">{time}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -833,7 +914,8 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Affluence</span>
             </div>
             <div className="flex-1 relative h-12">
-              {timeSlots.map((time, i) => {
+              {visibleTimeSlots.map((time) => {
+                const i = parseInt(time.split(':')[0]);
                 const moment = activityMoments.find((momentItem: ActivityMoment) => {
                   const dayOfWeek = new Date(currentDayDate).getDay();
                   const [h, min] = time.split(':').map(Number);
@@ -847,7 +929,10 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
                   <div 
                     key={time} 
                     className={`absolute top-0 bottom-0 border-l border-white/5 transition-colors ${getAffluenceColor(level)}`}
-                    style={{ left: `${(i / 24) * 100}%`, width: `${(1 / 24) * 100}%` }}
+                    style={{ 
+                      left: `${((i * 60 - visibleRange.start) / visibleDuration) * 100}%`, 
+                      width: `${(60 / visibleDuration) * 100}%` 
+                    }}
                   />
                 );
               })}
@@ -863,20 +948,38 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
               {(() => {
                 const weather = dailyWeather?.find(w => w.date === currentDayDate);
                 if (!weather) return null;
+                const morningVisible = 9 * 60 >= visibleRange.start && 9 * 60 < visibleRange.end;
+                const afternoonVisible = 15 * 60 >= visibleRange.start && 15 * 60 < visibleRange.end;
                 return (
                   <>
-                    <div className="absolute top-0 bottom-0 left-0 w-1/2 flex items-center justify-center border-r border-white/5">
-                      <div className="flex flex-col items-center">
-                        <span className="text-[8px] font-black text-slate-500 uppercase mb-1">Matin</span>
-                        <WeatherIcon type={weather.morning} />
+                    {morningVisible && (
+                      <div 
+                        className="absolute top-0 bottom-0 flex items-center justify-center border-r border-white/5"
+                        style={{ 
+                          left: `${((9 * 60 - visibleRange.start) / visibleDuration) * 100}%`,
+                          width: `${(6 * 60 / visibleDuration) * 100}%`
+                        }}
+                      >
+                        <div className="flex flex-col items-center">
+                          <span className="text-[8px] font-black text-slate-500 uppercase mb-1">Matin</span>
+                          <WeatherIcon type={weather.morning} />
+                        </div>
                       </div>
-                    </div>
-                    <div className="absolute top-0 bottom-0 left-1/2 w-1/2 flex items-center justify-center">
-                      <div className="flex flex-col items-center">
-                        <span className="text-[8px] font-black text-slate-500 uppercase mb-1">A-M</span>
-                        <WeatherIcon type={weather.afternoon} />
+                    )}
+                    {afternoonVisible && (
+                      <div 
+                        className="absolute top-0 bottom-0 flex items-center justify-center"
+                        style={{ 
+                          left: `${((15 * 60 - visibleRange.start) / visibleDuration) * 100}%`,
+                          width: `${(6 * 60 / visibleDuration) * 100}%`
+                        }}
+                      >
+                        <div className="flex flex-col items-center">
+                          <span className="text-[8px] font-black text-slate-500 uppercase mb-1">A-M</span>
+                          <WeatherIcon type={weather.afternoon} />
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </>
                 );
               })()}
@@ -917,13 +1020,18 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Agents Présents</span>
             </div>
             <div className="flex-1 relative h-12">
-              {timeSlots.map((time, i) => {
+              {timeSlots.map((time) => {
+                const i = parseInt(time.split(':')[0]);
                 const count = calculateAgentsPresent(time);
+                if (i * 60 < visibleRange.start || i * 60 >= visibleRange.end) return null;
                 return (
                   <div 
                     key={time} 
                     className="absolute top-0 bottom-0 flex items-center justify-center border-l border-white/5"
-                    style={{ left: `${(i / 24) * 100}%`, width: `${(1 / 24) * 100}%` }}
+                    style={{ 
+                      left: `${((i * 60 - visibleRange.start) / visibleDuration) * 100}%`, 
+                      width: `${(60 / visibleDuration) * 100}%` 
+                    }}
                   >
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
                       count > 0 ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]' : 'text-slate-700'
@@ -974,7 +1082,7 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
                       const rect = e.currentTarget.getBoundingClientRect();
                       const x = e.clientX - rect.left;
                       const percent = x / rect.width;
-                      const totalMinutes = Math.floor(percent * 24 * 60);
+                      const totalMinutes = Math.floor(percent * visibleDuration) + visibleRange.start;
                       const hours = Math.floor(totalMinutes / 60);
                       const snap = config.planningScale || 15;
                       const minutes = Math.floor((totalMinutes % 60) / snap) * snap;
@@ -983,13 +1091,60 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
                     }}
                   >
                     {/* Vertical Hour Lines */}
-                    {timeSlots.map((_, i) => (
-                      <div 
-                        key={i} 
-                        className="absolute top-0 bottom-0 border-l border-white/[0.03] pointer-events-none"
-                        style={{ left: `${(i / 24) * 100}%` }}
-                      />
-                    ))}
+                    {visibleTimeSlots.map((time) => {
+                      const i = parseInt(time.split(':')[0]);
+                      return (
+                        <div 
+                          key={i} 
+                          className="absolute top-0 bottom-0 border-l border-white/[0.03] pointer-events-none"
+                          style={{ left: `${((i * 60 - visibleRange.start) / visibleDuration) * 100}%` }}
+                        />
+                      );
+                    })}
+
+                    {/* Absences (Repos with Lock) */}
+                    {absenceRequests.filter(a => a.userId === user.id && a.status === 'APPROVED' && currentDayDate >= a.startDate && currentDayDate <= a.endDate).map(abs => {
+                      let start = 0;
+                      let end = 24 * 60;
+                      if (abs.startDate === currentDayDate && abs.startTime) {
+                        const [h, m] = abs.startTime.split(':').map(Number);
+                        start = h * 60 + m;
+                      }
+                      if (abs.endDate === currentDayDate && abs.endTime) {
+                        const [h, m] = abs.endTime.split(':').map(Number);
+                        end = h * 60 + m;
+                      }
+
+                      if (end <= visibleRange.start || start >= visibleRange.end) return null;
+                      
+                      const displayStart = Math.max(start, visibleRange.start);
+                      const displayEnd = Math.min(end, visibleRange.end);
+                      const left = ((displayStart - visibleRange.start) / visibleDuration) * 100;
+                      const width = ((displayEnd - displayStart) / visibleDuration) * 100;
+
+                      return (
+                        <div 
+                          key={abs.id}
+                          className="absolute top-1/2 -translate-y-1/2 h-10 bg-slate-600/50 border border-slate-500/50 rounded-lg flex items-center justify-center gap-2 z-10"
+                          style={{ left: `${left}%`, width: `${width}%` }}
+                        >
+                          <Lock className="w-3 h-3 text-slate-400" />
+                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Repos</span>
+                        </div>
+                      );
+                    })}
+
+                    {/* Add Rest Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAddRest(user.id);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg border border-white/5 opacity-0 group-hover:opacity-100 transition-all z-20"
+                      title="Ajouter Repos (35h/24h)"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
 
                     {/* Opening Hours Overlay */}
                     {(() => {
@@ -1005,66 +1160,96 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
                       const prepStart = openMin - config.setupTimeMinutes;
                       const closingEnd = closeMin + config.closingTimeMinutes;
                       
+                      const prepVisibleStart = Math.max(prepStart, visibleRange.start);
+                      const prepVisibleEnd = Math.min(openMin, visibleRange.end);
+                      
+                      const openVisibleStart = Math.max(openMin, visibleRange.start);
+                      const openVisibleEnd = Math.min(closeMin, visibleRange.end);
+                      
+                      const closeVisibleStart = Math.max(closeMin, visibleRange.start);
+                      const closeVisibleEnd = Math.min(closingEnd, visibleRange.end);
+
                       return (
                         <>
                           {/* Prep Time */}
-                          <div 
-                            className="absolute top-0 bottom-0 bg-indigo-500/5 border-x border-indigo-500/20 pointer-events-none"
-                            style={{ 
-                              left: `${(prepStart / (24 * 60)) * 100}%`, 
-                              width: `${(config.setupTimeMinutes / (24 * 60)) * 100}%` 
-                            }}
-                          >
-                            <div className="absolute top-0 left-0 text-[8px] font-black text-indigo-400/50 uppercase tracking-tighter -rotate-90 origin-top-left translate-y-8 ml-1">Prep</div>
-                          </div>
+                          {prepVisibleEnd > prepVisibleStart && (
+                            <div 
+                              className="absolute top-0 bottom-0 bg-indigo-500/5 border-x border-indigo-500/20 pointer-events-none"
+                              style={{ 
+                                left: `${((prepVisibleStart - visibleRange.start) / visibleDuration) * 100}%`, 
+                                width: `${((prepVisibleEnd - prepVisibleStart) / visibleDuration) * 100}%` 
+                              }}
+                            >
+                              <div className="absolute top-0 left-0 text-[8px] font-black text-indigo-400/50 uppercase tracking-tighter -rotate-90 origin-top-left translate-y-8 ml-1">Prep</div>
+                            </div>
+                          )}
                           
                           {/* Opening Hours */}
-                          <div 
-                            className="absolute top-0 bottom-0 bg-emerald-500/[0.02] border-x border-emerald-500/10 pointer-events-none"
-                            style={{ 
-                              left: `${(openMin / (24 * 60)) * 100}%`, 
-                              width: `${((closeMin - openMin) / (24 * 60)) * 100}%` 
-                            }}
-                          />
+                          {openVisibleEnd > openVisibleStart && (
+                            <div 
+                              className="absolute top-0 bottom-0 bg-emerald-500/[0.02] border-x border-emerald-500/10 pointer-events-none"
+                              style={{ 
+                                left: `${((openVisibleStart - visibleRange.start) / visibleDuration) * 100}%`, 
+                                width: `${((openVisibleEnd - openVisibleStart) / visibleDuration) * 100}%` 
+                              }}
+                            />
+                          )}
                           
                           {/* Closing Time */}
-                          <div 
-                            className="absolute top-0 bottom-0 bg-amber-500/5 border-x border-amber-500/20 pointer-events-none"
-                            style={{ 
-                              left: `${(closeMin / (24 * 60)) * 100}%`, 
-                              width: `${(config.closingTimeMinutes / (24 * 60)) * 100}%` 
-                            }}
-                          >
-                            <div className="absolute top-0 left-0 text-[8px] font-black text-amber-400/50 uppercase tracking-tighter -rotate-90 origin-top-left translate-y-8 ml-1">Close</div>
-                          </div>
+                          {closeVisibleEnd > closeVisibleStart && (
+                            <div 
+                              className="absolute top-0 bottom-0 bg-amber-500/5 border-x border-amber-500/20 pointer-events-none"
+                              style={{ 
+                                left: `${((closeVisibleStart - visibleRange.start) / visibleDuration) * 100}%`, 
+                                width: `${((closeVisibleEnd - closeVisibleStart) / visibleDuration) * 100}%` 
+                              }}
+                            >
+                              <div className="absolute top-0 left-0 text-[8px] font-black text-amber-400/50 uppercase tracking-tighter -rotate-90 origin-top-left translate-y-8 ml-1">Close</div>
+                            </div>
+                          )}
                         </>
                       );
                     })()}
 
                     {/* Shifts */}
-                    {showSchedules && userShifts.map((shift) => (
-                      <div
-                        key={shift.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedShift(shift);
-                          setIsModalOpen(true);
-                        }}
-                        className={`absolute top-1/2 -translate-y-1/2 h-10 rounded-lg border shadow-lg cursor-pointer transition-all hover:scale-[1.02] hover:z-50 flex flex-col justify-center px-2 overflow-hidden ${getShiftColor(shift.type)} ${shift.isValidated ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}`}
-                        style={{ 
-                          left: `${timeToPercent(shift.startTime)}%`, 
-                          width: `${durationToPercent(shift.startTime, shift.endTime)}%` 
-                        }}
-                      >
-                        <div className="text-[10px] font-black text-white uppercase truncate leading-none flex items-center gap-1">
-                          {shift.type === 'SHIFT' ? 'Travail' : shift.type === 'PAUSE' ? 'Pause' : shift.type === 'SPLIT' ? 'Coupure' : shift.type === 'REST' ? 'Repos' : 'Absence'}
-                          {shift.role && <span className="text-[8px] opacity-70">({shift.role})</span>}
+                    {userShifts.map((shift) => {
+                      const [sh, sm] = shift.startTime.split(':').map(Number);
+                      const [eh, em] = shift.endTime.split(':').map(Number);
+                      const startMin = sh * 60 + sm;
+                      const endMin = (eh < sh ? eh + 24 : eh) * 60 + em;
+
+                      if (endMin <= visibleRange.start || startMin >= visibleRange.end) return null;
+
+                      const displayStart = Math.max(startMin, visibleRange.start);
+                      const displayEnd = Math.min(endMin, visibleRange.end);
+                      const left = ((displayStart - visibleRange.start) / visibleDuration) * 100;
+                      const width = ((displayEnd - displayStart) / visibleDuration) * 100;
+
+                      return (
+                        <div
+                          key={shift.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedShift(shift);
+                            setIsModalOpen(true);
+                          }}
+                          className={`absolute top-1/2 -translate-y-1/2 h-10 rounded-lg border shadow-lg cursor-pointer transition-all hover:scale-[1.02] hover:z-50 flex flex-col justify-center px-2 overflow-hidden ${getShiftColor(shift.type)} ${shift.isValidated ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}`}
+                          style={{ 
+                            left: `${left}%`, 
+                            width: `${width}%` 
+                          }}
+                        >
+                          <div className="text-[10px] font-black text-white uppercase truncate leading-none flex items-center gap-1">
+                            {shift.type === 'REST' && <Lock className="w-2 h-2" />}
+                            {shift.type === 'SHIFT' ? 'Travail' : shift.type === 'PAUSE' ? 'Pause' : shift.type === 'SPLIT' ? 'Coupure' : shift.type === 'REST' ? 'Repos' : 'Absence'}
+                            {shift.role && <span className="text-[8px] opacity-70">({shift.role})</span>}
+                          </div>
+                          <div className="text-[9px] font-bold text-white/70 leading-none mt-0.5">
+                            {shift.startTime} - {shift.endTime}
+                          </div>
                         </div>
-                        <div className="text-[9px] font-bold text-white/70 leading-none mt-0.5">
-                          {shift.startTime} - {shift.endTime}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -1431,6 +1616,10 @@ const ConfigManager = ({ config, onSave }: {
   const [editedConfig, setEditedConfig] = useState<ScheduleConfig>({ ...config });
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
 
+  React.useEffect(() => {
+    setEditedConfig({ ...config });
+  }, [config]);
+
   const handleLocationSearch = async () => {
     setIsSearchingLocation(true);
     try {
@@ -1566,38 +1755,42 @@ const ConfigManager = ({ config, onSave }: {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Amplitude Max (min)</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Amplitude Max (heures)</label>
               <input
                 type="number"
-                value={editedConfig.maxAmplitude}
-                onChange={(e) => setEditedConfig({ ...editedConfig, maxAmplitude: parseInt(e.target.value) })}
+                step="0.5"
+                value={editedConfig.maxAmplitude ? editedConfig.maxAmplitude / 60 : ''}
+                onChange={(e) => setEditedConfig({ ...editedConfig, maxAmplitude: parseFloat(e.target.value) * 60 })}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Travail Max / Jour (min)</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Travail Max / Jour (heures)</label>
               <input
                 type="number"
-                value={editedConfig.maxWorkedTime}
-                onChange={(e) => setEditedConfig({ ...editedConfig, maxWorkedTime: parseInt(e.target.value) })}
+                step="0.5"
+                value={editedConfig.maxWorkedTime ? editedConfig.maxWorkedTime / 60 : ''}
+                onChange={(e) => setEditedConfig({ ...editedConfig, maxWorkedTime: parseFloat(e.target.value) * 60 })}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Coupure Max (min)</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Coupure Max (heures)</label>
               <input
                 type="number"
-                value={editedConfig.maxSplitTime}
-                onChange={(e) => setEditedConfig({ ...editedConfig, maxSplitTime: parseInt(e.target.value) })}
+                step="0.5"
+                value={editedConfig.maxSplitTime ? editedConfig.maxSplitTime / 60 : ''}
+                onChange={(e) => setEditedConfig({ ...editedConfig, maxSplitTime: parseFloat(e.target.value) * 60 })}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Travail Continu Max (min)</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Travail Continu Max (heures)</label>
               <input
                 type="number"
-                value={editedConfig.maxContinuousWorkTime}
-                onChange={(e) => setEditedConfig({ ...editedConfig, maxContinuousWorkTime: parseInt(e.target.value) })}
+                step="0.5"
+                value={editedConfig.maxContinuousWorkTime ? editedConfig.maxContinuousWorkTime / 60 : ''}
+                onChange={(e) => setEditedConfig({ ...editedConfig, maxContinuousWorkTime: parseFloat(e.target.value) * 60 })}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>

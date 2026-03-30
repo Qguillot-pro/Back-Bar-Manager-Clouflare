@@ -562,6 +562,26 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_MEAL_RESERVATION': { await pool.query(`INSERT INTO meal_reservations (id, user_id, date, slot) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date, payload.slot]); break; }
         case 'DELETE_MEAL_RESERVATION': { await pool.query('DELETE FROM meal_reservations WHERE id = $1', [payload.id]); break; }
 
+        case 'SAVE_APP_CONFIG': {
+            for (const [key, value] of Object.entries(payload)) {
+                const dbKey = key === 'scheduleConfig' ? 'schedule_config' : 
+                              key === 'tempItemDuration' ? 'temp_item_duration' :
+                              key === 'defaultMargin' ? 'default_margin' : 
+                              key === 'programMapping' ? 'program_mapping' :
+                              key === 'programThresholds' ? 'program_thresholds' :
+                              key === 'mealReminderTimes' ? 'meal_reminder_times' :
+                              key === 'tvaRates' ? 'tva_rates' :
+                              key === 'welcomeModalTiles' ? 'welcome_modal_tiles' : key;
+                const dbValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+                await pool.query(`
+                    INSERT INTO app_config (key, value) 
+                    VALUES ($1, $2) 
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                `, [dbKey, dbValue]);
+            }
+            break;
+        }
+
         case 'SAVE_STAFF_SHIFT': {
             const { id, userId, date, startTime, endTime, type } = payload;
             await pool.query(`
