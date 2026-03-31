@@ -113,6 +113,12 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
     return slots;
   }, [visibleRange]);
 
+  const formatDuration = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}h${m.toString().padStart(2, '0')}`;
+  };
+
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (pinInput === '1234') { // Simple PIN for demo, should be configurable
@@ -127,15 +133,18 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   const handleFetchContext = async () => {
     setIsFetchingContext(true);
     try {
+      // 1. Fetch Weather from our new API
+      const weatherRes = await fetch('/api/weather');
+      const weatherData = await weatherRes.json();
+      
+      // 2. Fetch other context from Gemini
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
       const prompt = `Recherche les informations suivantes pour la semaine du ${weekDates[0]} à ${scheduleConfig.location}:
       1. Vacances scolaires (Zone A, B, C en France) et jours fériés.
-      2. Prévisions météo simplifiées pour chaque jour (matin et après-midi). Choisis parmi: SUN, CLOUD, RAIN, STORM, WIND.
-      3. Rappel rapide de la législation française sur le temps de travail (pauses, durée max, coupures).
+      2. Rappel rapide de la législation française sur le temps de travail (pauses, durée max, coupures).
       
       Réponds en JSON: { 
         "holidays": ["..."], 
-        "weather": "Résumé global...", 
         "legislation": "...",
         "dailyWeather": [
           { "date": "YYYY-MM-DD", "morning": "SUN/CLOUD/RAIN/STORM/WIND", "afternoon": "SUN/CLOUD/RAIN/STORM/WIND" },
@@ -150,7 +159,10 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       });
 
       const data = JSON.parse(response.text || '{}');
-      setExternalContext(data);
+      setExternalContext({
+        ...data,
+        weather: weatherData.title + ': ' + weatherData.description
+      });
     } catch (e) {
       console.error("Context Error", e);
     } finally {
@@ -207,32 +219,142 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
     printWindow.print();
   };
 
-  const handlePrefill = () => {
-    const planningWeeks = scheduleConfig.planningWeeks || 1;
-    const daysToSubtract = planningWeeks * 7;
-    const previousPeriodStart = new Date(currentDate);
-    previousPeriodStart.setDate(previousPeriodStart.getDate() - daysToSubtract);
+  const handlePrefill = (userId: string, date: string) => {
+    const dayOfWeek = new Date(date).getDay();
+    const hours = scheduleConfig.openingHours[dayOfWeek as keyof typeof scheduleConfig.openingHours];
     
-    const previousPeriodEnd = new Date(previousPeriodStart);
-    previousPeriodEnd.setDate(previousPeriodEnd.getDate() + daysToSubtract - 1);
+    if (hours && hours.isOpen) {
+      onSaveShift({
+        id: `shift_${Date.now()}_${Math.random()}`,
+        userId,
+        date,
+        startTime: hours.open,
+        endTime: hours.close,
+        type: 'SHIFT'
+      });
+    }
+  };
 
-    const previousShifts = staffShifts.filter(s => {
-      const d = new Date(s.date);
-      return d >= previousPeriodStart && d <= previousPeriodEnd;
+  const checkViolations = (userId: string, date: string, currentShifts?: StaffShift[]) => {
+    const shiftsToUse = currentShifts || staffShifts;
+    const userShifts = shiftsToUse
+      .filter(s => s.userId === userId && s.date === date)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    
+    if (userShifts.length === 0) return [];
+    
+    const violations: string[] = [];
+    const workShifts = userShifts.filter(s => s.type === 'SHIFT');
+    
+    // 1. Max Worked Time
+    const maxWorkedTime = scheduleConfig.maxWorkedTime;
+    let totalWorked = 0;
+    workShifts.forEach(s => {
+      const [sh, sm] = s.startTime.split(':').map(Number);
+      const [eh, em] = s.endTime.split(':').map(Number);
+      totalWorked += (eh * 60 + em) - (sh * 60 + sm);
     });
 
-    const newShifts: StaffShift[] = previousShifts.map(s => {
-      const d = new Date(s.date);
-      d.setDate(d.getDate() + daysToSubtract);
-      return {
-        ...s,
-        id: `shift_prefill_${Date.now()}_${Math.random()}`,
-        date: d.toISOString().split('T')[0],
-        isValidated: false
-      };
-    });
+    if (maxWorkedTime && totalWorked > maxWorkedTime) {
+      violations.push(`Temps de travail max dépassé (${formatDuration(totalWorked)} > ${formatDuration(maxWorkedTime)})`);
+    }
 
-    newShifts.forEach(s => onSaveShift(s));
+    // 2. Max Amplitude
+    const maxAmplitude = scheduleConfig.maxAmplitude;
+    if (userShifts.length > 0 && maxAmplitude) {
+      const first = userShifts[0];
+      const last = userShifts[userShifts.length - 1];
+      const [sh, sm] = first.startTime.split(':').map(Number);
+      const [eh, em] = last.endTime.split(':').map(Number);
+      const amplitude = (eh * 60 + em) - (sh * 60 + sm);
+      if (amplitude > maxAmplitude) {
+        violations.push(`Amplitude max dépassée (${formatDuration(amplitude)} > ${formatDuration(maxAmplitude)})`);
+      }
+    }
+
+    // 3. Max Continuous Work
+    const maxContinuousWorkTime = scheduleConfig.maxContinuousWorkTime;
+    if (maxContinuousWorkTime) {
+      workShifts.forEach(s => {
+        const [sh, sm] = s.startTime.split(':').map(Number);
+        const [eh, em] = s.endTime.split(':').map(Number);
+        const duration = (eh * 60 + em) - (sh * 60 + sm);
+        if (duration > maxContinuousWorkTime) {
+          violations.push(`Travail continu max dépassé (${formatDuration(duration)} > ${formatDuration(maxContinuousWorkTime)})`);
+        }
+      });
+    }
+
+    // 4. Max Split Time
+    const maxSplitTime = scheduleConfig.maxSplitTime;
+    if (maxSplitTime) {
+      const splitShifts = userShifts.filter(s => s.type === 'SPLIT');
+      splitShifts.forEach(s => {
+        const [sh, sm] = s.startTime.split(':').map(Number);
+        const [eh, em] = s.endTime.split(':').map(Number);
+        const duration = (eh * 60 + em) - (sh * 60 + sm);
+        if (duration > maxSplitTime) {
+          violations.push(`Coupure max dépassée (${formatDuration(duration)} > ${formatDuration(maxSplitTime)})`);
+        }
+      });
+    }
+
+    // 5. Daily Rest (Repos quotidien) - 11h min (CHR: 10h30 is alert, <10h30 is violation)
+    const prevDate = new Date(date);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDateStr = prevDate.toISOString().split('T')[0];
+    const prevDayShifts = shiftsToUse
+      .filter(s => s.userId === userId && s.date === prevDateStr && s.type === 'SHIFT')
+      .sort((a, b) => b.endTime.localeCompare(a.endTime));
+    
+    if (prevDayShifts.length > 0 && workShifts.length > 0) {
+      const lastShiftPrev = prevDayShifts[0];
+      const firstShiftToday = workShifts[0];
+      
+      const [ph, pm] = lastShiftPrev.endTime.split(':').map(Number);
+      const [th, tm] = firstShiftToday.startTime.split(':').map(Number);
+      
+      const restMinutes = (24 * 60 - (ph * 60 + pm)) + (th * 60 + tm);
+      
+      if (restMinutes < 10.5 * 60) {
+        violations.push(`Repos quotidien insuffisant (< 10h30: ${formatDuration(restMinutes)})`);
+      } else if (restMinutes < 11 * 60) {
+        violations.push(`Attention: Repos quotidien limite (entre 10h30 et 11h: ${formatDuration(restMinutes)})`);
+      }
+    }
+
+    // 6. Weekly Rest (Repos hebdomadaire) - 35h min
+    const allShiftsSorted = shiftsToUse
+      .filter(s => s.userId === userId && s.type === 'SHIFT')
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+    
+    if (allShiftsSorted.length > 1) {
+      let has35hRest = false;
+      for (let i = 0; i < allShiftsSorted.length - 1; i++) {
+        const s1 = allShiftsSorted[i];
+        const s2 = allShiftsSorted[i+1];
+        
+        const d1 = new Date(s1.date);
+        const [h1, m1] = s1.endTime.split(':').map(Number);
+        d1.setHours(h1, m1, 0, 0);
+        
+        const d2 = new Date(s2.date);
+        const [h2, m2] = s2.startTime.split(':').map(Number);
+        d2.setHours(h2, m2, 0, 0);
+        
+        const gapMinutes = (d2.getTime() - d1.getTime()) / (1000 * 60);
+        if (gapMinutes >= 35 * 60) {
+          has35hRest = true;
+          break;
+        }
+      }
+      
+      if (!has35hRest && workShifts.length > 0) {
+        violations.push(`Attention: Pas de repos hebdomadaire de 35h détecté cette semaine`);
+      }
+    }
+
+    return violations;
   };
 
   const handleOptimize = async () => {
@@ -457,6 +579,8 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
             mealReservations={mealReservations}
             config={scheduleConfig}
             events={events}
+            checkViolations={checkViolations}
+            formatDuration={formatDuration}
           />
         </>
       )}
@@ -554,7 +678,36 @@ const WeatherIcon = ({ type }: { type: string }) => {
   }
 };
 
-const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onSaveDailyAffluence, weekDates, days, timeSlots, visibleTimeSlots, visibleRange, visibleDuration, isRestrictedView, setIsRestrictedView, onSaveShift, onDeleteShift, currentDate, setCurrentDate, onOptimize, isOptimizing, onPrefill, onPrint, absenceRequests, dailyWeather, mealReservations, config, events }: {
+const PlanningGrid = ({
+  users,
+  staffShifts,
+  dailyAffluence,
+  activityMoments,
+  onSaveDailyAffluence,
+  weekDates,
+  days,
+  timeSlots,
+  visibleTimeSlots,
+  visibleRange,
+  visibleDuration,
+  isRestrictedView,
+  setIsRestrictedView,
+  onSaveShift,
+  onDeleteShift,
+  currentDate,
+  setCurrentDate,
+  onOptimize,
+  isOptimizing,
+  onPrefill,
+  onPrint,
+  absenceRequests,
+  dailyWeather,
+  mealReservations,
+  config,
+  events,
+  checkViolations,
+  formatDuration
+}: {
   users: User[],
   staffShifts: StaffShift[],
   dailyAffluence: DailyAffluence[],
@@ -574,13 +727,15 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
   setCurrentDate: (d: Date) => void,
   onOptimize: () => void,
   isOptimizing: boolean,
-  onPrefill: () => void,
+  onPrefill: (userId: string, date: string) => void,
   onPrint: () => void,
   absenceRequests: any[],
   dailyWeather?: { date: string, morning: string, afternoon: string }[],
   mealReservations: MealReservation[],
   config: ScheduleConfig,
-  events: Event[]
+  events: Event[],
+  checkViolations: (userId: string, date: string, currentShifts?: StaffShift[]) => string[],
+  formatDuration: (minutes: number) => string
 }) => {
   const [selectedShift, setSelectedShift] = useState<StaffShift | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -606,33 +761,84 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
   };
 
   const handleAddRest = (userId: string) => {
-    const userShifts = staffShifts.filter(s => s.userId === userId && s.date === currentDayDate && s.type === 'SHIFT');
-    let startTime = '08:00';
-    let duration = 24 * 60; // Default 24h
+    // Find the last work shift for this user before or on the current day
+    const allUserShifts = staffShifts
+      .filter(s => s.userId === userId && s.type === 'SHIFT')
+      .sort((a, b) => b.date.localeCompare(a.date) || b.endTime.localeCompare(a.endTime));
+    
+    const lastWorkShift = allUserShifts.find(s => s.date <= currentDayDate);
 
-    if (userShifts.length > 0) {
-      const lastShift = [...userShifts].sort((a, b) => b.endTime.localeCompare(a.endTime))[0];
-      startTime = lastShift.endTime;
-      duration = 35 * 60; // 35h if work shift exists
+    if (lastWorkShift) {
+      const lastWorkDate = new Date(lastWorkShift.date);
+      
+      // 1. Complete the last work day with rest until 23:59
+      const restDay0: StaffShift = {
+        id: `shift_rest0_${Date.now()}`,
+        userId,
+        date: lastWorkShift.date,
+        startTime: lastWorkShift.endTime,
+        endTime: '23:59',
+        type: 'REST',
+        isValidated: false
+      };
+      onSaveShift(restDay0);
+
+      // 2. Add 24h rest the following day
+      const nextDay = new Date(lastWorkDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayStr = nextDay.toISOString().split('T')[0];
+      
+      const restDay1: StaffShift = {
+        id: `shift_rest1_${Date.now()}`,
+        userId,
+        date: nextDayStr,
+        startTime: '00:00',
+        endTime: '23:59',
+        type: 'REST',
+        isValidated: false
+      };
+      onSaveShift(restDay1);
+
+      // 3. Add rest on Day 2 to reach 35h total
+      // Duration on Day 0: 23:59 - lastWorkShift.endTime
+      const [h, m] = lastWorkShift.endTime.split(':').map(Number);
+      const restDurationDay0Minutes = (23 * 60 + 59) - (h * 60 + m);
+      const remainingRestMinutes = (35 * 60) - (24 * 60) - restDurationDay0Minutes;
+      
+      if (remainingRestMinutes > 0) {
+        const day2 = new Date(nextDay);
+        day2.setDate(day2.getDate() + 1);
+        const day2Str = day2.toISOString().split('T')[0];
+        
+        const endH = Math.floor(remainingRestMinutes / 60);
+        const endM = remainingRestMinutes % 60;
+        const endTimeStr = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+
+        const restDay2: StaffShift = {
+          id: `shift_rest2_${Date.now()}`,
+          userId,
+          date: day2Str,
+          startTime: '00:00',
+          endTime: endTimeStr,
+          type: 'REST',
+          isValidated: false
+        };
+        onSaveShift(restDay2);
+      }
+    } else {
+      // Fallback if no work shift found
+      const newShift: StaffShift = {
+        id: `shift_rest_${Date.now()}`,
+        userId,
+        date: currentDayDate,
+        startTime: '00:00',
+        endTime: '23:59',
+        type: 'REST',
+        isValidated: false
+      };
+      setSelectedShift(newShift);
+      setIsModalOpen(true);
     }
-
-    const [sh, sm] = startTime.split(':').map(Number);
-    const endTotal = sh * 60 + sm + duration;
-    const eh = Math.floor(endTotal / 60) % 24;
-    const em = endTotal % 60;
-    const endTime = `${eh.toString().padStart(2, '0')}:${em.toString().padStart(2, '0')}`;
-
-    const newShift: StaffShift = {
-      id: `shift_rest_${Date.now()}`,
-      userId,
-      date: currentDayDate,
-      startTime,
-      endTime,
-      type: 'REST',
-      isValidated: false
-    };
-    setSelectedShift(newShift);
-    setIsModalOpen(true);
   };
 
   const handleSaveShiftWithSplitting = (newShift: StaffShift) => {
@@ -730,72 +936,6 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
     return totalMinutes;
   };
 
-  const checkViolations = (userId: string, date: string) => {
-    const userShifts = staffShifts
-      .filter(s => s.userId === userId && s.date === date)
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
-    
-    if (userShifts.length === 0) return [];
-    
-    const violations: string[] = [];
-    const workShifts = userShifts.filter(s => s.type === 'SHIFT');
-    
-    // 1. Max Worked Time
-    const maxWorkedTime = config.maxWorkedTime;
-    const totalWorked = calculateTotalWorkTime(userId, date);
-    if (maxWorkedTime && totalWorked > maxWorkedTime) {
-      violations.push(`Temps de travail max dépassé (${formatDuration(totalWorked)} > ${formatDuration(maxWorkedTime)})`);
-    }
-
-    // 2. Max Amplitude
-    const maxAmplitude = config.maxAmplitude;
-    if (userShifts.length > 0 && maxAmplitude) {
-      const first = userShifts[0];
-      const last = userShifts[userShifts.length - 1];
-      const [sh, sm] = first.startTime.split(':').map(Number);
-      const [eh, em] = last.endTime.split(':').map(Number);
-      const amplitude = (eh * 60 + em) - (sh * 60 + sm);
-      if (amplitude > maxAmplitude) {
-        violations.push(`Amplitude max dépassée (${formatDuration(amplitude)} > ${formatDuration(maxAmplitude)})`);
-      }
-    }
-
-    // 3. Max Continuous Work
-    const maxContinuousWorkTime = config.maxContinuousWorkTime;
-    if (maxContinuousWorkTime) {
-      workShifts.forEach(s => {
-        const [sh, sm] = s.startTime.split(':').map(Number);
-        const [eh, em] = s.endTime.split(':').map(Number);
-        const duration = (eh * 60 + em) - (sh * 60 + sm);
-        if (duration > maxContinuousWorkTime) {
-          violations.push(`Travail continu max dépassé (${formatDuration(duration)} > ${formatDuration(maxContinuousWorkTime)})`);
-        }
-      });
-    }
-
-    // 4. Max Split Time
-    const maxSplitTime = config.maxSplitTime;
-    if (maxSplitTime) {
-      const splitShifts = userShifts.filter(s => s.type === 'SPLIT');
-      splitShifts.forEach(s => {
-        const [sh, sm] = s.startTime.split(':').map(Number);
-        const [eh, em] = s.endTime.split(':').map(Number);
-        const duration = (eh * 60 + em) - (sh * 60 + sm);
-        if (duration > maxSplitTime) {
-          violations.push(`Coupure max dépassée (${formatDuration(duration)} > ${formatDuration(maxSplitTime)})`);
-        }
-      });
-    }
-
-    return violations;
-  };
-
-  const formatDuration = (minutes: number) => {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return `${h}h${m.toString().padStart(2, '0')}`;
-  };
-
   const timeToPercent = (time: string) => {
     const [h, m] = time.split(':').map(Number);
     return ((h * 60 + m) / (24 * 60)) * 100;
@@ -868,7 +1008,7 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
             Optimisation IA
           </button>
           <button 
-            onClick={onPrefill}
+            onClick={() => users.forEach(u => onPrefill(u.id, currentDayDate))}
             className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-sm transition-all border border-white/10"
           >
             <Copy className="w-4 h-4" />
@@ -1271,6 +1411,8 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
             onDeleteShift(id);
             setIsModalOpen(false);
           }}
+          checkViolations={checkViolations}
+          staffShifts={staffShifts}
         />
       )}
 
@@ -1321,14 +1463,24 @@ const PlanningGrid = ({ users, staffShifts, dailyAffluence, activityMoments, onS
   );
 };
 
-const ShiftModal = ({ shift, users, onClose, onSave, onDelete }: {
+const ShiftModal = ({ shift, users, onClose, onSave, onDelete, checkViolations, staffShifts }: {
   shift: StaffShift,
   users: User[],
   onClose: () => void,
   onSave: (s: StaffShift) => void,
-  onDelete: (id: string) => void
+  onDelete: (id: string) => void,
+  checkViolations: (userId: string, date: string, currentShifts?: StaffShift[]) => string[],
+  staffShifts: StaffShift[]
 }) => {
   const [editedShift, setEditedShift] = useState<StaffShift>({ ...shift });
+
+  const violations = useMemo(() => {
+    // Simulate the shifts with the edited one
+    const otherShifts = staffShifts.filter(s => s.id !== editedShift.id);
+    return checkViolations(editedShift.userId, editedShift.date, [...otherShifts, editedShift]);
+  }, [editedShift, staffShifts, checkViolations]);
+
+  const hasCriticalViolation = violations.some(v => v.includes('< 10h30'));
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -1340,7 +1492,25 @@ const ShiftModal = ({ shift, users, onClose, onSave, onDelete }: {
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+          {violations.length > 0 && (
+            <div className={`p-4 rounded-2xl border ${hasCriticalViolation ? 'bg-rose-500/10 border-rose-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className={`w-4 h-4 ${hasCriticalViolation ? 'text-rose-400' : 'text-amber-400'}`} />
+                <span className={`text-xs font-black uppercase tracking-widest ${hasCriticalViolation ? 'text-rose-400' : 'text-amber-400'}`}>
+                  {hasCriticalViolation ? 'Violation Critique' : 'Avertissement'}
+                </span>
+              </div>
+              <ul className="space-y-1">
+                {violations.map((v, i) => (
+                  <li key={i} className="text-[10px] text-slate-300 flex items-start gap-2">
+                    <span className="mt-1 w-1 h-1 rounded-full bg-slate-500 shrink-0" />
+                    {v}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div>
             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Employé</label>
             <select

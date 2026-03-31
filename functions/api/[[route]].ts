@@ -292,6 +292,34 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         });
     }
 
+    // --- NEW: ROUTE WEATHER RSS ---
+    if (request.method === 'GET' && path.includes('/weather')) {
+        try {
+            // Météo France RSS feed for Paris (example)
+            // We can use the location from scheduleConfig if we had it here, 
+            // but for now let's use a general one or a default.
+            const rssUrl = 'https://vigilance.meteofrance.fr/rss/vigilance.xml';
+            const response = await fetch(rssUrl);
+            const xml = await response.text();
+            
+            // Basic XML parsing (since we don't have a full DOM parser in Workers)
+            // We'll just extract the title and description of the first item
+            const titleMatch = xml.match(/<title>(.*?)<\/title>/);
+            const descMatch = xml.match(/<description>(.*?)<\/description>/);
+            
+            return new Response(JSON.stringify({ 
+                title: titleMatch ? titleMatch[1] : 'Météo France',
+                description: descMatch ? descMatch[1] : 'Pas de données disponibles',
+                raw: xml.substring(0, 1000) // For debugging
+            }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
+        } catch (e: any) {
+            return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+        }
+    }
+
     // --- 3. ROUTE DATA SYNC (SEGMENTÉE PAR SCOPE) ---
     if (request.method === 'GET' && path.includes('/data_sync')) {
         const scope = url.searchParams.get('scope'); 
