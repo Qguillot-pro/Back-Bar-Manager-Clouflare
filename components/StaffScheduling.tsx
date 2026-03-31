@@ -261,9 +261,10 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
 
     // 2. Max Amplitude
     const maxAmplitude = scheduleConfig.maxAmplitude;
-    if (userShifts.length > 0 && maxAmplitude) {
-      const first = userShifts[0];
-      const last = userShifts[userShifts.length - 1];
+    const activeShifts = userShifts.filter(s => s.type !== 'REST' && s.type !== 'ABSENCE');
+    if (activeShifts.length > 0 && maxAmplitude) {
+      const first = activeShifts[0];
+      const last = activeShifts[activeShifts.length - 1];
       const [sh, sm] = first.startTime.split(':').map(Number);
       const [eh, em] = last.endTime.split(':').map(Number);
       const amplitude = (eh * 60 + em) - (sh * 60 + sm);
