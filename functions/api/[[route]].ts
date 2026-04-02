@@ -319,56 +319,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 restDayPattern: s.rest_day_pattern
             };
         }
-            if (row.key === 'temp_item_duration') configMap.tempItemDuration = row.value;
-            if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
-            if (row.key === 'program_mapping') {
-                try {
-                    configMap.programMapping = JSON.parse(row.value);
-                } catch (e) {
-                    console.error("Error parsing program_mapping", e);
-                    configMap.programMapping = {};
-                }
-            }
-            if (row.key === 'program_thresholds') {
-                try {
-                    configMap.programThresholds = JSON.parse(row.value);
-                } catch (e) {
-                    console.error("Error parsing program_thresholds", e);
-                    configMap.programThresholds = {};
-                }
-            }
-            if (row.key === 'meal_reminder_times') {
-                try {
-                    configMap.mealReminderTimes = JSON.parse(row.value);
-                } catch (e) {
-                    configMap.mealReminderTimes = [];
-                }
-            }
-            if (row.key === 'bar_day_start') configMap.barDayStart = row.value;
-            if (row.key === 'email_sender') configMap.emailSender = row.value;
-            if (row.key === 'tva_rates') {
-                try {
-                    configMap.tvaRates = JSON.parse(row.value);
-                } catch (e) {
-                    configMap.tvaRates = [5.5, 10, 20];
-                }
-            }
-            if (row.key === 'schedule_config') {
-                try {
-                    configMap.scheduleConfig = JSON.parse(row.value);
-                } catch (e) {
-                    console.error("Error parsing schedule_config", e);
-                }
-            }
-            if (row.key === 'welcome_modal_tiles') {
-                try {
-                    configMap.welcomeModalTiles = JSON.parse(row.value);
-                } catch (e) {
-                    configMap.welcomeModalTiles = ['cocktails', 'messages', 'tasks', 'meals'];
-                }
-            }
-            if (row.key === 'welcome_modal_message') configMap.welcomeModalMessage = row.value;
-        });
 
         // Les configurations de cycles
         appConfig.rows.forEach((row: any) => {
