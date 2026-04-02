@@ -424,6 +424,7 @@ export interface ScheduleConfig {
     maxWorkedTime?: number; // minutes
     maxSplitTime?: number; // minutes
     maxContinuousWorkTime?: number; // minutes
+    customAiRules?: string;
 }
 
 export type StaffShiftType = 'SHIFT' | 'PAUSE' | 'SPLIT' | 'REST' | 'ABSENCE';

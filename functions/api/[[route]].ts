@@ -89,8 +89,38 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   try {
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS show_in_meal_planning BOOLEAN DEFAULT TRUE');
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_id TEXT');
+      // Migration V1.7: Add schedule_settings table
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS schedule_settings (
+              id TEXT PRIMARY KEY DEFAULT 'default',
+              max_amplitude INTEGER,
+              max_worked_time INTEGER,
+              max_split_time INTEGER,
+              max_continuous_work_time INTEGER,
+              custom_ai_rules TEXT,
+              location TEXT,
+              weather_refresh_minutes INTEGER,
+              planning_weeks INTEGER,
+              planning_scale INTEGER,
+              opening_hours TEXT,
+              setup_time_minutes INTEGER,
+              closing_time_minutes INTEGER,
+              default_break_minutes INTEGER,
+              split_shift_allowed BOOLEAN,
+              contract_type TEXT,
+              rest_day_pattern TEXT
+          )
+      `);
+      // Initialize with default if empty
+      const settingsCheck = await pool.query('SELECT COUNT(*) FROM schedule_settings');
+      if (parseInt(settingsCheck.rows[0].count) === 0) {
+          await pool.query(`
+              INSERT INTO schedule_settings (id, location, weather_refresh_minutes, max_amplitude, max_worked_time, max_split_time, max_continuous_work_time, planning_weeks, planning_scale, setup_time_minutes, closing_time_minutes, default_break_minutes, split_shift_allowed, contract_type, rest_day_pattern)
+              VALUES ('default', 'Paris', 30, 780, 600, 240, 360, 1, 60, 30, 30, 30, false, '35H', 'CONTINUOUS')
+          `);
+      }
   } catch (e) {
-      console.log("Migration users columns skipped or already done");
+      console.log("Migration V1.7 skipped or already done", e);
   }
 
   // Migration Messages: Add is_archived and read_by if missing
@@ -203,15 +233,92 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // --- 2. ROUTE INIT AUTH ---
     if (request.method === 'GET' && path.includes('/init')) {
-        const [users, appConfig, roleProfiles, permissions] = await Promise.all([
+        const [users, appConfig, roleProfiles, permissions, scheduleSettings] = await Promise.all([
             pool.query('SELECT * FROM users'),
             pool.query('SELECT * FROM app_config'),
             pool.query('SELECT * FROM role_profiles'),
-            pool.query('SELECT * FROM permissions')
+            pool.query('SELECT * FROM permissions'),
+            pool.query('SELECT * FROM schedule_settings WHERE id = \'default\'')
         ]);
 
         const configMap: any = { tempItemDuration: '14_DAYS', defaultMargin: 82 };
         appConfig.rows.forEach((row: any) => {
+            if (row.key === 'temp_item_duration') configMap.tempItemDuration = row.value;
+            if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
+            if (row.key === 'program_mapping') {
+                try {
+                    configMap.programMapping = JSON.parse(row.value);
+                } catch (e) {
+                    console.error("Error parsing program_mapping", e);
+                    configMap.programMapping = {};
+                }
+            }
+            if (row.key === 'program_thresholds') {
+                try {
+                    configMap.programThresholds = JSON.parse(row.value);
+                } catch (e) {
+                    console.error("Error parsing program_thresholds", e);
+                    configMap.programThresholds = {};
+                }
+            }
+            if (row.key === 'meal_reminder_times') {
+                try {
+                    configMap.mealReminderTimes = JSON.parse(row.value);
+                } catch (e) {
+                    configMap.mealReminderTimes = [];
+                }
+            }
+            if (row.key === 'bar_day_start') configMap.barDayStart = row.value;
+            if (row.key === 'email_sender') configMap.emailSender = row.value;
+            if (row.key === 'tva_rates') {
+                try {
+                    configMap.tvaRates = JSON.parse(row.value);
+                } catch (e) {
+                    configMap.tvaRates = [5.5, 10, 20];
+                }
+            }
+            if (row.key === 'schedule_config') {
+                try {
+                    configMap.scheduleConfig = JSON.parse(row.value);
+                } catch (e) {
+                    console.error("Error parsing schedule_config", e);
+                }
+            }
+            if (row.key === 'welcome_modal_tiles') {
+                try {
+                    configMap.welcomeModalTiles = JSON.parse(row.value);
+                } catch (e) {
+                    configMap.welcomeModalTiles = ['cocktails', 'messages', 'tasks', 'meals'];
+                }
+            }
+            if (row.key === 'welcome_modal_message') configMap.welcomeModalMessage = row.value;
+        });
+
+        if (scheduleSettings.rows.length > 0) {
+            const s = scheduleSettings.rows[0];
+            let openingHours = {};
+            try { openingHours = JSON.parse(s.opening_hours || '{}'); } catch(e) {}
+            
+            configMap.scheduleConfig = {
+                ...(configMap.scheduleConfig || {}),
+                maxAmplitude: s.max_amplitude,
+                maxWorkedTime: s.max_worked_time,
+                maxSplitTime: s.max_split_time,
+                maxContinuousWorkTime: s.max_continuous_work_time,
+                customAiRules: s.custom_ai_rules,
+                location: s.location,
+                weatherRefreshMinutes: s.weather_refresh_minutes,
+                planningWeeks: s.planning_weeks,
+                planningScale: s.planning_scale,
+                openingHours: Object.keys(openingHours).length > 0 ? openingHours : (configMap.scheduleConfig?.openingHours),
+                setupTimeMinutes: s.setup_time_minutes,
+                closingTimeMinutes: s.closing_time_minutes,
+                defaultBreakMinutes: s.default_break_minutes,
+                splitShiftAllowed: s.split_shift_allowed,
+                contractType: s.contract_type,
+                restDayPattern: s.rest_day_pattern
+            };
+        }
             if (row.key === 'temp_item_duration') configMap.tempItemDuration = row.value;
             if (row.key === 'default_margin') configMap.defaultMargin = parseInt(row.value);
             if (row.key === 'program_mapping') {
@@ -525,6 +632,40 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'DELETE_EVENT': { await pool.query('DELETE FROM events WHERE id = $1', [payload.id]); break; }
         case 'SAVE_EVENT_COMMENT': { await pool.query(`INSERT INTO event_comments (id, event_id, user_name, content, created_at) VALUES ($1, $2, $3, $4, NOW())`, [payload.id, payload.eventId, payload.userName, payload.content]); break; }
         case 'SAVE_DAILY_COCKTAIL': { const { id, date, type, recipeId, customName, customDescription } = payload; await pool.query(`INSERT INTO daily_cocktails (id, date, type, recipe_id, custom_name, custom_description) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET recipe_id = EXCLUDED.recipe_id, custom_name = EXCLUDED.custom_name, custom_description = EXCLUDED.custom_description`, [id, date, type, recipeId, customName, customDescription]); break; }
+        case 'SAVE_SCHEDULE_SETTINGS': {
+            const s = payload;
+            await pool.query(`
+                INSERT INTO schedule_settings (
+                    id, max_amplitude, max_worked_time, max_split_time, max_continuous_work_time, 
+                    custom_ai_rules, location, weather_refresh_minutes, planning_weeks, planning_scale, 
+                    opening_hours, setup_time_minutes, closing_time_minutes, default_break_minutes, 
+                    split_shift_allowed, contract_type, rest_day_pattern
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                ON CONFLICT (id) DO UPDATE SET 
+                    max_amplitude = EXCLUDED.max_amplitude,
+                    max_worked_time = EXCLUDED.max_worked_time,
+                    max_split_time = EXCLUDED.max_split_time,
+                    max_continuous_work_time = EXCLUDED.max_continuous_work_time,
+                    custom_ai_rules = EXCLUDED.custom_ai_rules,
+                    location = EXCLUDED.location,
+                    weather_refresh_minutes = EXCLUDED.weather_refresh_minutes,
+                    planning_weeks = EXCLUDED.planning_weeks,
+                    planning_scale = EXCLUDED.planning_scale,
+                    opening_hours = EXCLUDED.opening_hours,
+                    setup_time_minutes = EXCLUDED.setup_time_minutes,
+                    closing_time_minutes = EXCLUDED.closing_time_minutes,
+                    default_break_minutes = EXCLUDED.default_break_minutes,
+                    split_shift_allowed = EXCLUDED.split_shift_allowed,
+                    contract_type = EXCLUDED.contract_type,
+                    rest_day_pattern = EXCLUDED.rest_day_pattern
+            `, [
+                'default', s.maxAmplitude, s.maxWorkedTime, s.maxSplitTime, s.maxContinuousWorkTime,
+                s.customAiRules, s.location, s.weatherRefreshMinutes, s.planningWeeks, s.planningScale,
+                JSON.stringify(s.openingHours), s.setupTimeMinutes, s.closingTimeMinutes, s.defaultBreakMinutes,
+                s.splitShiftAllowed, s.contractType, s.restDayPattern
+            ]);
+            break;
+        }
         case 'SAVE_CONFIG': { await pool.query(`INSERT INTO app_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [payload.key, String(payload.value)]); break; }
         case 'SAVE_ITEM': { const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt, isInventoryOnly, isNoStock, inventoryLocation } = payload; await pool.query(`INSERT INTO items (id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, is_consigne, sort_order, is_draft, is_temporary, is_inventory_only, is_no_stock, inventory_location, created_at, last_updated) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, NOW()), NOW()) ON CONFLICT (id) DO UPDATE SET article_code = EXCLUDED.article_code, name = EXCLUDED.name, category = EXCLUDED.category, format_id = EXCLUDED.format_id, price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, dlc_profile_id = EXCLUDED.dlc_profile_id, is_consigne = EXCLUDED.is_consigne, sort_order = EXCLUDED.sort_order, is_draft = EXCLUDED.is_draft, is_temporary = EXCLUDED.is_temporary, is_inventory_only = EXCLUDED.is_inventory_only, is_no_stock = EXCLUDED.is_no_stock, inventory_location = EXCLUDED.inventory_location, last_updated = NOW()`, [id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, isInventoryOnly, isNoStock, inventoryLocation, createdAt]); break; }
         case 'DELETE_ITEM': { await pool.query('DELETE FROM items WHERE id = $1', [payload.id]); break; }

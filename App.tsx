@@ -123,7 +123,14 @@ const App: React.FC = () => {
     restDayPattern: 'CONTINUOUS',
     contractType: '35H',
     location: 'Paris',
-    weatherRefreshMinutes: 30
+    weatherRefreshMinutes: 30,
+    customAiRules: '',
+    maxAmplitude: 780, // 13h
+    maxWorkedTime: 600, // 10h
+    maxSplitTime: 240, // 4h
+    maxContinuousWorkTime: 360, // 6h
+    planningWeeks: 1,
+    planningScale: 60
   });
 
   const syncData = async (action: string, payload: any) => {
@@ -252,7 +259,12 @@ const App: React.FC = () => {
         setRoleProfiles(data.roleProfiles || []);
         if (data.appConfig) {
             setAppConfig(prev => ({...prev, ...data.appConfig}));
-            if (data.appConfig.scheduleConfig) setScheduleConfig(data.appConfig.scheduleConfig);
+            if (data.appConfig.scheduleConfig) {
+                setScheduleConfig(prev => ({
+                    ...prev,
+                    ...data.appConfig.scheduleConfig
+                }));
+            }
         }
         fetchFullData();
     } catch (error) { setLoading(false); }
@@ -323,7 +335,11 @@ const App: React.FC = () => {
       'scheduleConfig': 'schedule_config'
     };
     const dbKey = mapping[k] || k;
-    syncData('SAVE_CONFIG', {key: dbKey, value: JSON.stringify(v)});
+    if (k === 'scheduleConfig') {
+      syncData('SAVE_SCHEDULE_SETTINGS', v);
+    } else {
+      syncData('SAVE_CONFIG', {key: dbKey, value: JSON.stringify(v)});
+    }
   };
 
   const userPermissions = useMemo(() => {

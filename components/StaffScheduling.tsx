@@ -384,6 +384,9 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       const ai = new GoogleGenAI({ apiKey });
       const prompt = `Optimise le planning du staff pour la semaine du ${weekDates[0]} au ${weekDates[6]}.
       
+      CONTEXTE EXTERNE:
+      - Météo prévue: ${JSON.stringify(externalContext.dailyWeather)}
+      
       CONTRAINTES:
       - Horaires d'ouverture: ${JSON.stringify(scheduleConfig.openingHours)}
       - Temps de préparation: ${scheduleConfig.setupTimeMinutes} min
@@ -396,8 +399,11 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       - Affluence prévue: ${JSON.stringify(dailyAffluence)}
       - Absences approuvées: ${JSON.stringify(absenceRequests.filter(a => a.status === 'APPROVED'))}
       
+      RÈGLES PERSONNALISÉES DU MANAGER:
+      ${scheduleConfig.customAiRules || "Aucune règle spécifique."}
+      
       OBJECTIF:
-      Générer un planning équilibré respectant toutes les contraintes.
+      Générer un planning équilibré respectant toutes les contraintes et les règles personnalisées.
       Utilise les types de tuiles: SHIFT (travail), PAUSE (pause non payée), SPLIT (coupure).
       
       Réponds UNIQUEMENT en JSON (tableau d'objets StaffShift):
@@ -1806,10 +1812,33 @@ const ConfigManager = ({ config, onSave }: {
 }) => {
   const [editedConfig, setEditedConfig] = useState<ScheduleConfig>({ ...config });
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   React.useEffect(() => {
     setEditedConfig({ ...config });
   }, [config]);
+
+  React.useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (editedConfig.location.length >= 3) {
+        try {
+          const res = await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(editedConfig.location)}&limit=5&fields=nom,code,codesPostaux`);
+          const data = await res.json();
+          setCitySuggestions(data.map((c: any) => `${c.nom} (${c.codesPostaux[0]})`));
+          setShowSuggestions(true);
+        } catch (e) {
+          console.error("City suggestion error", e);
+        }
+      } else {
+        setCitySuggestions([]);
+        setShowSuggestions(false);
+      }
+    };
+
+    const timer = setTimeout(fetchSuggestions, 300);
+    return () => clearTimeout(timer);
+  }, [editedConfig.location]);
 
   const handleLocationSearch = async () => {
     setIsSearchingLocation(true);
@@ -1954,7 +1983,10 @@ const ConfigManager = ({ config, onSave }: {
                 type="number"
                 step="0.5"
                 value={editedConfig.maxAmplitude ? editedConfig.maxAmplitude / 60 : ''}
-                onChange={(e) => setEditedConfig({ ...editedConfig, maxAmplitude: parseFloat(e.target.value) * 60 })}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setEditedConfig({ ...editedConfig, maxAmplitude: isNaN(val) ? undefined : val * 60 });
+                }}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
@@ -1964,7 +1996,10 @@ const ConfigManager = ({ config, onSave }: {
                 type="number"
                 step="0.5"
                 value={editedConfig.maxWorkedTime ? editedConfig.maxWorkedTime / 60 : ''}
-                onChange={(e) => setEditedConfig({ ...editedConfig, maxWorkedTime: parseFloat(e.target.value) * 60 })}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setEditedConfig({ ...editedConfig, maxWorkedTime: isNaN(val) ? undefined : val * 60 });
+                }}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
@@ -1974,7 +2009,10 @@ const ConfigManager = ({ config, onSave }: {
                 type="number"
                 step="0.5"
                 value={editedConfig.maxSplitTime ? editedConfig.maxSplitTime / 60 : ''}
-                onChange={(e) => setEditedConfig({ ...editedConfig, maxSplitTime: parseFloat(e.target.value) * 60 })}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setEditedConfig({ ...editedConfig, maxSplitTime: isNaN(val) ? undefined : val * 60 });
+                }}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
@@ -1984,7 +2022,10 @@ const ConfigManager = ({ config, onSave }: {
                 type="number"
                 step="0.5"
                 value={editedConfig.maxContinuousWorkTime ? editedConfig.maxContinuousWorkTime / 60 : ''}
-                onChange={(e) => setEditedConfig({ ...editedConfig, maxContinuousWorkTime: parseFloat(e.target.value) * 60 })}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setEditedConfig({ ...editedConfig, maxContinuousWorkTime: isNaN(val) ? undefined : val * 60 });
+                }}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
             </div>
@@ -2010,9 +2051,26 @@ const ConfigManager = ({ config, onSave }: {
                     type="text"
                     value={editedConfig.location}
                     onChange={(e) => setEditedConfig({ ...editedConfig, location: e.target.value })}
+                    onFocus={() => editedConfig.location.length >= 3 && setShowSuggestions(true)}
                     placeholder="Ville, Pays..."
                     className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 pl-10 text-white focus:ring-2 focus:ring-indigo-500"
                   />
+                  {showSuggestions && citySuggestions.length > 0 && (
+                    <div className="absolute z-50 left-0 right-0 mt-2 bg-slate-800 border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+                      {citySuggestions.map((city, idx) => (
+                        <button
+                          key={idx}
+                          className="w-full text-left px-4 py-3 text-sm text-slate-200 hover:bg-indigo-600 transition-colors border-b border-white/5 last:border-0"
+                          onClick={() => {
+                            setEditedConfig({ ...editedConfig, location: city });
+                            setShowSuggestions(false);
+                          }}
+                        >
+                          {city}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={handleLocationSearch}
@@ -2033,6 +2091,23 @@ const ConfigManager = ({ config, onSave }: {
               />
               <label htmlFor="splitAllowed" className="text-sm font-bold text-slate-300">Coupures autorisées par défaut</label>
             </div>
+          </div>
+          
+          {/* Règles IA Personnalisées */}
+          <div className="mt-8 space-y-4">
+            <h4 className="text-xs font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              Règles d'Optimisation IA Personnalisées
+            </h4>
+            <textarea
+              value={editedConfig.customAiRules || ''}
+              onChange={(e) => setEditedConfig({ ...editedConfig, customAiRules: e.target.value })}
+              placeholder="Ex: Privilégier 2 jours de repos consécutifs, mettre au minimum 2 agents en permanence, 4 agents en forte affluence et beau temps..."
+              className="w-full bg-slate-900 border border-white/10 rounded-2xl p-4 text-white text-sm min-h-[120px] focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-slate-600"
+            />
+            <p className="text-[10px] text-slate-500 italic">
+              Ces instructions seront directement transmises à l'IA lors de la génération automatique du planning.
+            </p>
           </div>
         </div>
       </div>
