@@ -122,7 +122,8 @@ const App: React.FC = () => {
     splitShiftAllowed: false,
     restDayPattern: 'CONTINUOUS',
     contractType: '35H',
-    location: 'Paris'
+    location: 'Paris',
+    weatherRefreshMinutes: 30
   });
 
   const syncData = async (action: string, payload: any) => {
@@ -318,7 +319,8 @@ const App: React.FC = () => {
       'programMapping': 'program_mapping',
       'mealReminderTimes': 'meal_reminder_times',
       'barDayStart': 'bar_day_start',
-      'emailSender': 'email_sender'
+      'emailSender': 'email_sender',
+      'scheduleConfig': 'schedule_config'
     };
     const dbKey = mapping[k] || k;
     syncData('SAVE_CONFIG', {key: dbKey, value: JSON.stringify(v)});

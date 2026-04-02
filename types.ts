@@ -419,6 +419,7 @@ export interface ScheduleConfig {
     restDayPattern: 'CONTINUOUS' | 'SPLIT';
     planningWeeks?: number; // 1, 2, 3, 4
     planningScale?: number; // 60, 30, 15, 5 (minutes)
+    weatherRefreshMinutes?: number; // 5, 15, 30, 60
     maxAmplitude?: number; // minutes
     maxWorkedTime?: number; // minutes
     maxSplitTime?: number; // minutes

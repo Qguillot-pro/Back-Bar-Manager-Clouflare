@@ -58,6 +58,19 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
     dailyWeather: []
   });
 
+  // Weather Refresh Logic
+  React.useEffect(() => {
+    const refreshMinutes = scheduleConfig.weatherRefreshMinutes || 30;
+    const interval = setInterval(() => {
+      handleFetchContext();
+    }, refreshMinutes * 60 * 1000);
+    
+    // Initial fetch
+    handleFetchContext();
+    
+    return () => clearInterval(interval);
+  }, [scheduleConfig.weatherRefreshMinutes, scheduleConfig.location]);
+
   const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
   const timeSlots = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
 
@@ -138,7 +151,10 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       const weatherData = await weatherRes.json();
       
       // 2. Fetch other context from Gemini
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+      const apiKey = (process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).GEMINI_API_KEY) as string;
+      if (!apiKey) throw new Error('API Key missing');
+      
+      const ai = new GoogleGenAI({ apiKey });
       const prompt = `Recherche les informations suivantes pour la semaine du ${weekDates[0]} à ${scheduleConfig.location}:
       1. Vacances scolaires (Zone A, B, C en France) et jours fériés.
       2. Rappel rapide de la législation française sur le temps de travail (pauses, durée max, coupures).
@@ -318,22 +334,26 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
       const restMinutes = (24 * 60 - (ph * 60 + pm)) + (th * 60 + tm);
       
       if (restMinutes < 10.5 * 60) {
-        violations.push(`Repos quotidien insuffisant (< 10h30: ${formatDuration(restMinutes)})`);
+        violations.push(`ALERTE CRITIQUE: Repos quotidien < 10h30 (${formatDuration(restMinutes)}). INTERDIT par la réglementation CHR.`);
       } else if (restMinutes < 11 * 60) {
-        violations.push(`Attention: Repos quotidien limite (entre 10h30 et 11h: ${formatDuration(restMinutes)})`);
+        violations.push(`ALERTE: Repos quotidien entre 10h30 et 11h (${formatDuration(restMinutes)}).`);
       }
     }
 
     // 6. Weekly Rest (Repos hebdomadaire) - 35h min
     const allShiftsSorted = shiftsToUse
-      .filter(s => s.userId === userId && s.type === 'SHIFT')
+      .filter(s => s.userId === userId && (s.type === 'SHIFT' || s.type === 'REST'))
       .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
     
     if (allShiftsSorted.length > 1) {
-      let has35hRest = false;
+      let maxRestGap = 0;
       for (let i = 0; i < allShiftsSorted.length - 1; i++) {
         const s1 = allShiftsSorted[i];
         const s2 = allShiftsSorted[i+1];
+        
+        // Only calculate gap between end of a shift/rest and start of next shift/rest
+        // But specifically we want a gap of 35h total rest.
+        // A REST shift is already rest.
         
         const d1 = new Date(s1.date);
         const [h1, m1] = s1.endTime.split(':').map(Number);
@@ -344,14 +364,11 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
         d2.setHours(h2, m2, 0, 0);
         
         const gapMinutes = (d2.getTime() - d1.getTime()) / (1000 * 60);
-        if (gapMinutes >= 35 * 60) {
-          has35hRest = true;
-          break;
-        }
+        if (gapMinutes > maxRestGap) maxRestGap = gapMinutes;
       }
       
-      if (!has35hRest && workShifts.length > 0) {
-        violations.push(`Attention: Pas de repos hebdomadaire de 35h détecté cette semaine`);
+      if (maxRestGap < 35 * 60 && workShifts.length > 0) {
+        violations.push(`ALERTE CRITIQUE: Pas de repos hebdomadaire de 35h consécutives détecté (${formatDuration(maxRestGap)} max).`);
       }
     }
 
@@ -361,7 +378,10 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   const handleOptimize = async () => {
     setIsOptimizing(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+      const apiKey = (process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).GEMINI_API_KEY) as string;
+      if (!apiKey) throw new Error('API Key missing');
+      
+      const ai = new GoogleGenAI({ apiKey });
       const prompt = `Optimise le planning du staff pour la semaine du ${weekDates[0]} au ${weekDates[6]}.
       
       CONTRAINTES:
@@ -652,13 +672,13 @@ const WeeklySummary = ({ users, staffShifts, weekDates, planningWeeks }: {
         const avgHours = (totalPeriodMinutes / 60) / planningWeeks;
 
         return (
-          <div key={user.id} className="bg-slate-900/50 border border-white/10 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{user.name}</span>
+          <div key={user.id} className="bg-slate-800 border-2 border-indigo-500/50 p-4 rounded-2xl flex flex-col items-center justify-center text-center shadow-2xl backdrop-blur-md">
+            <span className="text-[10px] font-black text-slate-100 uppercase tracking-widest mb-1">{user.name}</span>
             <div className="flex items-baseline gap-1">
-              <span className="text-lg font-black text-white">{weeklyHours.toFixed(1)}h</span>
-              <span className="text-[10px] font-bold text-slate-400">/ sem</span>
+              <span className="text-xl font-black text-white">{weeklyHours.toFixed(1)}h</span>
+              <span className="text-[10px] font-bold text-slate-200">/ sem</span>
             </div>
-            <div className="text-[9px] font-bold text-indigo-400 mt-1 uppercase tracking-tighter">
+            <div className="text-[10px] font-black text-indigo-100 mt-2 px-3 py-1 bg-indigo-600 rounded-full uppercase tracking-tighter border border-indigo-400/30">
               Moy: {avgHours.toFixed(1)}h
             </div>
           </div>
@@ -1794,7 +1814,10 @@ const ConfigManager = ({ config, onSave }: {
   const handleLocationSearch = async () => {
     setIsSearchingLocation(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+      const apiKey = (process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).GEMINI_API_KEY) as string;
+      if (!apiKey) throw new Error('API Key missing');
+      
+      const ai = new GoogleGenAI({ apiKey });
       const prompt = `Valide et formate l'adresse suivante pour une utilisation météo: "${editedConfig.location}". 
       Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
       
@@ -1964,6 +1987,19 @@ const ConfigManager = ({ config, onSave }: {
                 onChange={(e) => setEditedConfig({ ...editedConfig, maxContinuousWorkTime: parseFloat(e.target.value) * 60 })}
                 className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
               />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Actualisation Météo</label>
+              <select
+                value={editedConfig.weatherRefreshMinutes || 30}
+                onChange={(e) => setEditedConfig({ ...editedConfig, weatherRefreshMinutes: parseInt(e.target.value) })}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-white"
+              >
+                <option value={5}>5 Minutes</option>
+                <option value={15}>15 Minutes</option>
+                <option value={30}>30 Minutes</option>
+                <option value={60}>1 Heure</option>
+              </select>
             </div>
             <div>
               <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Ville (Météo)</label>

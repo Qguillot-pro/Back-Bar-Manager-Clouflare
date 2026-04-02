@@ -109,11 +109,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       console.log("Migration role_profiles columns skipped or already done");
   }
 
-  // Migration V1.6: Add is_no_stock to items
+  // Migration V1.6: Add is_no_stock to items and app_config table
   try {
       await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS is_no_stock BOOLEAN DEFAULT FALSE');
+      await pool.query(`
+          CREATE TABLE IF NOT EXISTS app_config (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+          )
+      `);
   } catch (e) {
-      console.log("Migration is_no_stock items skipped or already done");
+      console.log("Migration V1.6 skipped or already done", e);
   }
 
   // Migration V1.5: Add work_shifts and activity_moments tables
@@ -125,9 +131,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               date TEXT NOT NULL,
               start_time TEXT NOT NULL,
               end_time TEXT NOT NULL,
-              type TEXT NOT NULL
+              type TEXT NOT NULL,
+              is_validated BOOLEAN DEFAULT FALSE,
+              role TEXT
           )
       `);
+      await pool.query('ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS is_validated BOOLEAN DEFAULT FALSE');
+      await pool.query('ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS role TEXT');
+      
       await pool.query(`
           CREATE TABLE IF NOT EXISTS daily_affluence (
               id TEXT PRIMARY KEY,
@@ -295,22 +306,31 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     // --- NEW: ROUTE WEATHER RSS ---
     if (request.method === 'GET' && path.includes('/weather')) {
         try {
-            // Météo France RSS feed for Paris (example)
-            // We can use the location from scheduleConfig if we had it here, 
-            // but for now let's use a general one or a default.
+            const client = await pool.connect();
+            let location = 'Paris';
+            try {
+                const configRes = await client.query("SELECT value FROM app_config WHERE key = 'schedule_config'");
+                if (configRes.rows.length > 0) {
+                    const config = JSON.parse(configRes.rows[0].value);
+                    location = config.location || 'Paris';
+                }
+            } finally {
+                client.release();
+            }
+
+            // Météo France RSS feed for the location (fallback to vigilance if city not found)
             const rssUrl = 'https://vigilance.meteofrance.fr/rss/vigilance.xml';
             const response = await fetch(rssUrl);
             const xml = await response.text();
             
-            // Basic XML parsing (since we don't have a full DOM parser in Workers)
-            // We'll just extract the title and description of the first item
             const titleMatch = xml.match(/<title>(.*?)<\/title>/);
             const descMatch = xml.match(/<description>(.*?)<\/description>/);
             
             return new Response(JSON.stringify({ 
                 title: titleMatch ? titleMatch[1] : 'Météo France',
                 description: descMatch ? descMatch[1] : 'Pas de données disponibles',
-                raw: xml.substring(0, 1000) // For debugging
+                location: location,
+                raw: xml.substring(0, 1000)
             }), {
                 status: 200,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
@@ -453,7 +473,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             id: r.id, userId: r.user_id, date: r.date, slot: r.slot 
         }));
         if (rawData.staffShifts) responseBody.staffShifts = rawData.staffShifts.map((s: any) => ({
-            id: s.id, userId: s.user_id, date: s.date, startTime: s.start_time, endTime: s.end_time, type: s.type
+            id: s.id, userId: s.user_id, date: s.date, startTime: s.start_time, endTime: s.end_time, type: s.type,
+            isValidated: s.is_validated, role: s.role
         }));
         if (rawData.dailyAffluence) responseBody.dailyAffluence = rawData.dailyAffluence.map((a: any) => ({
             id: a.id, date: a.date, time: a.time, level: a.level
@@ -611,14 +632,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
 
         case 'SAVE_STAFF_SHIFT': {
-            const { id, userId, date, startTime, endTime, type } = payload;
+            const { id, userId, date, startTime, endTime, type, isValidated, role } = payload;
             await pool.query(`
-                INSERT INTO staff_shifts (id, user_id, date, start_time, end_time, type)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO staff_shifts (id, user_id, date, start_time, end_time, type, is_validated, role)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (id) DO UPDATE SET
                 user_id = EXCLUDED.user_id, date = EXCLUDED.date, start_time = EXCLUDED.start_time,
-                end_time = EXCLUDED.end_time, type = EXCLUDED.type
-            `, [id, userId, date, startTime, endTime, type]);
+                end_time = EXCLUDED.end_time, type = EXCLUDED.type, is_validated = EXCLUDED.is_validated,
+                role = EXCLUDED.role
+            `, [id, userId, date, startTime, endTime, type, isValidated || false, role]);
             break;
         }
         case 'DELETE_STAFF_SHIFT': { await pool.query('DELETE FROM staff_shifts WHERE id = $1', [payload.id]); break; }
