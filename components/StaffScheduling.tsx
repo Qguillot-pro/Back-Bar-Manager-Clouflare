@@ -788,83 +788,87 @@ const PlanningGrid = ({
   };
 
   const handleAddRest = (userId: string) => {
-    // Find the last work shift for this user before or on the current day
-    const allUserShifts = staffShifts
-      .filter(s => s.userId === userId && s.type === 'SHIFT')
-      .sort((a, b) => b.date.localeCompare(a.date) || b.endTime.localeCompare(a.endTime));
-    
-    const lastWorkShift = allUserShifts.find(s => s.date <= currentDayDate);
+    const targetDate = currentDayDate;
+    const prevDateObj = new Date(targetDate);
+    prevDateObj.setDate(prevDateObj.getDate() - 1);
+    const prevDate = prevDateObj.toISOString().split('T')[0];
 
-    if (lastWorkShift) {
-      const lastWorkDate = new Date(lastWorkShift.date);
+    const workShiftsOnTarget = staffShifts.filter(s => s.userId === userId && s.date === targetDate && s.type === 'SHIFT');
+    const workShiftsOnPrev = staffShifts.filter(s => s.userId === userId && s.date === prevDate && s.type === 'SHIFT');
+
+    if (workShiftsOnTarget.length > 0) {
+      // 1. Le début par défaut du repos commence à la dernière heure de la journée de travail et finit à 00:00.
+      const lastShift = [...workShiftsOnTarget].sort((a, b) => b.endTime.localeCompare(a.endTime))[0];
       
-      // 1. Complete the last work day with rest until 23:59
-      const restDay0: StaffShift = {
-        id: `shift_rest0_${Date.now()}`,
+      const restDayJ: StaffShift = {
+        id: `rest_j_${Date.now()}`,
         userId,
-        date: lastWorkShift.date,
-        startTime: lastWorkShift.endTime,
+        date: targetDate,
+        startTime: lastShift.endTime,
         endTime: '23:59',
         type: 'REST',
         isValidated: false
       };
-      onSaveShift(restDay0);
+      onSaveShift(restDayJ);
 
-      // 2. Add 24h rest the following day
-      const nextDay = new Date(lastWorkDate);
-      nextDay.setDate(nextDay.getDate() + 1);
-      const nextDayStr = nextDay.toISOString().split('T')[0];
-      
-      const restDay1: StaffShift = {
-        id: `shift_rest1_${Date.now()}`,
-        userId,
-        date: nextDayStr,
-        startTime: '00:00',
-        endTime: '23:59',
-        type: 'REST',
-        isValidated: false
-      };
-      onSaveShift(restDay1);
+      // 2. Créé automatiquement un repos le jour suivant de 00:00 à (35 - durée repos J-1)
+      const [h, m] = lastShift.endTime.split(':').map(Number);
+      const durationJMinutes = (24 * 60) - (h * 60 + m);
+      const remainingRestMinutes = (35 * 60) - durationJMinutes;
 
-      // 3. Add rest on Day 2 to reach 35h total
-      // Duration on Day 0: 23:59 - lastWorkShift.endTime
-      const [h, m] = lastWorkShift.endTime.split(':').map(Number);
-      const restDurationDay0Minutes = (23 * 60 + 59) - (h * 60 + m);
-      const remainingRestMinutes = (35 * 60) - (24 * 60) - restDurationDay0Minutes;
-      
       if (remainingRestMinutes > 0) {
-        const day2 = new Date(nextDay);
-        day2.setDate(day2.getDate() + 1);
-        const day2Str = day2.toISOString().split('T')[0];
-        
-        const endH = Math.floor(remainingRestMinutes / 60);
-        const endM = remainingRestMinutes % 60;
-        const endTimeStr = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+        let currentRemaining = remainingRestMinutes;
+        let d = 1;
+        while (currentRemaining > 0) {
+          const dayObj = new Date(targetDate);
+          dayObj.setDate(dayObj.getDate() + d);
+          const dayStr = dayObj.toISOString().split('T')[0];
+          
+          const minutesThisDay = Math.min(currentRemaining, 24 * 60);
+          const endH = Math.floor(minutesThisDay / 60);
+          const endM = Math.round(minutesThisDay % 60);
+          const endTimeStr = (minutesThisDay >= 1439) ? '23:59' : `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
 
-        const restDay2: StaffShift = {
-          id: `shift_rest2_${Date.now()}`,
+          const restNext: StaffShift = {
+            id: `rest_next_${Date.now()}_${dayStr}`,
+            userId,
+            date: dayStr,
+            startTime: '00:00',
+            endTime: endTimeStr,
+            type: 'REST',
+            isValidated: false
+          };
+          onSaveShift(restNext);
+          currentRemaining -= minutesThisDay;
+          d++;
+        }
+      }
+    } else {
+      // 3. S'il n'y a pas de shift de travail à J-1, alors repos de 24h (00:00 à 00:00)
+      if (workShiftsOnPrev.length === 0) {
+        const rest24h: StaffShift = {
+          id: `rest_24h_${Date.now()}`,
           userId,
-          date: day2Str,
+          date: targetDate,
           startTime: '00:00',
-          endTime: endTimeStr,
+          endTime: '23:59',
           type: 'REST',
           isValidated: false
         };
-        onSaveShift(restDay2);
+        onSaveShift(rest24h);
+      } else {
+        // Fallback: 24h rest on target day
+        const restDefault: StaffShift = {
+          id: `rest_default_${Date.now()}`,
+          userId,
+          date: targetDate,
+          startTime: '00:00',
+          endTime: '23:59',
+          type: 'REST',
+          isValidated: false
+        };
+        onSaveShift(restDefault);
       }
-    } else {
-      // Fallback if no work shift found
-      const newShift: StaffShift = {
-        id: `shift_rest_${Date.now()}`,
-        userId,
-        date: currentDayDate,
-        startTime: '00:00',
-        endTime: '23:59',
-        type: 'REST',
-        isValidated: false
-      };
-      setSelectedShift(newShift);
-      setIsModalOpen(true);
     }
   };
 
