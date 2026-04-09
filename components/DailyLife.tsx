@@ -46,9 +46,45 @@ const getBarDateStr = (d: Date = new Date(), startTime: string = '04:00') => {
 const toLocalISOString = (dateStr: string) => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
-    const offset = date.getTimezoneOffset() * 60000;
-    const localDate = new Date(date.getTime() - offset);
-    return localDate.toISOString().slice(0, 16);
+    
+    // Force Europe/Paris for display in datetime-local
+    try {
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Europe/Paris',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        const parts = formatter.formatToParts(date);
+        const getPart = (type: string) => parts.find(p => p.type === type)?.value;
+        // en-CA gives YYYY-MM-DD
+        return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
+    } catch (e) {
+        // Fallback to old logic if Intl fails
+        const offset = date.getTimezoneOffset() * 60000;
+        const localDate = new Date(date.getTime() - offset);
+        return localDate.toISOString().slice(0, 16);
+    }
+};
+
+const fromParisToUTC = (parisDateStr: string) => {
+    if (!parisDateStr) return '';
+    const date = new Date(parisDateStr);
+    
+    // If the browser is already in Europe/Paris, Date(string) is correct.
+    // If not, we need to adjust.
+    try {
+        // We want to find the UTC time that, when converted to Europe/Paris, gives parisDateStr
+        // This is a bit complex without a library, but we can approximate by calculating the offset
+        const luxonDate = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
+        const diff = date.getTime() - luxonDate.getTime();
+        return new Date(date.getTime() + diff).toISOString();
+    } catch (e) {
+        return date.toISOString();
+    }
 };
 
 const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycleConfig, saveCycleConfig, appConfig, saveConfig }: { 
@@ -381,8 +417,8 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       const evt: Event = {
           id: selectedEvent ? selectedEvent.id : 'evt_' + Date.now(),
           title: newEventTitle,
-          startTime: new Date(newEventStart).toISOString(),
-          endTime: new Date(newEventEnd).toISOString(),
+          startTime: fromParisToUTC(newEventStart),
+          endTime: fromParisToUTC(newEventEnd),
           location: newEventLocation,
           guestsCount: parseInt(newEventGuests) || 0,
           description: newEventDesc,

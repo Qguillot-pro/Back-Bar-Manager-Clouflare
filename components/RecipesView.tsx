@@ -25,6 +25,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
   const [viewMode, setViewMode] = useState<'CATEGORIES' | 'LIST' | 'CREATE' | 'DETAIL'>('CATEGORIES');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -179,18 +180,60 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           count: recipes.filter(r => r.category === cat.name).length
       }));
 
+      const searchResults = searchQuery.trim() 
+        ? recipes.filter(r => normalizeText(r.name).includes(normalizeText(searchQuery)))
+        : [];
+
       return (
           <div className="space-y-8 animate-in fade-in">
-              <div className="flex justify-between items-center bg-white p-6 rounded-3xl border shadow-sm">
+              <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-3xl border shadow-sm gap-4">
                   <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                       <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
                       Recettes Cocktails
                   </h2>
+                  
+                  <div className="flex-1 max-w-md w-full relative">
+                      <input 
+                        type="text"
+                        placeholder="Rechercher un cocktail..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-10 font-bold text-sm outline-none focus:ring-2 focus:ring-pink-100 transition-all"
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                      />
+                      <svg className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      {searchQuery && (
+                          <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">✕</button>
+                      )}
+                  </div>
+
                   <button onClick={() => { setEditingId(null); setNewName(''); setNewIngredients([]); setViewMode('CREATE'); }} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-all">+ Créer</button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                  {/* Carte du Moment Tile */}
+              {searchQuery.trim() ? (
+                  <div className="space-y-6">
+                      <h3 className="font-black text-xs uppercase text-slate-400 tracking-widest ml-2">Résultats de recherche ({searchResults.length})</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
+                          {searchResults.map(r => (
+                              <div key={r.id} onClick={() => { setSelectedRecipe(r); setViewMode('DETAIL'); }} className="bg-white p-6 rounded-3xl border border-slate-100 hover:border-pink-300 hover:shadow-xl cursor-pointer transition-all group">
+                                  <div className="flex justify-between items-start mb-2">
+                                      <h3 className="font-black text-lg text-slate-800 group-hover:text-pink-600 transition-colors">{r.name}</h3>
+                                      <span className="text-[8px] font-black text-slate-400 uppercase bg-slate-50 px-2 py-1 rounded-full">{r.category}</span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 mt-2 line-clamp-2 italic font-medium leading-relaxed">"{r.description}"</p>
+                                  <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                                      <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{r.technique}</span>
+                                      {canEditStock && <span className="font-black text-slate-900 text-sm">{r.sellingPrice?.toFixed(2)} €</span>}
+                                  </div>
+                              </div>
+                          ))}
+                          {searchResults.length === 0 && <p className="col-span-full text-center py-20 text-slate-400 italic">Aucun cocktail trouvé pour "{searchQuery}".</p>}
+                      </div>
+                  </div>
+              ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                      {/* Carte du Moment Tile */}
                   <div 
                     onClick={() => handleSelectCategory('Carte du Moment')}
                     className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 shadow-xl hover:shadow-2xl hover:scale-[1.02] cursor-pointer transition-all flex flex-col items-center justify-center h-48 gap-3 group relative overflow-hidden"
@@ -237,6 +280,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       </div>
                   )}
               </div>
+          )}
           </div>
       );
   }
@@ -486,12 +530,11 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                                   const isOutOfStock = ing.itemId && stock <= 0;
 
                                   return (
-                                      <li key={i} className={`flex justify-between items-center text-sm font-bold bg-slate-50/50 px-4 py-3 rounded-2xl group hover:bg-slate-50 transition-colors ${isOutOfStock ? 'border border-rose-200 bg-rose-50/30' : ''}`}>
+                                      <li key={i} className="flex justify-between items-center text-sm font-bold bg-slate-50/50 px-4 py-3 rounded-2xl group hover:bg-slate-50 transition-colors">
                                           <span className="flex items-center gap-3">
-                                              <div className={`w-2 h-2 rounded-full ${isOutOfStock ? 'bg-rose-500 animate-pulse' : 'bg-indigo-500'}`}></div>
+                                              <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
                                               <div className="flex flex-col">
-                                                  <span className={isOutOfStock ? 'text-rose-700' : 'text-slate-700'}>{item?.name || ing.tempName}</span>
-                                                  {isOutOfStock && <span className="text-[9px] font-black uppercase text-rose-500 tracking-widest">⚠️ Rupture de stock</span>}
+                                                  <span className="text-slate-700">{item?.name || ing.tempName}</span>
                                               </div>
                                           </span>
                                           <span className="bg-white px-3 py-1 rounded-xl text-slate-900 border border-slate-200 font-black">{ing.quantity} {ing.unit}</span>
