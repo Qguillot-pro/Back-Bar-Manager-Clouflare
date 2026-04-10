@@ -157,7 +157,10 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
     const map = new Map<string, AggregatedNeed>();
     const getPrio = (itemId: string, storageId: string) => {
         if (storageId === 's0') return 11;
-        return priorities.find(p => p.itemId === itemId && p.storageId === storageId)?.priority || 0;
+        const p = priorities.find(p => p.itemId === itemId && p.storageId === storageId)?.priority || 0;
+        const consigne = consignes.find(c => c.itemId === itemId && c.storageId === storageId);
+        if (p === 0 && (consigne?.minQuantity || 0) > 0) return 1;
+        return p;
     };
 
     effectiveConsignes.forEach((storageMap, itemId) => {

@@ -27,7 +27,8 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
       ? items.filter(i => i.isTemporary) 
       : items).filter(i => 
           normalizeText(i.name).includes(normalizeText(searchTerm)) || 
-          (i.articleCode && normalizeText(i.articleCode).includes(normalizeText(searchTerm)))
+          (i.articleCode && normalizeText(i.articleCode).includes(normalizeText(searchTerm))) ||
+          (i.isDraft && normalizeText('brouillon').includes(normalizeText(searchTerm)))
       );
 
   const updateItem = (id: string, field: keyof StockItem, value: any) => {
@@ -42,7 +43,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
   };
 
   const integrateItem = (item: StockItem) => {
-      const updated = { ...item, isTemporary: false };
+      const updated = { ...item, isTemporary: false, isDraft: false };
       setItems(prev => prev.map(i => i.id === item.id ? updated : i));
       onSync('SAVE_ITEM', updated);
   };
@@ -148,16 +149,31 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
             </div>
 
             {userRole === 'ADMIN' && filter === 'ALL' && (
-                <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm shrink-0">
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${!isReorderMode ? 'text-slate-400' : 'text-slate-300'}`}>Lecture</span>
-                    <button 
-                        onClick={() => { setIsReorderMode(!isReorderMode); setSearchTerm(''); }} 
-                        className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${isReorderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} 
-                        aria-label="Activer le mode réorganisation"
-                    >
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-300 ${isReorderMode ? 'left-7' : 'left-1'}`}></div>
-                    </button>
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${isReorderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Réorganiser</span>
+                <div className="flex items-center gap-4">
+                    {items.some(i => i.isDraft && !i.isTemporary) && (
+                        <button 
+                            onClick={() => {
+                                if (window.confirm("Valider tous les articles en brouillon ?")) {
+                                    const drafts = items.filter(i => i.isDraft && !i.isTemporary);
+                                    drafts.forEach(d => integrateItem(d));
+                                }
+                            }}
+                            className="bg-indigo-100 text-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+                        >
+                            Tout Valider
+                        </button>
+                    )}
+                    <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm shrink-0">
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${!isReorderMode ? 'text-slate-400' : 'text-slate-300'}`}>Lecture</span>
+                        <button 
+                            onClick={() => { setIsReorderMode(!isReorderMode); setSearchTerm(''); }} 
+                            className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${isReorderMode ? 'bg-indigo-600' : 'bg-slate-200'}`} 
+                            aria-label="Activer le mode réorganisation"
+                        >
+                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-300 ${isReorderMode ? 'left-7' : 'left-1'}`}></div>
+                        </button>
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${isReorderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Réorganiser</span>
+                    </div>
                 </div>
             )}
         </div>
@@ -179,7 +195,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
           </thead>
           <tbody className="divide-y divide-slate-100">
             {displayedItems.map((item, index) => (
-              <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors group relative ${item.isTemporary ? 'bg-amber-50/30' : ''}`}>
+              <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors group relative ${item.isTemporary ? 'bg-amber-50/30' : (item.isDraft ? 'bg-indigo-50/20' : '')}`}>
                 
                 {isReorderMode && (
                     <td className="p-6 text-center">
@@ -211,6 +227,7 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                     disabled={isReorderMode}
                   />
                   {item.isTemporary && <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest mt-1 block">Temporaire</span>}
+                  {item.isDraft && !item.isTemporary && <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-1 block">Brouillon (Inactif)</span>}
                 </td>
                 <td className="p-6">
                   <input 
@@ -302,27 +319,27 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                   />
                 </td>
                 <td className="p-6 text-center relative z-10 flex items-center justify-center gap-2">
-                  {userRole === 'ADMIN' && item.isTemporary && !isReorderMode && (
+                  {userRole === 'ADMIN' && (item.isTemporary || item.isDraft) && !isReorderMode && (
                       <div className="flex gap-2">
                           <button 
                             type="button"
                             onClick={() => handleSafeDelete(item)}
                             className="bg-rose-500 text-white px-3 py-1.5 rounded-lg font-black text-[9px] uppercase hover:bg-rose-600 shadow-sm transition-all"
-                            title="Refuser et Supprimer"
+                            title="Supprimer"
                           >
-                              Refuser
+                              {item.isTemporary ? 'Refuser' : 'Supprimer'}
                           </button>
                           <button 
                             type="button"
                             onClick={() => integrateItem(item)}
                             className="bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-black text-[9px] uppercase hover:bg-emerald-600 shadow-sm transition-all"
-                            title="Valider l'intégration définitive"
+                            title="Valider l'article"
                           >
-                              Intégrer
+                              {item.isTemporary ? 'Intégrer' : 'Valider'}
                           </button>
                       </div>
                   )}
-                  {userRole === 'ADMIN' && !item.isTemporary && !isReorderMode && (
+                  {userRole === 'ADMIN' && !item.isTemporary && !item.isDraft && !isReorderMode && (
                     <button 
                       type="button"
                       onClick={(e) => {

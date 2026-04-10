@@ -126,7 +126,7 @@ const Configuration: React.FC<ConfigProps> = ({
       onSync('SAVE_CONFIG', { key, value: typeof value === 'object' ? JSON.stringify(value) : value });
   };
 
-  const addProduct = () => { if (!itemName) return; const newItem: StockItem = { id: Math.random().toString(36).substr(2, 9), articleCode: itemArticleCode, name: itemName, category: itemCat, formatId: itemFormat, pricePerUnit: 0, lastUpdated: new Date().toISOString(), isDLC: itemIsDlc, dlcProfileId: itemIsDlc ? itemDlcProfile : undefined, isConsigne: itemIsConsigne, isNoStock: itemIsNoStock, order: items.length, isDraft: true }; setItems(prev => [...prev, newItem]); onSync('SAVE_ITEM', newItem); setItemName(''); setItemArticleCode(''); setItemIsDlc(false); setItemIsNoStock(false); };
+  const addProduct = () => { if (!itemName) return; const newItem: StockItem = { id: Math.random().toString(36).substr(2, 9), articleCode: itemArticleCode, name: itemName, category: itemCat, formatId: itemFormat, pricePerUnit: 0, lastUpdated: new Date().toISOString(), isDLC: itemIsDlc, dlcProfileId: itemIsDlc ? itemDlcProfile : undefined, isConsigne: itemIsConsigne, isNoStock: itemIsNoStock, order: items.length, isDraft: false }; setItems(prev => [...prev, newItem]); onSync('SAVE_ITEM', newItem); setItemName(''); setItemArticleCode(''); setItemIsDlc(false); setItemIsNoStock(false); };
   
   const addFormat = () => { if (!formatName) return; const newFormat: Format = { id: 'f' + Date.now(), name: formatName, value: formatValue, order: formats.length + 1 }; setFormats(prev => [...prev, newFormat]); onSync('SAVE_FORMAT', newFormat); setFormatName(''); setFormatValue(0); };
   const deleteFormat = (id: string) => { setFormats(prev => prev.filter(f => f.id !== id)); onSync('DELETE_FORMAT', { id }); };

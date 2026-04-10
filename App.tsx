@@ -611,7 +611,10 @@ const App: React.FC = () => {
       
       const getPrio = (sid: string) => {
           if (sid === 's0') return -1;
-          return itemPriorities.find(p => p.storageId === sid)?.priority || 0;
+          const p = itemPriorities.find(p => p.storageId === sid)?.priority || 0;
+          const consigne = consignes.find(c => c.itemId === itemId && c.storageId === sid);
+          if (p === 0 && (consigne?.minQuantity || 0) > 0) return 1;
+          return p;
       };
 
       const commitTrans = (sid: string, amount: number, tType: 'IN' | 'OUT', newQ: number) => {
