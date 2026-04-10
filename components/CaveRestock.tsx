@@ -131,10 +131,10 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
         const itemPriorities = priorities.filter(p => p.itemId === item.id && p.storageId !== 's0').sort((a, b) => b.priority - a.priority);
 
         itemConsignes.forEach(c => {
-            const minQty = c.minQuantity;
+            const minQty = Number(c.minQuantity);
             if (minQty > 0 && minQty < 1) { 
                 const level = stockLevels.find(l => l.itemId === item.id && l.storageId === c.storageId);
-                const currentQty = level?.currentQuantity || 0;
+                const currentQty = Number(level?.currentQuantity || 0);
 
                 if (currentQty < minQty) {
                     const currentPriority = priorities.find(p => p.itemId === item.id && p.storageId === c.storageId)?.priority || 0;
@@ -172,14 +172,15 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
             const storage = storages.find(s => s.id === storageId);
             if (!storage) return;
             const priority = getPrio(itemId, storageId);
-            if (priority === 0 && storageId !== 's0') return;
+            // On autorise l'affichage si c'est une redirection ou un événement, même si la priorité est 0
+            if (priority === 0 && storageId !== 's0' && !data.isRedirected && !data.isEvent) return;
 
             const level = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
-            const currentQty = level?.currentQuantity || 0;
-            const effectiveQty = Math.ceil(currentQty);
+            const currentQty = Number(level?.currentQuantity || 0);
+            const minQty = Number(data.minQty);
             
-            if (effectiveQty < data.minQty) {
-                const gap = Math.ceil(data.minQty - effectiveQty);
+            if (currentQty < minQty) {
+                const gap = Math.ceil(minQty - currentQty);
                 if (gap > 0) {
                     if (!map.has(itemId)) {
                         map.set(itemId, { item, totalGap: 0, maxPriority: 0, details: [], isUrgent: isUrgentUnfulfilled(itemId), isEventRelated: false });
