@@ -44,6 +44,9 @@ export interface AppConfig {
   tvaRates?: number[]; // [5.5, 10, 20]
   welcomeModalTiles?: string[]; // ["cocktails", "messages", "tasks", "meals"]
   welcomeModalMessage?: string; // Max 250 chars
+  weatherCity?: string;
+  weatherLat?: number;
+  weatherLon?: number;
   // Stockage des configurations de cycles en JSON string dans la DB, mais typé ici si besoin
   [key: string]: any; 
 }
@@ -428,3 +431,11 @@ export interface ScheduleConfig {
 }
 
 export type StaffShiftType = 'SHIFT' | 'PAUSE' | 'SPLIT' | 'REST' | 'ABSENCE';
+
+export interface WeatherData {
+  temp: number;
+  condition: string;
+  windSpeed: number;
+  isRaining: boolean;
+  timestamp: string;
+}

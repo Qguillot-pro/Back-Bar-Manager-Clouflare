@@ -83,6 +83,7 @@ const Configuration: React.FC<ConfigProps> = ({
   const [newUserShowInMealPlanning, setNewUserShowInMealPlanning] = useState(true);
   const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
   const [dbCheckResult, setDbCheckResult] = useState<{ tables: Record<string, boolean>, columns: Record<string, boolean> } | null>(null);
+  const [weatherSuggestions, setWeatherSuggestions] = useState<any[]>([]);
 
   // DLC Profile State
   const [newDlcName, setNewDlcName] = useState('');
@@ -430,6 +431,56 @@ const Configuration: React.FC<ConfigProps> = ({
                             onChange={e => handleConfigChange('barDayStart', e.target.value)}
                         />
                         <p className="text-[9px] text-slate-400 ml-1">Heure à laquelle la journée "logique" change (ex: 04:00 pour inclure la nuit).</p>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Lieu (Météo)</label>
+                        <div className="relative">
+                            <input 
+                                type="text"
+                                className="w-full bg-slate-50 p-4 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"
+                                placeholder="Rechercher une ville..."
+                                value={appConfig.weatherCity || ''}
+                                onChange={async (e) => {
+                                    const val = e.target.value;
+                                    handleConfigChange('weatherCity', val);
+                                    if (val.length > 2) {
+                                        try {
+                                            const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${val}&count=5&language=fr&format=json`);
+                                            const data = await res.json();
+                                            if (data.results && data.results.length > 0) {
+                                                setWeatherSuggestions(data.results);
+                                            } else {
+                                                setWeatherSuggestions([]);
+                                            }
+                                        } catch (err) {
+                                            console.error("Geocoding error", err);
+                                            setWeatherSuggestions([]);
+                                        }
+                                    } else {
+                                        setWeatherSuggestions([]);
+                                    }
+                                }}
+                            />
+                            {weatherSuggestions.length > 0 && (
+                                <div className="absolute z-50 w-full bg-white border border-slate-200 rounded-xl mt-1 shadow-xl max-h-48 overflow-y-auto">
+                                    {weatherSuggestions.map((s: any) => (
+                                        <button 
+                                            key={s.id}
+                                            className="w-full text-left px-4 py-2 hover:bg-slate-50 text-xs font-bold border-b border-slate-100 last:border-0"
+                                            onClick={() => {
+                                                handleConfigChange('weatherCity', s.name + (s.admin1 ? `, ${s.admin1}` : '') + `, ${s.country}`);
+                                                handleConfigChange('weatherLat', s.latitude);
+                                                handleConfigChange('weatherLon', s.longitude);
+                                                setWeatherSuggestions([]);
+                                            }}
+                                        >
+                                            {s.name} <span className="text-slate-400 font-medium">({s.admin1}, {s.country})</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-[9px] text-slate-400 ml-1">Lieu utilisé pour les prévisions météo et alertes.</p>
                     </div>
                 </div>
                 

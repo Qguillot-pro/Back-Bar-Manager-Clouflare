@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig, CocktailCategory, MealReservation } from '../types';
+import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig, CocktailCategory, MealReservation, WeatherData } from '../types';
 
 interface DailyLifeProps {
   tasks: Task[];
@@ -27,6 +27,7 @@ interface DailyLifeProps {
   users?: User[];
   mealReservations?: MealReservation[];
   setMealReservations?: React.Dispatch<React.SetStateAction<MealReservation[]>>;
+  weatherData?: WeatherData | null;
 }
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -234,7 +235,7 @@ const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycle
 const DailyLife: React.FC<DailyLifeProps> = ({ 
     tasks, events, eventComments, currentUser, items, onSync, setTasks, setEvents, setEventComments, 
     dailyCocktails = [], setDailyCocktails, recipes = [], onCreateTemporaryItem, stockLevels = [], orders = [], glassware = [],
-    appConfig, saveConfig, initialTab, cocktailCategories = [], onEditTask, users = [], mealReservations = [], setMealReservations
+    appConfig, saveConfig, initialTab, cocktailCategories = [], onEditTask, users = [], mealReservations = [], setMealReservations, weatherData
 }) => {
   const [activeTab, setActiveTab] = useState<'TASKS' | 'CALENDAR' | 'COCKTAILS' | 'MEALS'>('TASKS');
   const [configCycleType, setConfigCycleType] = useState<DailyCocktailType | null>(null); 
@@ -829,8 +830,11 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                   <h3 className="font-black text-sm uppercase flex items-center gap-2"><span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>Événements à venir</h3>
                   <button onClick={() => openEventModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-700 shadow-lg">+ Créer</button>
               </div>
-              <div className="space-y-4">
-                  {events.sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()).map(e => (
+              <div className="space-y-4 mb-10">
+                  {events
+                    .filter(e => new Date(e.endTime) >= new Date())
+                    .sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+                    .map(e => (
                       <div key={e.id} onClick={() => openEventModal(e)} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 cursor-pointer transition-all">
                           <div className="flex gap-4">
                               <div className="bg-white rounded-xl p-3 text-center min-w-[60px] border">
@@ -844,6 +848,35 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                           </div>
                       </div>
                   ))}
+                  {events.filter(e => new Date(e.endTime) >= new Date()).length === 0 && (
+                      <p className="text-center text-slate-400 italic text-sm py-4">Aucun événement à venir.</p>
+                  )}
+              </div>
+
+              <div className="pt-6 border-t border-slate-100">
+                  <h3 className="font-black text-sm uppercase flex items-center gap-2 mb-6 text-slate-400"><span className="w-1.5 h-4 bg-slate-300 rounded-full"></span>Événements passés</h3>
+                  <div className="space-y-4 opacity-60">
+                      {events
+                        .filter(e => new Date(e.endTime) < new Date())
+                        .sort((a,b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+                        .map(e => (
+                          <div key={e.id} onClick={() => openEventModal(e)} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-slate-200 cursor-pointer transition-all">
+                              <div className="flex gap-4 items-center">
+                                  <div className="bg-white rounded-xl p-2 text-center min-w-[50px] border">
+                                      <span className="block text-[10px] font-black text-slate-400 uppercase">{new Date(e.startTime).toLocaleString('fr-FR', {month:'short'})}</span>
+                                      <span className="block text-lg font-black text-slate-600">{new Date(e.startTime).getDate()}</span>
+                                  </div>
+                                  <div>
+                                      <h4 className="font-bold text-slate-600 text-sm">{e.title}</h4>
+                                      <p className="text-[10px] font-bold text-slate-400">{new Date(e.startTime).toLocaleDateString()} - {e.location || 'Bar'}</p>
+                                  </div>
+                              </div>
+                          </div>
+                      ))}
+                      {events.filter(e => new Date(e.endTime) < new Date()).length === 0 && (
+                          <p className="text-center text-slate-400 italic text-sm py-4">Aucun événement passé.</p>
+                      )}
+                  </div>
               </div>
           </div>
       )}

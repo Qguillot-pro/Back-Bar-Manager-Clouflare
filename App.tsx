@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, StaffShift, DailyAffluence, ActivityMoment, ScheduleConfig, MealReservation, CycleConfig } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, StaffShift, DailyAffluence, ActivityMoment, ScheduleConfig, MealReservation, CycleConfig, WeatherData } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -106,6 +106,8 @@ const App: React.FC = () => {
   const [dailyAffluence, setDailyAffluence] = useState<DailyAffluence[]>([]);
   const [activityMoments, setActivityMoments] = useState<ActivityMoment[]>([]);
   const [absenceRequests, setAbsenceRequests] = useState<any[]>([]);
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [weatherAlertModal, setWeatherAlertModal] = useState<{ title: string, body: string } | null>(null);
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
     openingHours: {
       0: { open: '10:00', close: '22:00', isOpen: true },
@@ -477,6 +479,80 @@ const App: React.FC = () => {
   }, [loading, dataSyncing, checkDailyAlerts]);
 
   useEffect(() => { fetchAuthData(); }, []);
+
+  // WEATHER FETCHING & ALERTS
+  useEffect(() => {
+    if (!appConfig.weatherLat || !appConfig.weatherLon) return;
+
+    const getWeatherCondition = (code: number) => {
+      if (code === 0) return 'Dégagé';
+      if (code <= 3) return 'Partiellement nuageux';
+      if (code <= 48) return 'Brouillard';
+      if (code <= 57) return 'Bruine';
+      if (code <= 67) return 'Pluie';
+      if (code <= 77) return 'Neige';
+      if (code <= 82) return 'Averses';
+      if (code <= 86) return 'Averses de neige';
+      if (code <= 99) return 'Orage';
+      return 'Inconnu';
+    };
+
+    const fetchWeather = async () => {
+      try {
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${appConfig.weatherLat}&longitude=${appConfig.weatherLon}&current=temperature_2m,weather_code,wind_speed_10m&minutely_15=precipitation&forecast_days=1`);
+        const data = await res.json();
+        
+        if (data.current) {
+          const isRaining = data.minutely_15?.precipitation?.some((p: number) => p > 0) || false;
+          const newWeather: WeatherData = {
+            temp: data.current.temperature_2m,
+            condition: getWeatherCondition(data.current.weather_code),
+            windSpeed: data.current.wind_speed_10m,
+            isRaining,
+            timestamp: new Date().toISOString()
+          };
+          setWeatherData(newWeather);
+          
+          // Alerts
+          if (newWeather.windSpeed > 40) {
+            triggerWeatherAlert("Vent fort (> 40 km/h)", "Fermer les parasols !");
+          }
+          if (newWeather.isRaining) {
+            triggerWeatherAlert("Pluie détectée", "Rentrer le matériel extérieur !");
+          }
+        }
+      } catch (err) {
+        console.error("Weather fetch error", err);
+      }
+    };
+
+    const triggerWeatherAlert = (title: string, body: string) => {
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body });
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            new Notification(title, { body });
+          }
+        });
+      }
+      // We'll also show a visual alert in the UI via messages or a dedicated alert system
+      const alertMsg: Message = {
+        id: 'weather_alert_' + Date.now(),
+        content: `⚠️ ALERTE MÉTÉO : ${title}. ${body}`,
+        userName: 'Système Météo',
+        date: new Date().toISOString(),
+        isArchived: false
+      };
+      setMessages(prev => [alertMsg, ...prev]);
+      // Note: we don't sync this system message to DB to avoid cluttering, or we could.
+      setWeatherAlertModal({ title, body });
+    };
+
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 30 * 60 * 1000); // 30 minutes
+    return () => clearInterval(interval);
+  }, [appConfig.weatherLat, appConfig.weatherLon]);
 
   // SESSION TIMEOUT LOGIC (3 HOURS)
   useEffect(() => {
@@ -1171,9 +1247,9 @@ const App: React.FC = () => {
 
       <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 relative">
           {isTestMode && <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-black uppercase px-2 py-1 z-[100] rounded-bl-lg">Mode Test Actif - Aucune Sauvegarde</div>}
-          {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} tasks={tasks} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} users={users} mealReservations={mealReservations} />}
+          {view === 'dashboard' && <Dashboard items={items} stockLevels={stockLevels} consignes={consignes} categories={categories} dlcHistory={dlcHistory} dlcProfiles={dlcProfiles} userRole={currentUser.role} transactions={transactions} messages={messages} events={events} tasks={tasks} onNavigate={setView} onSendMessage={(text) => { const m: Message = { id: 'msg_'+Date.now(), content: text, userName: currentUser.name, date: new Date().toISOString(), isArchived: false, readBy: [] }; setMessages(p=>[m, ...p]); syncData('SAVE_MESSAGE', m); }} onArchiveMessage={(id) => { setMessages(p=>p.map(m=>m.id===id?{...m, isArchived:true}:m)); syncData('UPDATE_MESSAGE', {id, isArchived:true}); }} appConfig={appConfig} dailyCocktails={dailyCocktails} recipes={recipes} glassware={glassware} onUpdateDailyCocktail={(dc) => { setDailyCocktails(prev => { const idx = prev.findIndex(c => c.id === dc.id); if (idx >= 0) { const copy = [...prev]; copy[idx] = dc; return copy; } return [...prev, dc]; }); syncData('SAVE_DAILY_COCKTAIL', dc); }} users={users} mealReservations={mealReservations} weatherData={weatherData} />}
           {view === 'messages' && <MessagesView messages={messages} currentUserRole={currentUser.role} currentUserName={currentUser.name} onSync={syncData} setMessages={setMessages} />}
-          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={saveConfig} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} users={users} mealReservations={mealReservations} setMealReservations={setMealReservations} />}
+          {view.startsWith('daily_life') && <DailyLife tasks={tasks} events={events} eventComments={eventComments} currentUser={currentUser} items={items} onSync={syncData} setTasks={setTasks} setEvents={setEvents} setEventComments={setEventComments} dailyCocktails={dailyCocktails} setDailyCocktails={setDailyCocktails} recipes={recipes} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} stockLevels={stockLevels} orders={orders} glassware={glassware} appConfig={appConfig} saveConfig={saveConfig} initialTab={view.includes(':') ? view.split(':')[1] : 'TASKS'} cocktailCategories={cocktailCategories} onEditTask={handleEditTask} users={users} mealReservations={mealReservations} setMealReservations={setMealReservations} weatherData={weatherData} />}
           {view === 'bar_prep' && (
             <BarPrep 
               items={items} 
@@ -1505,6 +1581,25 @@ const App: React.FC = () => {
                   localStorage.setItem(`daily_briefing_seen_${currentUser.id}_${today}`, 'true');
               }}
           />
+      )}
+
+      {/* WEATHER ALERT MODAL */}
+      {weatherAlertModal && (
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border-4 border-rose-500 animate-in zoom-in duration-300">
+                  <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight text-center mb-2">{weatherAlertModal.title}</h3>
+                  <p className="text-sm text-slate-600 text-center mb-8 font-bold">{weatherAlertModal.body}</p>
+                  <button 
+                    onClick={() => setWeatherAlertModal(null)} 
+                    className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-rose-700 shadow-lg shadow-rose-200 transition-all"
+                  >
+                    Compris
+                  </button>
+              </div>
+          </div>
       )}
     </div>
   );

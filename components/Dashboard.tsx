@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, User, Format, MealReservation } from '../types';
+import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, User, Format, MealReservation, WeatherData } from '../types';
 
 interface DashboardProps {
   items: StockItem[];
@@ -26,6 +26,7 @@ interface DashboardProps {
   users?: User[];
   formats?: Format[];
   mealReservations?: MealReservation[];
+  weatherData?: WeatherData | null;
 }
 
 const StatCard: React.FC<{
@@ -97,7 +98,7 @@ const CocktailCard: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, users = [], formats = [], mealReservations = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, categories, dlcHistory = [], dlcProfiles = [], userRole, transactions = [], messages, events = [], tasks = [], onNavigate, onSendMessage, onArchiveMessage, dailyCocktails = [], recipes = [], glassware = [], onUpdateDailyCocktail, appConfig, users = [], formats = [], mealReservations = [], weatherData }) => {
   const [newMessageText, setNewMessageText] = useState('');
   const [selectedCocktailRecipe, setSelectedCocktailRecipe] = useState<Recipe | null>(null);
   const [selectedCocktailType, setSelectedCocktailType] = useState<string | null>(null);
@@ -380,6 +381,43 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       setIsWelcomeModalOpen(false);
   };
 
+  const WeatherWidget = () => {
+    if (!weatherData) return null;
+    return (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-6 group hover:border-sky-300 transition-all">
+            <div className="bg-sky-50 p-4 rounded-2xl text-sky-600 group-hover:bg-sky-100 transition-colors">
+                {weatherData.isRaining ? (
+                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>
+                ) : weatherData.temp > 20 ? (
+                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" /></svg>
+                ) : (
+                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>
+                )}
+            </div>
+            <div className="flex-1">
+                <div className="flex justify-between items-start">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Météo (30 min)</p>
+                    <span className="text-[9px] font-bold text-slate-300">MàJ: {new Date(weatherData.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-black text-slate-800">{weatherData.temp}°C</p>
+                    <p className="text-xs font-bold text-slate-500">{weatherData.condition}</p>
+                </div>
+                <div className="flex gap-4 mt-1">
+                    <p className={`text-[10px] font-bold flex items-center gap-1 ${weatherData.windSpeed > 40 ? 'text-rose-500' : 'text-slate-400'}`}>
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                        {weatherData.windSpeed} km/h
+                    </p>
+                    <p className={`text-[10px] font-bold flex items-center gap-1 ${weatherData.isRaining ? 'text-sky-500' : 'text-slate-400'}`}>
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                        {weatherData.isRaining ? 'Pluie' : 'Sec'}
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+  };
+
   return (
     <div className="space-y-6 dashboard-container">
       
@@ -585,7 +623,8 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       </div>
 
       {/* KPIS */}
-      <div className={`grid grid-cols-1 md:grid-cols-3 gap-6`}>
+      <div className={`grid grid-cols-1 md:grid-cols-4 gap-6`}>
+        <WeatherWidget />
         <StatCard 
           title="Unités à Remonter"
           value={totalRestockNeeded}
