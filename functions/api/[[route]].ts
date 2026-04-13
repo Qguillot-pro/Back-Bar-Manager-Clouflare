@@ -270,6 +270,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             }
             if (row.key === 'bar_day_start') configMap.barDayStart = row.value;
             if (row.key === 'email_sender') configMap.emailSender = row.value;
+            if (row.key === 'weatherCity') configMap.weatherCity = row.value;
+            if (row.key === 'weatherLat') configMap.weatherLat = parseFloat(row.value);
+            if (row.key === 'weatherLon') configMap.weatherLon = parseFloat(row.value);
             if (row.key === 'tva_rates') {
                 try {
                     configMap.tvaRates = JSON.parse(row.value);

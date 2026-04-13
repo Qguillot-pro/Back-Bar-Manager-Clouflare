@@ -550,9 +550,10 @@ const App: React.FC = () => {
     };
 
     fetchWeather();
-    const interval = setInterval(fetchWeather, 30 * 60 * 1000); // 30 minutes
+    const refreshInterval = (scheduleConfig.weatherRefreshMinutes || 30) * 60 * 1000;
+    const interval = setInterval(fetchWeather, refreshInterval);
     return () => clearInterval(interval);
-  }, [appConfig.weatherLat, appConfig.weatherLon]);
+  }, [appConfig.weatherLat, appConfig.weatherLon, scheduleConfig.weatherRefreshMinutes]);
 
   // SESSION TIMEOUT LOGIC (3 HOURS)
   useEffect(() => {
