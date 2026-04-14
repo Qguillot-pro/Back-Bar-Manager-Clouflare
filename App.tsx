@@ -108,6 +108,7 @@ const App: React.FC = () => {
   const [absenceRequests, setAbsenceRequests] = useState<any[]>([]);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [weatherAlertModal, setWeatherAlertModal] = useState<{ title: string, body: string } | null>(null);
+  const lastWeatherAlerts = React.useRef({ rain: false, wind: false });
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleConfig>({
     openingHours: {
       0: { open: '10:00', close: '22:00', isOpen: true },
@@ -499,27 +500,41 @@ const App: React.FC = () => {
 
     const fetchWeather = async () => {
       try {
-        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${appConfig.weatherLat}&longitude=${appConfig.weatherLon}&current=temperature_2m,weather_code,wind_speed_10m&minutely_15=precipitation&forecast_days=1`);
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${appConfig.weatherLat}&longitude=${appConfig.weatherLon}&current=temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m&hourly=precipitation,wind_gusts_10m&forecast_days=1`);
         const data = await res.json();
         
         if (data.current) {
-          const isRaining = data.minutely_15?.precipitation?.some((p: number) => p > 0) || false;
+          // Check for rain forecast in the next 2 hours
+          const nextHoursPrecip = data.hourly?.precipitation?.slice(0, 3) || [];
+          const isRainingForecast = nextHoursPrecip.some((p: number) => p > 0.1);
+          
+          // Check for wind gusts forecast in the next 2 hours
+          const nextHoursGusts = data.hourly?.wind_gusts_10m?.slice(0, 3) || [];
+          const maxGustsForecast = Math.max(data.current.wind_gusts_10m, ...nextHoursGusts);
+          
           const newWeather: WeatherData = {
             temp: data.current.temperature_2m,
             condition: getWeatherCondition(data.current.weather_code),
             windSpeed: data.current.wind_speed_10m,
-            isRaining,
+            windGusts: data.current.wind_gusts_10m,
+            isRaining: isRainingForecast,
             timestamp: new Date().toISOString()
           };
           setWeatherData(newWeather);
           
-          // Alerts
-          if (newWeather.windSpeed > 40) {
-            triggerWeatherAlert("Vent fort (> 40 km/h)", "Fermer les parasols !");
+          // Alerts logic with change detection
+          const windAlertActive = maxGustsForecast > 40;
+          const rainAlertActive = isRainingForecast;
+
+          if (windAlertActive && !lastWeatherAlerts.current.wind) {
+            triggerWeatherAlert("Rafales de vent prévues", `Rafales jusqu'à ${maxGustsForecast.toFixed(1)} km/h. Fermer les parasols !`);
           }
-          if (newWeather.isRaining) {
-            triggerWeatherAlert("Pluie détectée", "Rentrer le matériel extérieur !");
+          if (rainAlertActive && !lastWeatherAlerts.current.rain) {
+            triggerWeatherAlert("Pluie prévue", "Précipitations détectées dans les prochaines heures. Rentrer le matériel extérieur !");
           }
+
+          // Update last state
+          lastWeatherAlerts.current = { rain: rainAlertActive, wind: windAlertActive };
         }
       } catch (err) {
         console.error("Weather fetch error", err);

@@ -436,6 +436,7 @@ export interface WeatherData {
   temp: number;
   condition: string;
   windSpeed: number;
+  windGusts: number;
   isRaining: boolean;
   timestamp: string;
 }

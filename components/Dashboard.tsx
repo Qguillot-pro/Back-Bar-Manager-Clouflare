@@ -404,13 +404,13 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                     <p className="text-xs font-bold text-slate-500">{weatherData.condition}</p>
                 </div>
                 <div className="flex gap-4 mt-1">
-                    <p className={`text-[10px] font-bold flex items-center gap-1 ${weatherData.windSpeed > 40 ? 'text-rose-500' : 'text-slate-400'}`}>
+                    <p className={`text-[10px] font-bold flex items-center gap-1 ${weatherData.windGusts > 40 ? 'text-rose-500' : 'text-slate-400'}`}>
                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                        {weatherData.windSpeed} km/h
+                        Rafales: {weatherData.windGusts.toFixed(1)} km/h
                     </p>
                     <p className={`text-[10px] font-bold flex items-center gap-1 ${weatherData.isRaining ? 'text-sky-500' : 'text-slate-400'}`}>
                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
-                        {weatherData.isRaining ? 'Pluie' : 'Sec'}
+                        {weatherData.isRaining ? 'Pluie prévue' : 'Sec'}
                     </p>
                 </div>
             </div>
