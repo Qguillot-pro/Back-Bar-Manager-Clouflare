@@ -52,7 +52,7 @@ const toLocalISOString = (dateStr: string) => {
     
     // Force Europe/Paris for display in datetime-local
     try {
-        const formatter = new Intl.DateTimeFormat('sv-SE', {
+        return new Intl.DateTimeFormat('sv-SE', {
             timeZone: 'Europe/Paris',
             year: 'numeric',
             month: '2-digit',
@@ -60,8 +60,7 @@ const toLocalISOString = (dateStr: string) => {
             hour: '2-digit',
             minute: '2-digit',
             hour12: false
-        });
-        return formatter.format(date).replace(' ', 'T');
+        }).format(date).replace(' ', 'T');
     } catch (e) {
         const offset = date.getTimezoneOffset() * 60000;
         const localDate = new Date(date.getTime() - offset);
@@ -71,26 +70,42 @@ const toLocalISOString = (dateStr: string) => {
 
 const fromParisToUTC = (parisDateStr: string) => {
     if (!parisDateStr) return '';
-    // parisDateStr is "YYYY-MM-DDTHH:mm"
-    const parts = parisDateStr.split(/[-T:]/);
-    const year = parseInt(parts[0]);
-    const month = parseInt(parts[1]) - 1;
-    const day = parseInt(parts[2]);
-    const hour = parseInt(parts[3]);
-    const minute = parseInt(parts[4]);
     
-    // Create a date object treating the input as UTC wall time
-    const utcDate = new Date(Date.UTC(year, month, day, hour, minute));
+    // parisDateStr is "YYYY-MM-DDTHH:mm" from <input type="datetime-local">
+    // We want to find the UTC time that corresponds to this wall time in Paris.
+    const [y, mo, d, h, mi] = parisDateStr.split(/[-T:]/).map(Number);
     
-    // Find what the "wall time" in Paris would be for this UTC time
-    const parisStr = utcDate.toLocaleString('en-US', { timeZone: 'Europe/Paris', hour12: false });
-    const parisDate = new Date(parisStr);
+    // Helper to get Paris wall time components for a given UTC date
+    const getParisComponents = (date: Date) => {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Europe/Paris',
+            year: 'numeric', month: 'numeric', day: 'numeric',
+            hour: 'numeric', minute: 'numeric', second: 'numeric',
+            hour12: false
+        }).formatToParts(date);
+        const p: any = {};
+        parts.forEach(part => p[part.type] = part.value);
+        return {
+            year: parseInt(p.year),
+            month: parseInt(p.month),
+            day: parseInt(p.day),
+            hour: parseInt(p.hour) === 24 ? 0 : parseInt(p.hour),
+            minute: parseInt(p.minute)
+        };
+    };
+
+    // Start with a guess: assume the input is already UTC
+    const guess = new Date(Date.UTC(y, mo - 1, d, h, mi));
     
-    // The difference tells us the offset
-    const offsetMinutes = (parisDate.getTime() - utcDate.getTime()) / 60000;
+    // Calculate what the wall time in Paris would be for this guess
+    const comp = getParisComponents(guess);
+    const wallTimeGuess = Date.UTC(comp.year, comp.month - 1, comp.day, comp.hour, comp.minute);
     
-    // Adjust the UTC date to get the true UTC time
-    return new Date(utcDate.getTime() - offsetMinutes * 60000).toISOString();
+    // The difference is the offset
+    const offset = wallTimeGuess - guess.getTime();
+    
+    // Adjust the guess to get the true UTC time
+    return new Date(guess.getTime() - offset).toISOString();
 };
 
 const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycleConfig, saveCycleConfig, appConfig, saveConfig }: { 
