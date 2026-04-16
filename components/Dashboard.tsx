@@ -662,17 +662,33 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                   Agenda
               </h3>
               <div className="space-y-3 relative z-10">
-                  {upcomingEvents.length > 0 ? upcomingEvents.map(evt => (
-                      <div key={evt.id} className="flex items-center gap-3">
-                          <div className="bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2 py-1 rounded text-center min-w-[3.5rem]">
-                              {new Date(evt.startTime).getDate()} {new Date(evt.startTime).toLocaleDateString('fr-FR', {month:'short'})}
-                          </div>
-                          <div>
-                              <p className="font-bold text-sm text-slate-800 truncate">{evt.title}</p>
-                              <p className="text-[10px] text-slate-400">{evt.startTime.slice(11,16)} - {evt.location || 'Bar'}</p>
-                          </div>
-                      </div>
-                  )) : <p className="text-slate-400 italic text-xs">Aucun événement à venir.</p>}
+                  {upcomingEvents.length > 0 ? upcomingEvents.map(evt => {
+                      const evtDate = new Date(evt.startTime).toISOString().split('T')[0];
+                      const forecast = weatherData?.dailyForecast?.find(f => f.date === evtDate);
+                      const isRainy = forecast && (forecast.totalPrecipitation > 0.5 || forecast.condition.toLowerCase().includes('pluie'));
+                      const isWindy = forecast && forecast.maxWindGusts > 35;
+
+                      return (
+                        <div key={evt.id} className="flex items-center gap-3">
+                            <div className="bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2 py-1 rounded text-center min-w-[3.5rem]">
+                                {new Date(evt.startTime).getDate()} {new Date(evt.startTime).toLocaleDateString('fr-FR', {month:'short'})}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-center gap-2">
+                                    <p className="font-bold text-sm text-slate-800 truncate">{evt.title}</p>
+                                    <div className="flex gap-1 shrink-0">
+                                        {isRainy && <span title="Pluie prévue" className="text-blue-500"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg></span>}
+                                        {isWindy && <span title="Vent fort prévu" className="text-amber-500"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.99 7.99 0 01-2.343 5.657z" /></svg></span>}
+                                    </div>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <p className="text-[10px] text-slate-400">{evt.startTime.slice(11,16)} - {evt.location || 'Bar'}</p>
+                                    <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">{evt.guestsCount || 0} PAX</span>
+                                </div>
+                            </div>
+                        </div>
+                      );
+                  }) : <p className="text-slate-400 italic text-xs">Aucun événement à venir.</p>}
               </div>
           </div>
 

@@ -404,6 +404,17 @@ const DailyLife: React.FC<DailyLifeProps> = ({
       setIsEventModalOpen(true);
   };
 
+  const handleDuplicateEvent = (evt: Event) => {
+    const duplicated: Event = {
+        ...evt,
+        id: 'evt_' + Date.now(),
+        title: evt.title + ' (Copie)',
+        createdAt: new Date().toISOString()
+    };
+    setEvents(prev => [...prev, duplicated]);
+    onSync('SAVE_EVENT', duplicated);
+  };
+
   const closeEventModal = () => {
       setIsEventModalOpen(false);
       setSelectedEvent(null);
@@ -648,7 +659,18 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                       {/* Champs Titre, Date, Lieu... */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="md:col-span-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Titre</label><input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} /></div>
-                          <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Début</label><input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventStart} onChange={e => setNewEventStart(e.target.value)} /></div>
+                          <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Début</label><input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventStart} onChange={e => {
+                              setNewEventStart(e.target.value);
+                              if (!selectedEvent && e.target.value) {
+                                  // Pre-fill end date with same date but +2 hours
+                                  const d = new Date(e.target.value);
+                                  d.setHours(d.getHours() + 2);
+                                  // Format back to YYYY-MM-DDTHH:mm
+                                  const pad = (n: number) => n.toString().padStart(2, '0');
+                                  const localStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                                  setNewEventEnd(localStr);
+                              }
+                          }} /></div>
                           <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fin</label><input type="datetime-local" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventEnd} onChange={e => setNewEventEnd(e.target.value)} /></div>
                           
                           <div><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Lieu</label><input className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold outline-none" value={newEventLocation} onChange={e => setNewEventLocation(e.target.value)} placeholder="Ex: Terrasse" /></div>
@@ -834,20 +856,64 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                   {events
                     .filter(e => new Date(e.endTime) >= new Date())
                     .sort((a,b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-                    .map(e => (
-                      <div key={e.id} onClick={() => openEventModal(e)} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 cursor-pointer transition-all">
-                          <div className="flex gap-4">
-                              <div className="bg-white rounded-xl p-3 text-center min-w-[60px] border">
-                                  <span className="block text-xs font-black text-indigo-600 uppercase">{new Date(e.startTime).toLocaleString('fr-FR', {month:'short'})}</span>
-                                  <span className="block text-2xl font-black text-slate-800">{new Date(e.startTime).getDate()}</span>
-                              </div>
-                              <div>
-                                  <h4 className="font-black text-slate-800 text-base">{e.title}</h4>
-                                  <p className="text-xs font-bold text-slate-500 mt-1">{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {e.location || 'Bar'}</p>
+                    .map(e => {
+                        const glasswareNeeds: EventGlasswareNeed[] = JSON.parse(e.glasswareJson || '[]');
+                        const hasGlasswareWarning = glasswareNeeds.some(need => {
+                            const glass = glassware?.find(g => g.id === need.glasswareId);
+                            return glass && (glass.quantity || 0) < need.quantity;
+                        });
+
+                        const evtDate = new Date(e.startTime).toISOString().split('T')[0];
+                        const forecast = weatherData?.dailyForecast?.find(f => f.date === evtDate);
+                        const isRainy = forecast && (forecast.totalPrecipitation > 0.5 || forecast.condition.toLowerCase().includes('pluie'));
+                        const isWindy = forecast && forecast.maxWindGusts > 35;
+
+                        return (
+                          <div key={e.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-all relative group">
+                              <div className="flex gap-4 cursor-pointer" onClick={() => openEventModal(e)}>
+                                  <div className="bg-white rounded-xl p-3 text-center min-w-[60px] border">
+                                      <span className="block text-xs font-black text-indigo-600 uppercase">{new Date(e.startTime).toLocaleString('fr-FR', {month:'short'})}</span>
+                                      <span className="block text-2xl font-black text-slate-800">{new Date(e.startTime).getDate()}</span>
+                                  </div>
+                                  <div className="flex-1">
+                                      <div className="flex justify-between items-start">
+                                          <h4 className="font-black text-slate-800 text-base">{e.title}</h4>
+                                          <div className="flex gap-2">
+                                              {hasGlasswareWarning && (
+                                                  <span title="Stock verrerie insuffisant" className="text-rose-500 animate-pulse">
+                                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                                  </span>
+                                              )}
+                                              {isRainy && (
+                                                  <span title="Pluie prévue" className="text-blue-500">
+                                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                                                  </span>
+                                              )}
+                                              {isWindy && (
+                                                  <span title="Vent fort prévu" className="text-amber-500">
+                                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.99 7.99 0 01-2.343 5.657z" /></svg>
+                                                  </span>
+                                              )}
+                                          </div>
+                                      </div>
+                                      <div className="flex justify-between items-end mt-1">
+                                          <p className="text-xs font-bold text-slate-500">{new Date(e.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {e.location || 'Bar'}</p>
+                                          <div className="flex items-center gap-3">
+                                              <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded uppercase tracking-widest">{e.guestsCount || 0} PAX</span>
+                                              <button 
+                                                onClick={(e_stop) => { e_stop.stopPropagation(); handleDuplicateEvent(e); }}
+                                                className="opacity-0 group-hover:opacity-100 p-1.5 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                                                title="Dupliquer"
+                                              >
+                                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                                              </button>
+                                          </div>
+                                      </div>
+                                  </div>
                               </div>
                           </div>
-                      </div>
-                  ))}
+                        );
+                    })}
                   {events.filter(e => new Date(e.endTime) >= new Date()).length === 0 && (
                       <p className="text-center text-slate-400 italic text-sm py-4">Aucun événement à venir.</p>
                   )}
@@ -868,7 +934,10 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                   </div>
                                   <div>
                                       <h4 className="font-bold text-slate-600 text-sm">{e.title}</h4>
-                                      <p className="text-[10px] font-bold text-slate-400">{new Date(e.startTime).toLocaleDateString()} - {e.location || 'Bar'}</p>
+                                      <div className="flex justify-between items-center mt-1">
+                                          <p className="text-[10px] font-bold text-slate-400">{new Date(e.startTime).toLocaleDateString()} - {e.location || 'Bar'}</p>
+                                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{e.guestsCount || 0} PAX</span>
+                                      </div>
                                   </div>
                               </div>
                           </div>

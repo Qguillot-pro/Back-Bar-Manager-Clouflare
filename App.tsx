@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, StaffShift, DailyAffluence, ActivityMoment, ScheduleConfig, MealReservation, CycleConfig, WeatherData } from './types';
+import { StockItem, Category, StorageSpace, Format, Transaction, StockLevel, StockConsigne, StockPriority, PendingOrder, DLCHistory, User, DLCProfile, UnfulfilledOrder, AppConfig, Message, Glassware, Recipe, Technique, Loss, UserLog, Task, Event, EventComment, DailyCocktail, CocktailCategory, DailyCocktailType, EmailTemplate, AdminNote, ProductSheet, ProductType, DailyAlert, StaffShift, DailyAffluence, ActivityMoment, ScheduleConfig, MealReservation, CycleConfig, WeatherData, WeatherForecastDay } from './types';
 import Dashboard from './components/Dashboard';
 import StockTable from './components/StockTable';
 import Movements from './components/Movements';
@@ -500,7 +500,7 @@ const App: React.FC = () => {
 
     const fetchWeather = async () => {
       try {
-        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${appConfig.weatherLat}&longitude=${appConfig.weatherLon}&current=temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m&hourly=precipitation,wind_gusts_10m&forecast_days=1`);
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${appConfig.weatherLat}&longitude=${appConfig.weatherLon}&current=temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m&hourly=precipitation,wind_gusts_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_gusts_10m_max&timezone=auto`);
         const data = await res.json();
         
         if (data.current) {
@@ -512,13 +512,23 @@ const App: React.FC = () => {
           const nextHoursGusts = data.hourly?.wind_gusts_10m?.slice(0, 3) || [];
           const maxGustsForecast = Math.max(data.current.wind_gusts_10m, ...nextHoursGusts);
           
+          const dailyForecast: WeatherForecastDay[] = data.daily ? data.daily.time.map((time: string, i: number) => ({
+              date: time,
+              maxTemp: data.daily.temperature_2m_max[i],
+              minTemp: data.daily.temperature_2m_min[i],
+              condition: getWeatherCondition(data.daily.weather_code[i]),
+              maxWindGusts: data.daily.wind_gusts_10m_max[i],
+              totalPrecipitation: data.daily.precipitation_sum[i]
+          })) : [];
+
           const newWeather: WeatherData = {
             temp: data.current.temperature_2m,
             condition: getWeatherCondition(data.current.weather_code),
             windSpeed: data.current.wind_speed_10m,
             windGusts: data.current.wind_gusts_10m,
             isRaining: isRainingForecast,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            dailyForecast
           };
           setWeatherData(newWeather);
           

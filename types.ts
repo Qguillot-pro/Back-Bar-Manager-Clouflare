@@ -432,6 +432,15 @@ export interface ScheduleConfig {
 
 export type StaffShiftType = 'SHIFT' | 'PAUSE' | 'SPLIT' | 'REST' | 'ABSENCE';
 
+export interface WeatherForecastDay {
+    date: string;
+    maxTemp: number;
+    minTemp: number;
+    condition: string;
+    maxWindGusts: number;
+    totalPrecipitation: number;
+}
+
 export interface WeatherData {
   temp: number;
   condition: string;
@@ -439,4 +448,5 @@ export interface WeatherData {
   windGusts: number;
   isRaining: boolean;
   timestamp: string;
+  dailyForecast?: WeatherForecastDay[];
 }
