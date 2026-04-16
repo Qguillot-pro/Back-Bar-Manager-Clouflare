@@ -900,7 +900,21 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                           <h4 className="font-black text-slate-800 text-base">{e.title}</h4>
                                           <div className="flex gap-2">
                                               {hasGlasswareWarning && (
-                                                  <span title="Stock verrerie insuffisant" className="text-rose-500 animate-pulse flex items-center gap-0.5">
+                                                  <span 
+                                                    className="text-rose-500 animate-pulse flex items-center gap-0.5"
+                                                    title={`Stock insuffisant !\nTotal jour: ${glasswareNeeds.reduce((acc, n) => {
+                                                        const dayTotal = events
+                                                            .filter(ev => ev.startTime.startsWith(evtDate))
+                                                            .reduce((sum, ev) => {
+                                                                const needs: any[] = JSON.parse(ev.glasswareJson || '[]');
+                                                                const match = needs.find(nd => nd.glasswareId === n.glasswareId);
+                                                                return sum + (match?.quantity || 0);
+                                                            }, 0);
+                                                        const g = glassware?.find(gl => gl.id === n.glasswareId);
+                                                        const missing = dayTotal - (g?.quantity || 0);
+                                                        return acc + (dayTotal > (g?.quantity || 0) ? `\n- ${g?.name}: ${dayTotal} demandés / ${g?.quantity || 0} stock (${missing} manquants)` : '');
+                                                    }, '')}`}
+                                                  >
                                                       <GlassWater className="w-5 h-5" />
                                                       <TriangleAlert className="w-3 h-3" />
                                                   </span>

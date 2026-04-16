@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Wind, CloudRain, Calendar, CheckSquare, UtensilsCrossed, MessageSquare, Package, ArrowRight, Printer, X, Edit2, Plus, Info } from 'lucide-react';
+import { Wind, CloudRain, Calendar, CheckSquare, UtensilsCrossed, MessageSquare, Package, ArrowRight, Printer, X, Edit2, Plus, Info, GlassWater, TriangleAlert } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, User, Format, MealReservation, WeatherData } from '../types';
 
@@ -149,6 +149,43 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
   };
 
   const currentBarDate = getBarDateStr();
+
+  // 2.5. Event of the Day Totals
+  const dayEventTotals = useMemo(() => {
+      const dayEvents = events.filter(e => e.startTime.startsWith(currentBarDate));
+      const products: Record<string, number> = {};
+      const glasses: Record<string, { total: number, stock: number, name: string }> = {};
+
+      dayEvents.forEach(e => {
+          const pList: any[] = JSON.parse(e.productsJson || '[]');
+          pList.forEach(p => {
+              products[p.itemId] = (products[p.itemId] || 0) + p.quantity;
+          });
+
+          const gList: any[] = JSON.parse(e.glasswareJson || '[]');
+          gList.forEach(g => {
+              if (!glasses[g.glasswareId]) {
+                  const glass = glassware.find(gl => gl.id === g.glasswareId);
+                  glasses[g.glasswareId] = { 
+                      total: 0, 
+                      stock: glass?.quantity || 0, 
+                      name: glass?.name || 'Inconnu' 
+                  };
+              }
+              glasses[g.glasswareId].total += g.quantity;
+          });
+      });
+
+      const missingGlasses = Object.values(glasses).filter(g => g.total > g.stock);
+      
+      return {
+          eventsCount: dayEvents.length,
+          totalProducts: Object.values(products).reduce((a, b) => a + b, 0),
+          totalGlasses: Object.values(glasses).reduce((a, b) => a + b.total, 0),
+          missingGlassesCount: missingGlasses.length,
+          missingGlassesDetails: missingGlasses
+      };
+  }, [events, currentBarDate, glassware]);
 
   // 3. Chart Data
   const restockHistoryData = useMemo(() => {
@@ -626,6 +663,29 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
       {/* KPIS */}
       <div className={`grid grid-cols-1 md:grid-cols-4 gap-6`}>
         <WeatherWidget />
+        
+        <div onClick={() => onNavigate('daily_life:CALENDAR')} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-6 group hover:border-indigo-300 transition-all cursor-pointer">
+            <div className="bg-indigo-50 p-4 rounded-2xl text-indigo-600 group-hover:bg-indigo-100 transition-colors">
+                <UtensilsCrossed className="w-8 h-8" />
+            </div>
+            <div className="flex-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Événements du Jour</p>
+                <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-black text-slate-800">{dayEventTotals.eventsCount}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Prévus</p>
+                </div>
+                <div className="flex gap-3 mt-1">
+                    <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                        <Package className="w-3 h-3" /> {dayEventTotals.totalProducts} Prod.
+                    </p>
+                    <p className={`text-[10px] font-bold flex items-center gap-1 ${dayEventTotals.missingGlassesCount > 0 ? 'text-rose-500' : 'text-slate-500'}`}>
+                        <GlassWater className="w-3 h-3" /> {dayEventTotals.totalGlasses} Verres
+                        {dayEventTotals.missingGlassesCount > 0 && <span className="bg-rose-100 text-rose-600 px-1 rounded text-[8px]">-{dayEventTotals.missingGlassesCount} ALERTE</span>}
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <StatCard 
           title="Unités à Remonter"
           value={totalRestockNeeded}
@@ -669,6 +729,12 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                       const isRainy = forecast && (forecast.totalPrecipitation > 0.5 || forecast.condition.toLowerCase().includes('pluie'));
                       const isWindy = forecast && forecast.maxWindGusts > 35;
 
+                      const glasswareNeeds: any[] = JSON.parse(evt.glasswareJson || '[]');
+                      const hasGlasswareWarning = glasswareNeeds.some(need => {
+                          const glass = glassware?.find(g => g.id === need.glasswareId);
+                          return glass && (glass.quantity || 0) < need.quantity;
+                      });
+
                       return (
                         <div key={evt.id} className="flex items-center gap-3">
                             <div className="bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2 py-1 rounded text-center min-w-[3.5rem]">
@@ -678,6 +744,26 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                                 <div className="flex justify-between items-center gap-2">
                                     <p className="font-bold text-sm text-slate-800 truncate">{evt.title}</p>
                                     <div className="flex gap-1 shrink-0">
+                                        {hasGlasswareWarning && (
+                                            <span 
+                                                className="text-rose-500 animate-pulse flex items-center gap-0.5"
+                                                title={`Stock insuffisant !\nTotal jour: ${glasswareNeeds.reduce((acc: string, n: any) => {
+                                                    const dayTotal = events
+                                                        .filter(ev => ev.startTime.startsWith(evtDate))
+                                                        .reduce((sum, ev) => {
+                                                            const needs: any[] = JSON.parse(ev.glasswareJson || '[]');
+                                                            const match = needs.find(nd => nd.glasswareId === n.glasswareId);
+                                                            return sum + (match?.quantity || 0);
+                                                        }, 0);
+                                                    const g = glassware.find(gl => gl.id === n.glasswareId);
+                                                    const missing = dayTotal - (g?.quantity || 0);
+                                                    return acc + (dayTotal > (g?.quantity || 0) ? `\n- ${g?.name}: ${dayTotal} demandés / ${g?.quantity || 0} stock (${missing} manquants)` : '');
+                                                }, '')}`}
+                                            >
+                                                <GlassWater className="w-3 h-3" />
+                                                <TriangleAlert className="w-2 h-2" />
+                                            </span>
+                                        )}
                                         {isRainy && <span title="Pluie prévue" className="text-blue-500"><CloudRain className="w-3 h-3" /></span>}
                                         {isWindy && <span title="Vent fort prévu" className="text-amber-500"><Wind className="w-3 h-3" /></span>}
                                     </div>
