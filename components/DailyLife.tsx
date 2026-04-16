@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { Wind, CloudRain, GlassWater, TriangleAlert, Copy, Trash2, Edit2, Plus, X, Calendar, CheckCircle2, UtensilsCrossed } from 'lucide-react';
 import { Task, Event, EventComment, User, StockItem, DailyCocktail, DailyCocktailType, Recipe, EventProduct, StockLevel, PendingOrder, Glassware, EventGlasswareNeed, CycleConfig, CycleFrequency, AppConfig, CocktailCategory, MealReservation, WeatherData } from '../types';
 
 interface DailyLifeProps {
@@ -46,11 +47,12 @@ const getBarDateStr = (d: Date = new Date(), startTime: string = '04:00') => {
 
 const toLocalISOString = (dateStr: string) => {
     if (!dateStr) return '';
-    const date = new Date(dateStr);
+    // Ensure we treat the input as UTC if it doesn't have a timezone
+    const date = new Date(dateStr.includes('Z') || dateStr.includes('+') ? dateStr : dateStr.replace(' ', 'T') + 'Z');
     
     // Force Europe/Paris for display in datetime-local
     try {
-        const formatter = new Intl.DateTimeFormat('en-CA', {
+        const formatter = new Intl.DateTimeFormat('sv-SE', {
             timeZone: 'Europe/Paris',
             year: 'numeric',
             month: '2-digit',
@@ -59,12 +61,8 @@ const toLocalISOString = (dateStr: string) => {
             minute: '2-digit',
             hour12: false
         });
-        const parts = formatter.formatToParts(date);
-        const getPart = (type: string) => parts.find(p => p.type === type)?.value;
-        // en-CA gives YYYY-MM-DD
-        return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
+        return formatter.format(date).replace(' ', 'T');
     } catch (e) {
-        // Fallback to old logic if Intl fails
         const offset = date.getTimezoneOffset() * 60000;
         const localDate = new Date(date.getTime() - offset);
         return localDate.toISOString().slice(0, 16);
@@ -73,19 +71,26 @@ const toLocalISOString = (dateStr: string) => {
 
 const fromParisToUTC = (parisDateStr: string) => {
     if (!parisDateStr) return '';
-    const date = new Date(parisDateStr);
+    // parisDateStr is "YYYY-MM-DDTHH:mm"
+    const parts = parisDateStr.split(/[-T:]/);
+    const year = parseInt(parts[0]);
+    const month = parseInt(parts[1]) - 1;
+    const day = parseInt(parts[2]);
+    const hour = parseInt(parts[3]);
+    const minute = parseInt(parts[4]);
     
-    // If the browser is already in Europe/Paris, Date(string) is correct.
-    // If not, we need to adjust.
-    try {
-        // We want to find the UTC time that, when converted to Europe/Paris, gives parisDateStr
-        // This is a bit complex without a library, but we can approximate by calculating the offset
-        const luxonDate = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
-        const diff = date.getTime() - luxonDate.getTime();
-        return new Date(date.getTime() + diff).toISOString();
-    } catch (e) {
-        return date.toISOString();
-    }
+    // Create a date object treating the input as UTC wall time
+    const utcDate = new Date(Date.UTC(year, month, day, hour, minute));
+    
+    // Find what the "wall time" in Paris would be for this UTC time
+    const parisStr = utcDate.toLocaleString('en-US', { timeZone: 'Europe/Paris', hour12: false });
+    const parisDate = new Date(parisStr);
+    
+    // The difference tells us the offset
+    const offsetMinutes = (parisDate.getTime() - utcDate.getTime()) / 60000;
+    
+    // Adjust the UTC date to get the true UTC time
+    return new Date(utcDate.getTime() - offsetMinutes * 60000).toISOString();
 };
 
 const CycleConfigModal = ({ type, onClose, recipes, cocktailCategories, getCycleConfig, saveCycleConfig, appConfig, saveConfig }: { 
@@ -880,18 +885,19 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                           <h4 className="font-black text-slate-800 text-base">{e.title}</h4>
                                           <div className="flex gap-2">
                                               {hasGlasswareWarning && (
-                                                  <span title="Stock verrerie insuffisant" className="text-rose-500 animate-pulse">
-                                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                                  <span title="Stock verrerie insuffisant" className="text-rose-500 animate-pulse flex items-center gap-0.5">
+                                                      <GlassWater className="w-5 h-5" />
+                                                      <TriangleAlert className="w-3 h-3" />
                                                   </span>
                                               )}
                                               {isRainy && (
                                                   <span title="Pluie prévue" className="text-blue-500">
-                                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                                                      <CloudRain className="w-5 h-5" />
                                                   </span>
                                               )}
                                               {isWindy && (
                                                   <span title="Vent fort prévu" className="text-amber-500">
-                                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.99 7.99 0 01-2.343 5.657z" /></svg>
+                                                      <Wind className="w-5 h-5" />
                                                   </span>
                                               )}
                                           </div>
@@ -905,7 +911,7 @@ const DailyLife: React.FC<DailyLifeProps> = ({
                                                 className="opacity-0 group-hover:opacity-100 p-1.5 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all"
                                                 title="Dupliquer"
                                               >
-                                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                                                  <Copy className="w-3.5 h-3.5" />
                                               </button>
                                           </div>
                                       </div>

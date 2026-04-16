@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { Wind, CloudRain, Calendar, CheckSquare, UtensilsCrossed, MessageSquare, Package, ArrowRight, Printer, X, Edit2, Plus, Info } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { StockItem, Category, StockLevel, StockConsigne, DLCHistory, DLCProfile, UserRole, Transaction, Message, Event, Task, DailyCocktail, Recipe, Glassware, DailyCocktailType, AppConfig, CycleConfig, User, Format, MealReservation, WeatherData } from '../types';
 
@@ -677,8 +678,8 @@ const Dashboard: React.FC<DashboardProps> = ({ items, stockLevels, consignes, ca
                                 <div className="flex justify-between items-center gap-2">
                                     <p className="font-bold text-sm text-slate-800 truncate">{evt.title}</p>
                                     <div className="flex gap-1 shrink-0">
-                                        {isRainy && <span title="Pluie prévue" className="text-blue-500"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg></span>}
-                                        {isWindy && <span title="Vent fort prévu" className="text-amber-500"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.99 7.99 0 01-2.343 5.657z" /></svg></span>}
+                                        {isRainy && <span title="Pluie prévue" className="text-blue-500"><CloudRain className="w-3 h-3" /></span>}
+                                        {isWindy && <span title="Vent fort prévu" className="text-amber-500"><Wind className="w-3 h-3" /></span>}
                                     </div>
                                 </div>
                                 <div className="flex justify-between items-center">
