@@ -19,8 +19,28 @@ const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\
 const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], onUpdateOrder, onDeleteOrder, onAddManualOrder, formats = [], events = [], emailTemplates = [] }) => {
   const [activeTab, setActiveTab] = useState<'PENDING' | 'ORDERED'>('PENDING');
   const [manualSearch, setManualSearch] = useState('');
-  const [manualQty, setManualQty] = useState(1);
+  const [manualQty, setManualQty] = useState('1');
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  
+  // History for macarons (3 last received orders)
+  const itemOrdersHistory = useMemo(() => {
+      const history: Record<string, any[]> = {};
+      orders.filter(o => o.status === 'RECEIVED' || o.status === 'ARCHIVED').forEach(o => {
+          if (!o.itemId) return;
+          if (!history[o.itemId]) history[o.itemId] = [];
+          history[o.itemId].push(o);
+      });
+      Object.keys(history).forEach(itemId => {
+          history[itemId] = history[itemId]
+              .sort((a, b) => {
+                  const dateA = new Date(a.receivedAt || a.date).getTime();
+                  const dateB = new Date(b.receivedAt || b.date).getTime();
+                  return dateB - dateA;
+              })
+              .slice(0, 3);
+      });
+      return history;
+  }, [orders]);
   
   // Email Modal
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
@@ -64,10 +84,11 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
 
   const handleManualAdd = () => {
       const item = items.find(i => normalizeText(i.name) === normalizeText(manualSearch));
+      const qty = parseInt(manualQty) || 1;
       if (item) {
-          onAddManualOrder(item.id, manualQty);
+          onAddManualOrder(item.id, qty);
           setManualSearch('');
-          setManualQty(1);
+          setManualQty('1');
       } else {
           alert("Produit introuvable. Veuillez sélectionner un produit de la liste.");
       }
@@ -248,7 +269,16 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
                                           const displayName = item?.name || p.name || 'Produit Inconnu';
                                           return (
                                               <div key={p.itemId || idx} className="flex justify-between items-center bg-slate-50 p-2 rounded-xl">
-                                                  <span className="text-xs font-bold text-slate-700">{displayName}</span>
+                                                  <div className="flex flex-col">
+                                                      <span className="text-xs font-bold text-slate-700">{displayName}</span>
+                                                      <div className="flex gap-1 mt-0.5 flex-wrap">
+                                                          {item && (itemOrdersHistory[item.id] || []).map((prev, idx) => (
+                                                              <span key={idx} className="bg-white/50 text-slate-400 text-[7px] font-bold px-1 rounded-sm whitespace-nowrap border border-slate-100">
+                                                                  {safeDateString(prev.receivedAt || prev.date).slice(0, 5)}: {prev.quantity}
+                                                              </span>
+                                                          ))}
+                                                      </div>
+                                                  </div>
                                                   <button onClick={() => addEventProduct(p.itemId, p.name, p.quantity)} className="bg-purple-500 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase hover:bg-purple-600 transition-colors">
                                                       Ajouter (+{p.quantity})
                                                   </button>
@@ -284,7 +314,8 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
                         min="1"
                         className="w-full bg-white border border-indigo-200 rounded-2xl p-4 font-bold text-center text-indigo-900 outline-none"
                         value={manualQty}
-                        onChange={e => setManualQty(parseInt(e.target.value) || 1)}
+                        onChange={e => setManualQty(e.target.value)}
+                        onFocus={e => e.target.select()}
                       />
                   </div>
                   <button 
@@ -347,7 +378,16 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
                                       <td className="p-4 text-center">
                                           <input type="checkbox" className="w-4 h-4 rounded text-indigo-600 cursor-pointer" checked={selectedOrders.has(o.id)} onChange={() => toggleSelection(o.id)} />
                                       </td>
-                                      <td className="p-4 font-black text-slate-800">{item.name}</td>
+                                      <td className="p-4 font-black text-slate-800">
+                                          <div>{item.name}</div>
+                                          <div className="flex gap-1 mt-1 flex-wrap">
+                                              {(itemOrdersHistory[item.id] || []).map((prev, idx) => (
+                                                  <span key={idx} className="bg-slate-100 text-slate-500 text-[8px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                                      {safeDateString(prev.receivedAt || prev.date).slice(0, 5)}: {prev.quantity}
+                                                  </span>
+                                              ))}
+                                          </div>
+                                      </td>
                                       <td className="p-4 text-xs font-bold text-slate-500">{getFormatName(item.formatId)}</td>
                                       <td className="p-4 text-[10px] font-bold text-slate-400">
                                           {o.ruptureDate ? <span className="text-rose-500">Suite Rupture</span> : 'Réassort'}
@@ -356,8 +396,13 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
                                           <input 
                                             type="number"
                                             className="w-16 bg-slate-100 rounded-lg p-2 text-center font-black outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                            value={o.quantity}
-                                            onChange={(e) => onUpdateOrder(o.id, parseInt(e.target.value) || 0)}
+                                            value={o.quantity || ''}
+                                            onFocus={e => (e.target as HTMLInputElement).select()}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (val === '') onUpdateOrder(o.id, 0);
+                                                else onUpdateOrder(o.id, parseInt(val) || 0);
+                                            }}
                                           />
                                       </td>
                                       <td className="p-4 text-center">

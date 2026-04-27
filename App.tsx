@@ -312,6 +312,13 @@ const App: React.FC = () => {
           if (dataSt.activityMoments) setActivityMoments(dataSt.activityMoments);
           if (dataSt.absenceRequests) setAbsenceRequests(dataSt.absenceRequests);
 
+          if (dataH.orders) {
+              setOrders(prev => {
+                  const existingIds = new Set(prev.map(o => o.id));
+                  const newOrders = dataH.orders.filter((o: any) => !existingIds.has(o.id));
+                  return [...prev, ...newOrders];
+              });
+          }
           if (dataH.transactions) setTransactions(dataH.transactions);
           if (dataH.dlcHistory) setDlcHistory(dataH.dlcHistory);
           if (dataH.messages) setMessages(dataH.messages);
@@ -1335,7 +1342,24 @@ const App: React.FC = () => {
           {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} setStockLevels={setStockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} currentUser={currentUser} onSync={syncData} canEdit={canEdit('inventory')} />}
           {view === 'inventory' && <GlobalInventory items={items} setItems={setItems} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} canEdit={canEdit('global_inventory')} />}
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} canEdit={canEdit('consignes')} />}
-          {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { setOrders(prev => prev.map(o => o.id === id ? { ...o, quantity: q, status: s || o.status, ruptureDate: r } : o)); syncData('SAVE_ORDER', { id, quantity: q, status: s, ruptureDate: r }); }} onDeleteOrder={(id) => { setOrders(prev => prev.filter(o => o.id !== id)); syncData('DELETE_ORDER', { id }); }} onAddManualOrder={(itemId, qty) => { 
+          {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { 
+            const existing = orders.find(o => o.id === id);
+            if (!existing) return;
+            const updated = { ...existing, quantity: q, status: s || existing.status, ruptureDate: r || existing.ruptureDate };
+            setOrders(prev => prev.map(o => o.id === id ? updated : o)); 
+            syncData('SAVE_ORDER', { 
+              id: updated.id, 
+              itemId: updated.itemId, 
+              quantity: updated.quantity, 
+              initialQuantity: updated.initialQuantity,
+              date: updated.date,
+              status: updated.status, 
+              userName: updated.userName,
+              ruptureDate: updated.ruptureDate,
+              orderedAt: updated.orderedAt,
+              receivedAt: updated.receivedAt
+            }); 
+          }} onDeleteOrder={(id) => { setOrders(prev => prev.filter(o => o.id !== id)); syncData('DELETE_ORDER', { id }); }} onAddManualOrder={(itemId, qty) => { 
               const existing = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
               if (existing) {
                   const updated = { ...existing, quantity: (existing.quantity || 0) + qty };
