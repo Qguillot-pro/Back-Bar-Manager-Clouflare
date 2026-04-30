@@ -714,7 +714,7 @@ const App: React.FC = () => {
   } | null>(null);
 
   // LOGIQUE DE MOUVEMENT INTELLIGENT (Priorités + Règles Spécifiques)
-  const handleSmartTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false, note?: string) => {
+  const handleSmartTransaction = async (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false, note?: string) => {
       const itemLevels = stockLevels.filter(l => l.itemId === itemId);
       const itemPriorities = priorities.filter(p => p.itemId === itemId);
       
@@ -726,17 +726,17 @@ const App: React.FC = () => {
           return p;
       };
 
-      const commitTrans = (sid: string, amount: number, tType: 'IN' | 'OUT', newQ: number) => {
+      const commitTrans = async (sid: string, amount: number, tType: 'IN' | 'OUT', newQ: number) => {
           const trans: Transaction = { id: 't_' + Date.now() + Math.random(), itemId, storageId: sid, type: tType, quantity: amount, date: new Date().toISOString(), userName: currentUser?.name, isServiceTransfer, note };
           setTransactions(p => [trans, ...p]);
-          syncData('SAVE_TRANSACTION', trans);
+          await syncData('SAVE_TRANSACTION', trans);
           
           setStockLevels(prev => {
               const exists = prev.find(l => l.itemId === itemId && l.storageId === sid);
               if (exists) return prev.map(l => (l.itemId === itemId && l.storageId === sid) ? { ...l, currentQuantity: newQ } : l);
               return [...prev, { itemId, storageId: sid, currentQuantity: newQ }];
           });
-          syncData('SAVE_STOCK', { itemId, storageId: sid, currentQuantity: newQ });
+          await syncData('SAVE_STOCK', { itemId, storageId: sid, currentQuantity: newQ });
 
           // DLC Management
           if (tType === 'OUT') {
@@ -784,12 +784,12 @@ const App: React.FC = () => {
 
               if (target.id === 's0') {
                   const toAdd = remainingQty;
-                  commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
+                  await commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
                   remainingQty = 0;
               } else {
                   const toAdd = Math.min(remainingQty, target.availableSpace);
                   if (toAdd > 0) {
-                      commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
+                      await commitTrans(target.id, toAdd, 'IN', target.current + toAdd);
                       remainingQty -= toAdd;
                   }
               }
@@ -797,7 +797,7 @@ const App: React.FC = () => {
           // Si surplus, on met tout dans s0 (ou le dernier recours)
           if (remainingQty > 0) {
               const fallback = targets.find(t => t.id === 's0') || targets[targets.length - 1];
-              if (fallback) commitTrans(fallback.id, remainingQty, 'IN', fallback.current + remainingQty);
+              if (fallback) await commitTrans(fallback.id, remainingQty, 'IN', fallback.current + remainingQty);
           }
 
       } else {
@@ -828,7 +828,7 @@ const App: React.FC = () => {
                       const openedPart = parseFloat((decimalStock.currentQuantity - Math.floor(decimalStock.currentQuantity)).toFixed(3));
                       const newQ = Math.floor(decimalStock.currentQuantity);
                       
-                      commitTrans(decimalStock.storageId, openedPart, 'OUT', newQ);
+                      await commitTrans(decimalStock.storageId, openedPart, 'OUT', newQ);
                       currentLevels = currentLevels.map(l => l.storageId === decimalStock.storageId ? { ...l, currentQuantity: newQ } : l);
 
                       // Réapprovisionnement automatique
@@ -847,8 +847,8 @@ const App: React.FC = () => {
                           const updatedTargetQ = parseFloat((newQ + 1).toFixed(3));
                           const updatedSourceQ = source.currentQuantity - 1;
                           
-                          commitTrans(source.storageId, 1, 'OUT', updatedSourceQ);
-                          commitTrans(decimalStock.storageId, 1, 'IN', updatedTargetQ);
+                          await commitTrans(source.storageId, 1, 'OUT', updatedSourceQ);
+                          await commitTrans(decimalStock.storageId, 1, 'IN', updatedTargetQ);
                           
                           currentLevels = currentLevels.map(l => {
                               if (l.storageId === decimalStock.storageId) return { ...l, currentQuantity: updatedTargetQ };
@@ -881,14 +881,14 @@ const App: React.FC = () => {
 
                       if (bestStock) {
                           const newQ = bestStock.currentQuantity - 1;
-                          commitTrans(bestStock.storageId, 1, 'OUT', newQ);
+                          await commitTrans(bestStock.storageId, 1, 'OUT', newQ);
                           currentLevels = currentLevels.map(l => l.storageId === bestStock.storageId ? { ...l, currentQuantity: newQ } : l);
                       } else {
                           // Vraiment plus rien, on tape dans s0 même si < 1
                           const fallback = currentLevels.find(l => l.storageId === 's0') || currentLevels[0];
                           if (fallback) {
                               const newQ = Math.max(0, fallback.currentQuantity - 1);
-                              commitTrans(fallback.storageId, 1, 'OUT', newQ);
+                              await commitTrans(fallback.storageId, 1, 'OUT', newQ);
                               currentLevels = currentLevels.map(l => l.storageId === fallback.storageId ? { ...l, currentQuantity: newQ } : l);
                           }
                       }
@@ -911,7 +911,7 @@ const App: React.FC = () => {
                   const take = Math.min(remainingToTake, target.currentQuantity);
                   if (take > 0) {
                       const newQ = parseFloat((target.currentQuantity - take).toFixed(3));
-                      commitTrans(target.storageId, take, 'OUT', newQ);
+                      await commitTrans(target.storageId, take, 'OUT', newQ);
                       remainingToTake -= take;
                       currentLevels = currentLevels.map(l => l.storageId === target.storageId ? { ...l, currentQuantity: newQ } : l);
                   }
@@ -920,8 +920,8 @@ const App: React.FC = () => {
       }
   };
 
-  const handleTransaction = (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false, note?: string) => {
-    handleSmartTransaction(itemId, type, qty, isServiceTransfer, note);
+  const handleTransaction = async (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer: boolean = false, note?: string) => {
+    await handleSmartTransaction(itemId, type, qty, isServiceTransfer, note);
   };
 
   const handleUpdateLoss = (updatedLoss: Loss) => {

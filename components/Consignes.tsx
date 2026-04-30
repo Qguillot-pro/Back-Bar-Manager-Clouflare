@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { Printer } from 'lucide-react';
 import { StockItem, StorageSpace, StockConsigne, StockPriority } from '../types';
 
 interface ConsignesProps {
@@ -99,6 +100,104 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
     setColumnFilters(newFilters);
   };
 
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const spacesToPrint = visibleStorages.filter(s => s.id !== 's0' || columnFilters.includes('all'));
+    
+    let html = `
+      <html>
+        <head>
+          <title>Consignes de Stockage</title>
+          <style>
+            @media print {
+              @page { size: A4; margin: 15mm; }
+              .page-break { page-break-after: always; }
+            }
+            body { font-family: 'Inter', system-ui, sans-serif; color: #1e293b; margin: 0; padding: 0; }
+            .space-header { 
+              border-bottom: 3px solid #4f46e5; 
+              padding-bottom: 15px; 
+              margin-bottom: 30px;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+            }
+            .space-name { font-size: 24px; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; }
+            .date { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+            th { text-align: left; background: #f8fafc; padding: 12px 15px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+            td { padding: 12px 15px; font-size: 13px; border-bottom: 1px solid #f1f5f9; font-weight: 500; }
+            .qty { font-weight: 900; color: #4f46e5; text-align: center; font-size: 16px; }
+            .item-name { color: #0f172a; font-weight: 700; }
+            .info-box { background: #f1f5f9; padding: 10px; border-radius: 8px; font-size: 9px; font-weight: 600; color: #475569; margin-top: 20px; text-align: center; }
+          </style>
+        </head>
+        <body>
+    `;
+
+    spacesToPrint.forEach((space, index) => {
+      const spaceConsignes = items
+        .map(item => {
+          const consigne = consignes.find(c => c.itemId === item.id && c.storageId === space.id);
+          const priority = priorities.find(p => p.itemId === item.id && p.storageId === space.id);
+          return { item, min: consigne?.minQuantity || 0, priority: priority?.priority ?? 0 };
+        })
+        .filter(c => c.min > 0 || c.priority > 0)
+        .sort((a, b) => a.item.name.localeCompare(b.item.name));
+
+      if (spaceConsignes.length === 0) return;
+
+      html += `
+        <div class="page-container ${index < spacesToPrint.length - 1 ? 'page-break' : ''}">
+          <div class="space-header">
+            <div>
+              <div class="date">Consignes de Stockage • ${new Date().toLocaleDateString('fr-FR')}</div>
+              <div class="space-name">${space.name}</div>
+            </div>
+            <div style="font-size: 10px; font-weight: 800; color: #94a3b8;">BACK BAR MANAGER</div>
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 70%">Désignation Article</th>
+                <th style="width: 30%; text-align: center;">Quantité Requise (MIN)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${spaceConsignes.map(c => `
+                <tr>
+                  <td class="item-name">${c.item.name}</td>
+                  <td class="qty">${c.min.toString().replace('.', ',')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <div class="info-box">
+            FEUILLE DE VÉRIFICATION DE STOCK - MERCI DE RESPECTER CES NIVEAUX POUR LE BON FONCTIONNEMENT DU SERVICE.
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => { window.close(); }, 100);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
   const visibleStorages = useMemo(() => {
     const showAll = columnFilters.includes('all');
     // Si 'all' est sélectionné dans un des filtres, on montre tout, trié par position
@@ -156,17 +255,28 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
                 <svg className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
              </div>
 
-             <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm shrink-0">
-                <span className={`text-[10px] font-black uppercase tracking-widest ${!isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Saisie</span>
+             <div className="flex items-center gap-2">
                 <button 
-                  onClick={() => setIsEditOrderMode(!isEditOrderMode)} 
-                  disabled={!canEdit}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${isEditOrderMode ? 'bg-indigo-600' : 'bg-slate-200'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`} 
-                  aria-label="Changer le mode d'édition"
+                    onClick={handlePrint}
+                    className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-indigo-600 hover:border-indigo-100 hover:bg-indigo-50 transition-all shadow-sm flex items-center gap-2"
+                    title="Imprimer les consignes (A4)"
                 >
-                  <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isEditOrderMode ? 'left-6' : 'left-1'}`}></div>
+                    <Printer className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Imprimer</span>
                 </button>
-                <span className={`text-[10px] font-black uppercase tracking-widest ${isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Ordre Col.</span>
+
+                <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm shrink-0">
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${!isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Saisie</span>
+                    <button 
+                    onClick={() => setIsEditOrderMode(!isEditOrderMode)} 
+                    disabled={!canEdit}
+                    className={`relative w-10 h-5 rounded-full transition-colors ${isEditOrderMode ? 'bg-indigo-600' : 'bg-slate-200'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                    aria-label="Changer le mode d'édition"
+                    >
+                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${isEditOrderMode ? 'left-6' : 'left-1'}`}></div>
+                    </button>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${isEditOrderMode ? 'text-indigo-600' : 'text-slate-400'}`}>Ordre Col.</span>
+                </div>
              </div>
           </div>
         </div>
