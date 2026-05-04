@@ -10,7 +10,7 @@ interface GlobalInventoryProps {
   categories: Category[];
   consignes: StockConsigne[];
   onSync: (action: string, payload: any) => void;
-  onUpdateStock: (itemId: string, storageId: string, qty: number, note?: string) => void;
+  onUpdateStock: (itemId: string, storageId: string, qty: number, note?: string, skipDlc?: boolean) => void;
   formats: Format[];
   canEdit?: boolean;
 }

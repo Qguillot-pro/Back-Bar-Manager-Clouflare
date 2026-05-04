@@ -929,13 +929,13 @@ const App: React.FC = () => {
     syncData('SAVE_LOSS', updatedLoss);
   };
 
-  const handleUpdateStock = (itemId: string, storageId: string, newQuantity: number, note?: string) => {
+  const handleUpdateStock = (itemId: string, storageId: string, newQuantity: number, note?: string, skipDlc: boolean = false) => {
       const previousLevel = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
       const previousQty = previousLevel?.currentQuantity || 0;
       const item = items.find(i => i.id === itemId);
 
       // If it's an OUT regulation and item has DLC, ask if it's open/finished
-      if (newQuantity < previousQty && item?.dlcProfileId) {
+      if (!skipDlc && newQuantity < previousQty && item?.dlcProfileId) {
           setRegulationDlcModal({
               itemId,
               storageId,
@@ -975,14 +975,14 @@ const App: React.FC = () => {
           syncData('SAVE_TRANSACTION', trans);
 
           // Consume DLC if OUT
-          if (type === 'OUT') {
+          if (type === 'OUT' && !skipDlc) {
               handleDlcConsumption(itemId, storageId, qty);
           }
       }
   };
 
   // Nouvelle fonction pour le StockTable : Gestion +/- avec annulation intelligente
-  const handleQuickAdjust = (itemId: string, storageId: string, delta: number) => {
+  const handleQuickAdjust = (itemId: string, storageId: string, delta: number, skipDlc: boolean = false) => {
       const level = stockLevels.find(l => l.itemId === itemId && l.storageId === storageId);
       const currentQty = level?.currentQuantity || 0;
       const newQty = Math.max(0, parseFloat((currentQty + delta).toFixed(3)));
@@ -1012,9 +1012,9 @@ const App: React.FC = () => {
       }
 
       // Cas standard : Mise à jour avec note "Régulation"
-      handleUpdateStock(itemId, storageId, newQty, "Régulation");
+      handleUpdateStock(itemId, storageId, newQty, "Régulation", skipDlc);
 
-      if (delta < 0) {
+      if (delta < 0 && !skipDlc) {
           handleDlcConsumption(itemId, storageId, Math.abs(delta));
       }
   };
@@ -1341,7 +1341,7 @@ const App: React.FC = () => {
           {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={handleAddDlc} onDlcConsumption={(id) => handleDlcConsumption(id)} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} onUndo={handleUndoLastTransaction} />}
           {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} setStockLevels={setStockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} currentUser={currentUser} onSync={syncData} canEdit={canEdit('inventory')} />}
           {view === 'inventory' && <GlobalInventory items={items} setItems={setItems} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} canEdit={canEdit('global_inventory')} />}
-          {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} canEdit={canEdit('consignes')} />}
+          {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} canEdit={canEdit('consignes')} stockLevels={stockLevels} />}
           {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { 
             const existing = orders.find(o => o.id === id);
             if (!existing) return;

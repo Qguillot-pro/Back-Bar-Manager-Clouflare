@@ -9,8 +9,8 @@ interface StockTableProps {
   setStockLevels?: React.Dispatch<React.SetStateAction<StockLevel[]>>;
   consignes?: StockConsigne[]; 
   priorities: StockPriority[];
-  onUpdateStock: (itemId: string, storageId: string, qty: number) => void;
-  onAdjustTransaction?: (itemId: string, storageId: string, delta: number) => void;
+  onUpdateStock: (itemId: string, storageId: string, qty: number, note?: string, skipDlc?: boolean) => void;
+  onAdjustTransaction?: (itemId: string, storageId: string, delta: number, skipDlc?: boolean) => void;
   currentUser?: User;
   onSync?: (action: string, payload: any) => void;
   canEdit?: boolean;
@@ -85,7 +85,7 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
 
   const handleManualEdit = (itemId: string, storageId: string, val: number) => {
       // Round to 3 decimals to avoid floating point issues
-      onUpdateStock(itemId, storageId, Math.round(val * 1000) / 1000);
+      onUpdateStock(itemId, storageId, Math.round(val * 1000) / 1000, "Régulation", activeTab === 'STORAGE');
   };
 
   const visibleStorages = useMemo(() => {
@@ -239,14 +239,14 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                                     return (
                                         <td key={s.id} className="p-4 border-r text-center">
                                             <div className="flex justify-center items-center gap-2">
-                                                {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, s.id, -1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white font-black transition-all">-</button>}
+                                                {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, s.id, -1, (activeTab as string) === 'STORAGE')} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white font-black transition-all">-</button>}
                                                 <EditableNumberCell 
                                                     value={qty}
                                                     onSave={(val) => handleManualEdit(item.id, s.id, val)}
                                                     disabled={!canEdit}
                                                     className={`w-14 text-center p-1 rounded-lg font-black text-sm border-2 transition-all ${isLow ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-slate-50 border-slate-100 text-slate-700'}`}
                                                 />
-                                                {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, s.id, 1)} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-emerald-500 hover:text-white font-black transition-all">+</button>}
+                                                {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, s.id, 1, (activeTab as string) === 'STORAGE')} className="w-7 h-7 rounded-lg bg-slate-100 text-slate-400 hover:bg-emerald-500 hover:text-white font-black transition-all">+</button>}
                                             </div>
                                         </td>
                                     );
@@ -316,8 +316,8 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                                           <td className="p-6 text-center text-slate-400 font-bold">{consigne || '-'}</td>
                                           <td className="p-6 text-center">
                                               <div className="flex justify-center gap-2">
-                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>}
-                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>}
+                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, -1, (activeTab as string) === 'STORAGE')} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>}
+                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(selectedProductId, s.id, 1, (activeTab as string) === 'STORAGE')} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>}
                                               </div>
                                           </td>
                                       </tr>
@@ -426,8 +426,8 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                                       {!isReorderMode && (
                                           <td className="p-6 text-center">
                                               <div className="flex justify-center gap-2">
-                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, -1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>}
-                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, 1)} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>}
+                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, -1, (activeTab as string) === 'STORAGE')} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-rose-500 hover:text-white transition-all shadow-sm">-</button>}
+                                                  {canEdit && <button onClick={() => onAdjustTransaction?.(item.id, selectedStorageId, 1, (activeTab as string) === 'STORAGE')} className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-emerald-500 hover:text-white transition-all shadow-sm">+</button>}
                                               </div>
                                           </td>
                                       )}

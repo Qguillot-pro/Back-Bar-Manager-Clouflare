@@ -1,13 +1,14 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Printer } from 'lucide-react';
-import { StockItem, StorageSpace, StockConsigne, StockPriority } from '../types';
+import { StockItem, StorageSpace, StockConsigne, StockPriority, StockLevel } from '../types';
 
 interface ConsignesProps {
   items: StockItem[];
   storages: StorageSpace[];
   consignes: StockConsigne[];
   priorities: StockPriority[];
+  stockLevels?: StockLevel[];
   setConsignes: React.Dispatch<React.SetStateAction<StockConsigne[]>>;
   onSync?: (action: string, payload: any) => void;
   canEdit?: boolean;
@@ -15,7 +16,7 @@ interface ConsignesProps {
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, priorities, setConsignes, onSync, canEdit = true }) => {
+const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, priorities, stockLevels, setConsignes, onSync, canEdit = true }) => {
   const [isEditOrderMode, setIsEditOrderMode] = useState(false);
   const [editingValue, setEditingValue] = useState<{key: string, val: string} | null>(null);
   
@@ -142,10 +143,19 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
         .map(item => {
           const consigne = consignes.find(c => c.itemId === item.id && c.storageId === space.id);
           const priority = priorities.find(p => p.itemId === item.id && p.storageId === space.id);
-          return { item, min: consigne?.minQuantity || 0, priority: priority?.priority ?? 0 };
+          const level = stockLevels?.find(l => l.itemId === item.id && l.storageId === space.id);
+          return { 
+              item, 
+              min: consigne?.minQuantity || 0, 
+              priority: priority?.priority ?? 0,
+              storageOrder: level?.order ?? 999999
+          };
         })
         .filter(c => c.min > 0 || c.priority > 0)
-        .sort((a, b) => a.item.name.localeCompare(b.item.name));
+        .sort((a, b) => {
+            if (a.storageOrder !== b.storageOrder) return a.storageOrder - b.storageOrder;
+            return (a.item.order || 0) - (b.item.order || 0) || a.item.name.localeCompare(b.item.name);
+        });
 
       if (spaceConsignes.length === 0) return;
 
