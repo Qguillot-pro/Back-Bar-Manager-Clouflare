@@ -1342,7 +1342,7 @@ const App: React.FC = () => {
           {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} setStockLevels={setStockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} currentUser={currentUser} onSync={syncData} canEdit={canEdit('inventory')} />}
           {view === 'inventory' && <GlobalInventory items={items} setItems={setItems} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} canEdit={canEdit('global_inventory')} />}
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} canEdit={canEdit('consignes')} stockLevels={stockLevels} />}
-          {view === 'orders' && <Order orders={orders} items={items} storages={storages} onUpdateOrder={(id, q, s, r) => { 
+          {view === 'orders' && <Order orders={orders} items={items} storages={storages} categories={categories} onUpdateOrder={(id, q, s, r) => { 
             const existing = orders.find(o => o.id === id);
             if (!existing) return;
             const updated = { ...existing, quantity: q, status: s || existing.status, ruptureDate: r || existing.ruptureDate };

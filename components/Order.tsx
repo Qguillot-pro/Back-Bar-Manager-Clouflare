@@ -1,11 +1,12 @@
 
 import React, { useState, useMemo } from 'react';
-import { PendingOrder, StockItem, StorageSpace, Format, Event, EventProduct, EmailTemplate } from '../types';
+import { PendingOrder, StockItem, StorageSpace, Format, Event, EventProduct, EmailTemplate, Category } from '../types';
 
 interface OrderProps {
   orders: PendingOrder[];
   items: StockItem[];
   storages: StorageSpace[];
+  categories: Category[];
   onUpdateOrder: (orderId: string, quantity: number, status?: 'PENDING' | 'ORDERED' | 'RECEIVED', ruptureDate?: string) => void;
   onDeleteOrder: (orderId: string) => void;
   onAddManualOrder: (itemId: string, qty: number) => void;
@@ -16,12 +17,33 @@ interface OrderProps {
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], onUpdateOrder, onDeleteOrder, onAddManualOrder, formats = [], events = [], emailTemplates = [] }) => {
+const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], categories = [], onUpdateOrder, onDeleteOrder, onAddManualOrder, formats = [], events = [], emailTemplates = [] }) => {
   const [activeTab, setActiveTab] = useState<'PENDING' | 'ORDERED'>('PENDING');
   const [manualSearch, setManualSearch] = useState('');
   const [manualQty, setManualQty] = useState('1');
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   
+  // Helper to get category order
+  const getCategoryOrder = (categoryName: string) => {
+      const idx = categories.findIndex(c => c === categoryName);
+      return idx === -1 ? 999 : idx;
+  };
+
+  // Sort function for orders by category
+  const sortOrdersByCategory = (orderList: PendingOrder[]) => {
+      return [...orderList].sort((a, b) => {
+          const itemA = items.find(i => i.id === a.itemId);
+          const itemB = items.find(i => i.id === b.itemId);
+          const catA = itemA?.category || 'Autre';
+          const catB = itemB?.category || 'Autre';
+          
+          if (catA !== catB) {
+              return getCategoryOrder(catA) - getCategoryOrder(catB) || catA.localeCompare(catB);
+          }
+          return (itemA?.name || '').localeCompare(itemB?.name || '');
+      });
+  };
+
   // History for macarons (3 last received orders)
   const itemOrdersHistory = useMemo(() => {
       const history: Record<string, any[]> = {};
@@ -132,10 +154,22 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
           ? pendingOrders.filter(o => selectedOrders.has(o.id)) 
           : pendingOrders;
 
-      let table = "Produit | Format | Quantité\n----------------------------\n";
-      ordersToInclude.forEach(o => {
+      const sortedOrders = sortOrdersByCategory(ordersToInclude);
+
+      let table = "";
+      let currentCategory = "";
+
+      sortedOrders.forEach(o => {
           const item = items.find(i => i.id === o.itemId);
+          const itemCategory = item?.category || 'Autre';
           const fmt = (formats || []).find(f => f.id === item?.formatId)?.name || '';
+          
+          if (itemCategory !== currentCategory) {
+              currentCategory = itemCategory;
+              table += `\n--- ${currentCategory.toUpperCase()} ---\n`;
+              table += "Produit | Format | Quantité\n";
+          }
+          
           table += `${item?.name} | ${fmt} | ${o.quantity}\n`;
       });
 
@@ -370,52 +404,71 @@ const Order: React.FC<OrderProps> = ({ orders = [], items = [], storages = [], o
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                          {pendingOrders.map(o => {
-                              const item = items.find(i => i.id === o.itemId);
-                              if (!item) return null;
-                              return (
-                                  <tr key={o.id} className={`hover:bg-slate-50 ${selectedOrders.has(o.id) ? 'bg-indigo-50/30' : ''}`}>
-                                      <td className="p-4 text-center">
-                                          <input type="checkbox" className="w-4 h-4 rounded text-indigo-600 cursor-pointer" checked={selectedOrders.has(o.id)} onChange={() => toggleSelection(o.id)} />
-                                      </td>
-                                      <td className="p-4 font-black text-slate-800">
-                                          <div>{item.name}</div>
-                                          <div className="flex gap-1 mt-1 flex-wrap">
-                                              {(itemOrdersHistory[item.id] || []).map((prev, idx) => (
-                                                  <span key={idx} className="bg-slate-100 text-slate-500 text-[8px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
-                                                      {safeDateString(prev.receivedAt || prev.date).slice(0, 5)}: {prev.quantity}
-                                                  </span>
-                                              ))}
-                                          </div>
-                                      </td>
-                                      <td className="p-4 text-xs font-bold text-slate-500">{getFormatName(item.formatId)}</td>
-                                      <td className="p-4 text-[10px] font-bold text-slate-400">
-                                          {o.ruptureDate ? <span className="text-rose-500">Suite Rupture</span> : 'Réassort'}
-                                      </td>
-                                      <td className="p-4 text-center">
-                                          <input 
-                                            type="number"
-                                            className="w-16 bg-slate-100 rounded-lg p-2 text-center font-black outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                            value={o.quantity || ''}
-                                            onFocus={e => (e.target as HTMLInputElement).select()}
-                                            onChange={(e) => {
-                                                const val = e.target.value;
-                                                if (val === '') onUpdateOrder(o.id, 0);
-                                                else onUpdateOrder(o.id, parseInt(val) || 0);
-                                            }}
-                                          />
-                                      </td>
-                                      <td className="p-4 text-center">
-                                          <button 
-                                            onClick={() => onDeleteOrder(o.id)}
-                                            className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors"
-                                          >
-                                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                          </button>
-                                      </td>
-                                  </tr>
-                              );
-                          })}
+                          {(() => {
+                              const sorted = sortOrdersByCategory(pendingOrders);
+                              let lastCategory = "";
+                              
+                              return sorted.map(o => {
+                                  const item = items.find(i => i.id === o.itemId);
+                                  if (!item) return null;
+                                  
+                                  const currentCategory = item.category || 'Autre';
+                                  const showCategoryHeader = currentCategory !== lastCategory;
+                                  lastCategory = currentCategory;
+
+                                  return (
+                                      <React.Fragment key={o.id}>
+                                          {showCategoryHeader && (
+                                              <tr className="bg-slate-50/50">
+                                                  <td colSpan={6} className="px-4 py-2 text-[10px] font-black text-indigo-400 uppercase tracking-widest border-y border-slate-100">
+                                                      {currentCategory}
+                                                  </td>
+                                              </tr>
+                                          )}
+                                          <tr className={`hover:bg-slate-50 ${selectedOrders.has(o.id) ? 'bg-indigo-50/30' : ''}`}>
+                                              <td className="p-4 text-center">
+                                                  <input type="checkbox" className="w-4 h-4 rounded text-indigo-600 cursor-pointer" checked={selectedOrders.has(o.id)} onChange={() => toggleSelection(o.id)} />
+                                              </td>
+                                              <td className="p-4 font-black text-slate-800">
+                                                  <div>{item.name}</div>
+                                                  <div className="flex gap-1 mt-1 flex-wrap">
+                                                      {(itemOrdersHistory[item.id] || []).map((prev, idx) => (
+                                                          <span key={idx} className="bg-slate-100 text-slate-500 text-[8px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                                              {safeDateString(prev.receivedAt || prev.date).slice(0, 5)}: {prev.quantity}
+                                                          </span>
+                                                      ))}
+                                                  </div>
+                                              </td>
+                                              <td className="p-4 text-xs font-bold text-slate-500">{getFormatName(item.formatId)}</td>
+                                              <td className="p-4 text-[10px] font-bold text-slate-400">
+                                                  {o.ruptureDate ? <span className="text-rose-500">Suite Rupture</span> : 'Réassort'}
+                                              </td>
+                                              <td className="p-4 text-center">
+                                                  <input 
+                                                    type="number"
+                                                    className="w-16 bg-slate-100 rounded-lg p-2 text-center font-black outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                                    value={o.quantity || ''}
+                                                    onFocus={e => (e.target as HTMLInputElement).select()}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (val === '') onUpdateOrder(o.id, 0);
+                                                        else onUpdateOrder(o.id, parseInt(val) || 0);
+                                                    }}
+                                                  />
+                                              </td>
+                                              <td className="p-4 text-center">
+                                                  <button 
+                                                    onClick={() => onDeleteOrder(o.id)}
+                                                    className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors"
+                                                  >
+                                                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                  </button>
+                                              </td>
+                                          </tr>
+                                      </React.Fragment>
+                                  );
+                              });
+                          })()}
                           {pendingOrders.length === 0 && (
                               <tr><td colSpan={6} className="p-10 text-center text-slate-400 italic">Aucune commande en préparation.</td></tr>
                           )}
