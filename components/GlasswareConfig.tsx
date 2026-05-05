@@ -14,6 +14,7 @@ const GlasswareConfig: React.FC<GlasswareConfigProps> = ({ glassware, setGlasswa
   const [newCapacity, setNewCapacity] = useState(0);
   const [newQuantity, setNewQuantity] = useState(0);
   const [selectedForPrint, setSelectedForPrint] = useState<Set<string>>(new Set());
+  const [editingGlass, setEditingGlass] = useState<{id: string, name: string, capacity: number} | null>(null);
 
   const handleAdd = () => {
       if (!newName) return;
@@ -40,6 +41,18 @@ const GlasswareConfig: React.FC<GlasswareConfigProps> = ({ glassware, setGlasswa
       if (item) {
           onSync('SAVE_GLASSWARE', { ...item, quantity: qty, lastUpdated: now });
       }
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingGlass) return;
+    const now = new Date().toISOString();
+    setGlassware(prev => prev.map(g => g.id === editingGlass.id ? { ...g, name: editingGlass.name, capacity: editingGlass.capacity, lastUpdated: now } : g));
+    
+    const item = glassware.find(g => g.id === editingGlass.id);
+    if (item) {
+        onSync('SAVE_GLASSWARE', { ...item, name: editingGlass.name, capacity: editingGlass.capacity, lastUpdated: now });
+    }
+    setEditingGlass(null);
   };
 
   const handlePrint = () => {
@@ -84,7 +97,6 @@ const GlasswareConfig: React.FC<GlasswareConfigProps> = ({ glassware, setGlasswa
               <div class="date">Inventaire de Verrerie • ${new Date().toLocaleDateString('fr-FR')}</div>
               <div class="title">Stock Verrerie Disponible</div>
             </div>
-            <div style="font-size: 10px; font-weight: 800; color: #94a3b8;">BACK BAR MANAGER</div>
           </div>
           
           <table>
@@ -188,9 +200,33 @@ const GlasswareConfig: React.FC<GlasswareConfigProps> = ({ glassware, setGlasswa
                             <div className={`mt-1 transition-colors ${selectedForPrint.has(g.id) ? 'text-cyan-500' : 'text-slate-300'}`}>
                                 {selectedForPrint.has(g.id) ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
                             </div>
-                            <div>
-                                <p className="font-bold text-slate-800">{g.name}</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">{g.capacity} cl</p>
+                            <div onClick={(e) => { e.stopPropagation(); setEditingGlass({id: g.id, name: g.name, capacity: g.capacity || 0}); }}>
+                                {editingGlass?.id === g.id ? (
+                                    <div className="space-y-1" onClick={e => e.stopPropagation()}>
+                                        <input 
+                                            className="w-full bg-white border border-cyan-200 px-2 py-1 rounded font-bold text-slate-800 text-sm outline-none" 
+                                            value={editingGlass.name} 
+                                            onChange={e => setEditingGlass({...editingGlass, name: e.target.value})}
+                                            onBlur={handleSaveEdit}
+                                            autoFocus
+                                        />
+                                        <div className="flex items-center gap-1">
+                                            <input 
+                                                type="number"
+                                                className="w-12 bg-white border border-cyan-200 px-2 py-0.5 rounded font-bold text-slate-500 text-[10px] outline-none" 
+                                                value={editingGlass.capacity} 
+                                                onChange={e => setEditingGlass({...editingGlass, capacity: parseFloat(e.target.value)})}
+                                                onBlur={handleSaveEdit}
+                                            />
+                                            <span className="text-[9px] font-bold text-slate-400">cl</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="font-bold text-slate-800 hover:text-cyan-600 transition-colors">{g.name}</p>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">{g.capacity} cl</p>
+                                    </>
+                                )}
                             </div>
                         </div>
                         <button 

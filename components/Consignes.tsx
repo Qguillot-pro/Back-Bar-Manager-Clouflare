@@ -166,7 +166,6 @@ const Consignes: React.FC<ConsignesProps> = ({ items, storages, consignes, prior
               <div class="date">Consignes de Stockage • ${new Date().toLocaleDateString('fr-FR')}</div>
               <div class="space-name">${space.name}</div>
             </div>
-            <div style="font-size: 10px; font-weight: 800; color: #94a3b8;">BACK BAR MANAGER</div>
           </div>
           
           <table>
