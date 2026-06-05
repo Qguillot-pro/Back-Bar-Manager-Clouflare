@@ -22,14 +22,17 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [editingPrice, setEditingPrice] = useState<{ id: string, value: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
   
   const displayedItems = (filter === 'TEMPORARY' 
       ? items.filter(i => i.isTemporary) 
-      : items).filter(i => 
-          normalizeText(i.name).includes(normalizeText(searchTerm)) || 
-          (i.articleCode && normalizeText(i.articleCode).includes(normalizeText(searchTerm))) ||
-          (i.isDraft && normalizeText('brouillon').includes(normalizeText(searchTerm)))
-      );
+      : items).filter(i => {
+          const isHiddenMatch = showHidden ? true : !i.isHidden;
+          const searchMatch = normalizeText(i.name).includes(normalizeText(searchTerm)) || 
+              (i.articleCode && normalizeText(i.articleCode).includes(normalizeText(searchTerm))) ||
+              (i.isDraft && normalizeText('brouillon').includes(normalizeText(searchTerm)));
+          return isHiddenMatch && searchMatch;
+      });
 
   const updateItem = (id: string, field: keyof StockItem, value: any) => {
     setItems(prev => prev.map(i => {
@@ -150,6 +153,12 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
 
             {userRole === 'ADMIN' && filter === 'ALL' && (
                 <div className="flex items-center gap-4">
+                    <button 
+                        onClick={() => setShowHidden(!showHidden)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm ${showHidden ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}
+                    >
+                        {showHidden ? 'Masquer Cachés' : 'Voir Cachés'}
+                    </button>
                     {items.some(i => i.isDraft && !i.isTemporary) && (
                         <button 
                             onClick={() => {
@@ -303,6 +312,18 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                             {dlcProfiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                     )}
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input 
+                        type="checkbox"
+                        className="w-4 h-4 rounded text-slate-600 focus:ring-slate-500 border-slate-300"
+                        checked={item.isHidden || false}
+                        onChange={e => updateItem(item.id, 'isHidden', e.target.checked)}
+                        />
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${item.isHidden ? 'text-slate-900' : 'text-slate-300'}`}>
+                            {item.isHidden ? '👁 Masqué' : 'Masquer'}
+                        </span>
+                    </label>
                   </div>
                 </td>
                 <td className="p-6">

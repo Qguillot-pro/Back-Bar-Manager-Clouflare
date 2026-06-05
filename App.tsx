@@ -23,6 +23,7 @@ import AdminLogbook from './components/AdminLogbook';
 import AdminPrices from './components/AdminPrices';
 import DailyBriefingModal from './components/DailyBriefingModal';
 import StorageOptimization from './components/StorageOptimization';
+import MenuVerification from './components/MenuVerification';
 
 const NavItem = ({ collapsed, active, onClick, label, icon, badge }: { collapsed: boolean, active: boolean, onClick: () => void, label: string, icon: string, badge?: number }) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all mb-1 group relative ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
@@ -392,6 +393,7 @@ const App: React.FC = () => {
     { id: 'consignes', label: 'Consignes Stock', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', resource: 'consignes' },
     { id: 'history', label: 'Historique', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', resource: 'history' },
     { id: 'optimization', label: 'Analyse & Flux', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', resource: 'inventory' },
+    { id: 'menu_verification', label: 'Vérification Menu', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', resource: 'articles' },
     { id: 'staff_scheduling', label: 'Optimisation Plannings', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', resource: 'staff_scheduling' },
   ];
 
@@ -1411,6 +1413,17 @@ const App: React.FC = () => {
                 transactions={transactions}
                 formats={formats}
                 onSync={syncData}
+            />
+          )}
+          {view === 'menu_verification' && (
+            <MenuVerification
+                items={items}
+                recipes={recipes}
+                productSheets={productSheets}
+                categories={categories}
+                formats={formats}
+                onSync={syncData}
+                userRole={currentUser.role}
             />
           )}
           {view === 'staff_scheduling' && (

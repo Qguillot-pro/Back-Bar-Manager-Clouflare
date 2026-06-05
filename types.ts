@@ -106,6 +106,7 @@ export interface StockItem {
   isInventoryOnly?: boolean; 
   isNoStock?: boolean; 
   inventoryLocation?: string;
+  isHidden?: boolean;
 }
 
 export interface DLCHistory {
