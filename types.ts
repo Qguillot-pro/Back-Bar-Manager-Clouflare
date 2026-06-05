@@ -107,7 +107,14 @@ export interface StockItem {
   isNoStock?: boolean; 
   inventoryLocation?: string;
   isHidden?: boolean;
-  externalLocation?: string; // e.g. "CAVE A-1" (max 8 chars suggested by user)
+  externalLocation?: string; // e.g. "CAVE A-1" (max 8 chars)
+  externalLocationId?: string; // Link to the new ExternalStorageLocation entity
+}
+
+export interface ExternalStorageLocation {
+    id: string;
+    name: string;
+    order: number;
 }
 
 export interface RestockValidation {

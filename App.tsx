@@ -101,6 +101,7 @@ const App: React.FC = () => {
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [productSheets, setProductSheets] = useState<ProductSheet[]>([]);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [externalLocations, setExternalLocations] = useState<ExternalStorageLocation[]>([]);
   const [dailyAlerts, setDailyAlerts] = useState<DailyAlert[]>([]);
   const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
   const [showDailyBriefing, setShowDailyBriefing] = useState(false);
@@ -1549,7 +1550,46 @@ const App: React.FC = () => {
           {view === 'recipes' && <RecipesView recipes={recipes} items={items} glassware={glassware} currentUser={currentUser} appConfig={appConfig} onSync={syncData} setRecipes={setRecipes} techniques={techniques} cocktailCategories={cocktailCategories} stockLevels={stockLevels} formats={formats} canEditStock={canEdit('stock')} dailyCocktails={dailyCocktails} />}
           {view === 'product_knowledge' && <ProductKnowledge sheets={productSheets} items={items} currentUserRole={currentUser.role} onSync={syncData} productTypes={productTypes} glassware={glassware} formats={formats} stockLevels={stockLevels} consignes={consignes} canEditStock={canEdit('stock')} dailyCocktails={dailyCocktails} recipes={recipes} />}
           {view === 'admin_prices' && currentUser.role === 'ADMIN' && <AdminPrices items={items} productSheets={productSheets} formats={formats} appConfig={appConfig} onSync={syncData} setProductSheets={setProductSheets} recipes={recipes} setRecipes={setRecipes} />}
-          {view === 'configuration' && <Configuration setItems={setItems} setStorages={setStorages} setFormats={setFormats} storages={storages} formats={formats} priorities={priorities} setPriorities={setPriorities} consignes={consignes} setConsignes={setConsignes} items={items} categories={categories} setCategories={setCategories} users={users} setUsers={setUsers} currentUser={currentUser} dlcProfiles={dlcProfiles} setDlcProfiles={setDlcProfiles} onSync={syncData} appConfig={appConfig} setAppConfig={setAppConfig} glassware={glassware} setGlassware={setGlassware} techniques={techniques} setTechniques={setTechniques} cocktailCategories={cocktailCategories} setCocktailCategories={setCocktailCategories} productTypes={productTypes} setProductTypes={setProductTypes} emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates} fullData={{items, storages, stockLevels}} roleProfiles={roleProfiles} setRoleProfiles={setRoleProfiles} userLogs={userLogs} />}
+          {view === 'configuration' && (
+            <Configuration 
+              setItems={setItems} 
+              setStorages={setStorages} 
+              setFormats={setFormats} 
+              storages={storages} 
+              formats={formats} 
+              priorities={priorities} 
+              setPriorities={setPriorities} 
+              consignes={consignes} 
+              setConsignes={setConsignes} 
+              items={items} 
+              categories={categories} 
+              setCategories={setCategories} 
+              users={users} 
+              setUsers={setUsers} 
+              currentUser={currentUser} 
+              dlcProfiles={dlcProfiles} 
+              setDlcProfiles={setDlcProfiles} 
+              onSync={syncData} 
+              appConfig={appConfig} 
+              setAppConfig={setAppConfig} 
+              glassware={glassware} 
+              setGlassware={setGlassware} 
+              techniques={techniques} 
+              setTechniques={setTechniques} 
+              cocktailCategories={cocktailCategories} 
+              setCocktailCategories={setCocktailCategories} 
+              productTypes={productTypes} 
+              setProductTypes={setProductTypes} 
+              emailTemplates={emailTemplates} 
+              setEmailTemplates={setEmailTemplates} 
+              fullData={{items, storages, stockLevels}} 
+              roleProfiles={roleProfiles} 
+              setRoleProfiles={setRoleProfiles} 
+              userLogs={userLogs} 
+              externalLocations={externalLocations}
+              setExternalLocations={setExternalLocations}
+            />
+          )}
       </main>
 
       {/* MODAL RÉGULATION DLC */}

@@ -311,6 +311,14 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
       const date = new Date().toLocaleDateString('fr-FR');
       
+      const sortedForPrint = [...aggregatedNeeds].sort((a, b) => {
+          const locA = a.item.externalLocation || '';
+          const locB = b.item.externalLocation || '';
+          const locComp = locA.localeCompare(locB);
+          if (locComp !== 0) return locComp;
+          return (a.item.category || '').localeCompare(b.item.category || '');
+      });
+
       printWindow.document.write(`
           <html>
               <head>
@@ -335,30 +343,30 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                   <table>
                       <thead>
                           <tr>
-                              <th>Loc.</th>
+                              <th style="width: 80px;">Loc.</th>
                               <th>Produit</th>
-                              <th>Manque</th>
+                              <th style="width: 100px;">CAT.</th>
+                              <th style="width: 60px; text-align:center;">MANQUE</th>
                               <th class="checkbox-cell">OK</th>
-                              <th class="checkbox-cell">Part.</th>
-                              <th class="checkbox-cell">Rupt.</th>
-                              <th>Notes / Chantier</th>
+                              <th class="checkbox-cell">PART.</th>
+                              <th class="checkbox-cell">RUPT.</th>
                           </tr>
                       </thead>
                       <tbody>
-                          ${aggregatedNeeds.map(agg => `
+                          ${sortedForPrint.map(agg => `
                               <tr>
                                   <td class="loc">${agg.item.externalLocation || '--'}</td>
                                   <td><strong>${agg.item.name}</strong></td>
-                                  <td style="text-align:center;">${agg.totalGap}</td>
+                                  <td style="font-size: 9px; text-transform: uppercase;">${agg.item.category || '--'}</td>
+                                  <td style="text-align:center; font-weight: bold;">${agg.totalGap}</td>
                                   <td class="checkbox-cell"><div class="checkbox"></div></td>
                                   <td class="checkbox-cell"><div class="checkbox"></div></td>
                                   <td class="checkbox-cell"><div class="checkbox"></div></td>
-                                  <td></td>
                               </tr>
                           `).join('')}
                       </tbody>
                   </table>
-                  <p style="font-size: 10px; margin-top: 20px;">* OK = Remontée complète | Part. = Remontée partielle | Rupt. = Rupture</p>
+                  <p style="font-size: 10px; margin-top: 20px; font-weight: bold;">* OK = Complet | PART. = Partielle | RUPT. = Rupture stock cave</p>
                   <script>window.print();</script>
               </body>
           </html>
@@ -372,6 +380,14 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
 
       const date = new Date().toLocaleDateString('fr-FR');
       
+      const sortedForPrint = [...aggregatedNeeds].sort((a, b) => {
+          const locA = a.item.externalLocation || '';
+          const locB = b.item.externalLocation || '';
+          const locComp = locA.localeCompare(locB);
+          if (locComp !== 0) return locComp;
+          return (a.item.category || '').localeCompare(b.item.category || '');
+      });
+
       printWindow.document.write(`
           <html>
               <head>
@@ -379,11 +395,11 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                   <style>
                       body { font-family: 'Courier New', Courier, monospace; width: 80mm; padding: 0; margin: 0; }
                       .ticket { padding: 5mm; }
-                      .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; }
-                      h1 { font-size: 16px; margin: 0; }
-                      .item { margin-bottom: 8px; border-bottom: 1px dotted #ccc; padding-bottom: 4px; }
-                      .loc { font-weight: bold; }
-                      .check { display: inline-block; width: 12px; height: 12px; border: 1px solid #000; margin-right: 4px; }
+                      .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 10px; }
+                      h1 { font-size: 18px; margin: 0; }
+                      .item { margin-bottom: 12px; border-bottom: 1px dotted #000; padding-bottom: 4px; }
+                      .loc { font-weight: bold; background: #000; color: #fff; padding: 0 4px; }
+                      .check { display: inline-block; width: 14px; height: 14px; border: 1.5px solid #000; margin-right: 4px; vertical-align: middle; }
                   </style>
               </head>
               <body>
@@ -391,11 +407,13 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                       <div class="header">
                           <h1>CAVE - ${date}</h1>
                       </div>
-                      ${aggregatedNeeds.map(agg => `
+                      ${sortedForPrint.map(agg => `
                           <div class="item">
-                              <span class="loc">[${agg.item.externalLocation || '--'}]</span> ${agg.item.name}<br/>
-                              Manque: ${agg.totalGap}<br/>
-                              <span class="check"></span> OK  <span class="check"></span> P. <span class="check"></span> R.
+                              <span class="loc">${agg.item.externalLocation || '??'}</span> <strong>${agg.item.name}</strong><br/>
+                              <span style="font-size: 10px;">${agg.item.category} | Manque: ${agg.totalGap}</span><br/>
+                              <div style="margin-top: 4px;">
+                                <span class="check"></span> OK <span class="check"></span> P. <span class="check"></span> R.
+                              </div>
                           </div>
                       `).join('')}
                   </div>
