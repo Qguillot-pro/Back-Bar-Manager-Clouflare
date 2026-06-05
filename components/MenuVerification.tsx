@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { StockItem, Recipe, ProductSheet, Category, Format, UserRole } from '../types';
+import { StockItem, Recipe, ProductSheet, Category, Format, UserRole, StorageSpace, StockConsigne } from '../types';
 import { Camera, Upload, AlertCircle, CheckCircle2, FileSearch, Plus, Search, Loader2, Info, Martini } from 'lucide-react';
 
 interface MenuVerificationProps {
@@ -9,6 +9,8 @@ interface MenuVerificationProps {
     productSheets: ProductSheet[];
     categories: Category[];
     formats: Format[];
+    storages: StorageSpace[];
+    consignes: StockConsigne[];
     onSync: (action: string, payload: any) => void;
     userRole: UserRole;
 }
@@ -22,7 +24,7 @@ interface AnalyzedMenuItem {
     databaseItem?: StockItem;
 }
 
-const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, productSheets, categories, formats, onSync, userRole }) => {
+const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, productSheets, categories, formats, storages, consignes, onSync, userRole }) => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analyzedItems, setAnalyzedItems] = useState<AnalyzedMenuItem[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -103,21 +105,42 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
     const handleIntegrateMissing = (item: AnalyzedMenuItem) => {
         // Logic to create a draft item
         const id = 'item_' + Math.random().toString(36).substr(2, 9);
+        const category = mapTypeToCategory(item.type);
+        
+        // Find similar item for suggestions
+        const similarItem = items.find(i => i.category === category);
+        const suggestedConsignes = similarItem 
+            ? consignes.filter(c => c.itemId === similarItem.id)
+            : [];
+
         const newItem: StockItem = {
             id,
             name: item.name,
-            category: mapTypeToCategory(item.type),
-            formatId: formats[0]?.id || 'f1',
-            pricePerUnit: 0,
+            category,
+            formatId: similarItem?.formatId || formats[0]?.id || 'f1',
+            pricePerUnit: similarItem?.pricePerUnit || 0,
             lastUpdated: new Date().toISOString(),
             createdAt: new Date().toISOString(),
             order: items.length,
             isDraft: true
         };
         onSync('SAVE_ITEM', newItem);
+
+        // Auto-integrate storage spaces and consignes based on similar item
+        suggestedConsignes.forEach(sc => {
+            onSync('SAVE_CONSIGNE', {
+                ...sc,
+                itemId: id,
+                minQuantity: sc.minQuantity // Suggest same consigne
+            });
+        });
         
         // Refresh analysis
         setAnalyzedItems(prev => prev.map(ai => ai.name === item.name ? { ...ai, inDatabase: true, databaseItem: newItem } : ai));
+        
+        if (similarItem) {
+            alert(`Produit "${item.name}" intégré.\nConfigurations copiées depuis "${similarItem.name}" :\n- Catégorie : ${category}\n- Espaces de stockage : ${suggestedConsignes.length}\n- Consignes appliquées.`);
+        }
     };
 
     const mapTypeToCategory = (type: string): Category => {

@@ -11,6 +11,7 @@ import ProductTypesConfig from './ProductTypesConfig';
 import ConnectionLogs from './ConnectionLogs';
 import AdminLogbook from './AdminLogbook';
 import SqlEditor from './SqlEditor';
+import ExternalStorageConfig from './ExternalStorageConfig';
 
 interface ConfigProps {
   setItems: React.Dispatch<React.SetStateAction<StockItem[]>>;
@@ -55,7 +56,7 @@ const Configuration: React.FC<ConfigProps> = ({
   glassware = [], setGlassware, techniques = [], setTechniques, cocktailCategories = [], setCocktailCategories, fullData,
   emailTemplates = [], setEmailTemplates, productTypes = [], setProductTypes, roleProfiles, setRoleProfiles, userLogs
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'users' | 'profiles' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'product_types' | 'email' | 'backup' | 'credits' | 'import' | 'logs' | 'admin_log' | 'sql_editor'>('general');
+  const [activeSubTab, setActiveSubTab] = useState<'general' | 'priorities' | 'external_storage' | 'users' | 'profiles' | 'dlc' | 'glassware' | 'techniques' | 'cocktail_cats' | 'product_types' | 'email' | 'backup' | 'credits' | 'import' | 'logs' | 'admin_log' | 'sql_editor'>('general');
   const [authorizedSubTabs, setAuthorizedSubTabs] = useState<Set<string>>(new Set());
   const [authPinInput, setAuthPinInput] = useState('');
   
@@ -371,6 +372,7 @@ const Configuration: React.FC<ConfigProps> = ({
       <div className="flex border-b border-slate-200 overflow-x-auto pb-1">
         <button onClick={() => handleTabChange('general')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'general' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Paramètres Généraux</button>
         <button onClick={() => handleTabChange('priorities')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'priorities' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Priorités Stock</button>
+        <button onClick={() => handleTabChange('external_storage')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'external_storage' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Organisation Cave</button>
         {currentUser?.role === 'ADMIN' && (
           <>
             <button onClick={() => handleTabChange('product_types')} className={`px-6 py-3 font-black uppercase text-[10px] tracking-widest border-b-2 whitespace-nowrap ${activeSubTab === 'product_types' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Types Produits</button>
@@ -661,6 +663,9 @@ const Configuration: React.FC<ConfigProps> = ({
       
       {activeSubTab === 'priorities' && (
         <PriorityConfig items={items} storages={storages} priorities={priorities} setPriorities={setPriorities} categories={categories} onSync={onSync} />
+      )}
+      {activeSubTab === 'external_storage' && (
+        <ExternalStorageConfig items={items} categories={categories} onSync={onSync} />
       )}
       {/* ... (Other Tabs Unchanged) ... */}
       {activeSubTab === 'glassware' && setGlassware && (

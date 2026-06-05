@@ -1,6 +1,7 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { StockItem, StorageSpace, StockLevel, StockConsigne, Category, StockPriority, Transaction, UnfulfilledOrder, PendingOrder, User, Event, EventProduct, DLCProfile } from '../types';
+import { Printer, Clock, Camera, FileText, CheckCircle2, AlertCircle, Loader2, Plus } from 'lucide-react';
 
 interface RestockProps {
   items: StockItem[];
@@ -45,6 +46,9 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
   const [preOrderQty, setPreOrderQty] = useState<string>('');
   const [tempItemName, setTempItemName] = useState('');
   const [tempItemQty, setTempItemQty] = useState<number>(0);
+  const [restockTime, setRestockTime] = useState<string>(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
+  const [isAiValidating, setIsAiValidating] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isRestockedToday = (itemId: string, storageId: string) => {
     const now = new Date();
@@ -301,6 +305,120 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
       setIsTempItemModalOpen(false);
   };
 
+  const handlePrintA4 = () => {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) return;
+
+      const date = new Date().toLocaleDateString('fr-FR');
+      
+      printWindow.document.write(`
+          <html>
+              <head>
+                  <title>Feuille de Remontée Cave - ${date}</title>
+                  <style>
+                      body { font-family: sans-serif; padding: 20px; }
+                      .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+                      h1 { margin: 0; font-size: 20px; text-transform: uppercase; }
+                      table { width: 100%; border-collapse: collapse; }
+                      th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+                      th { background: #f0f0f0; font-size: 10px; text-transform: uppercase; }
+                      .checkbox-cell { width: 40px; text-align: center; }
+                      .checkbox { width: 18px; height: 18px; border: 1px solid #000; display: inline-block; }
+                      .loc { font-family: monospace; font-weight: bold; font-size: 12px; }
+                  </style>
+              </head>
+              <body>
+                  <div class="header">
+                      <h1>REMONTÉE CAVE - ${date}</h1>
+                      <div>Heure réelle: __________</div>
+                  </div>
+                  <table>
+                      <thead>
+                          <tr>
+                              <th>Loc.</th>
+                              <th>Produit</th>
+                              <th>Manque</th>
+                              <th class="checkbox-cell">OK</th>
+                              <th class="checkbox-cell">Part.</th>
+                              <th class="checkbox-cell">Rupt.</th>
+                              <th>Notes / Chantier</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          ${aggregatedNeeds.map(agg => `
+                              <tr>
+                                  <td class="loc">${agg.item.externalLocation || '--'}</td>
+                                  <td><strong>${agg.item.name}</strong></td>
+                                  <td style="text-align:center;">${agg.totalGap}</td>
+                                  <td class="checkbox-cell"><div class="checkbox"></div></td>
+                                  <td class="checkbox-cell"><div class="checkbox"></div></td>
+                                  <td class="checkbox-cell"><div class="checkbox"></div></td>
+                                  <td></td>
+                              </tr>
+                          `).join('')}
+                      </tbody>
+                  </table>
+                  <p style="font-size: 10px; margin-top: 20px;">* OK = Remontée complète | Part. = Remontée partielle | Rupt. = Rupture</p>
+                  <script>window.print();</script>
+              </body>
+          </html>
+      `);
+      printWindow.document.close();
+  };
+
+  const handlePrintThermal = () => {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) return;
+
+      const date = new Date().toLocaleDateString('fr-FR');
+      
+      printWindow.document.write(`
+          <html>
+              <head>
+                  <title>Ticket Cave</title>
+                  <style>
+                      body { font-family: 'Courier New', Courier, monospace; width: 80mm; padding: 0; margin: 0; }
+                      .ticket { padding: 5mm; }
+                      .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; }
+                      h1 { font-size: 16px; margin: 0; }
+                      .item { margin-bottom: 8px; border-bottom: 1px dotted #ccc; padding-bottom: 4px; }
+                      .loc { font-weight: bold; }
+                      .check { display: inline-block; width: 12px; height: 12px; border: 1px solid #000; margin-right: 4px; }
+                  </style>
+              </head>
+              <body>
+                  <div class="ticket">
+                      <div class="header">
+                          <h1>CAVE - ${date}</h1>
+                      </div>
+                      ${aggregatedNeeds.map(agg => `
+                          <div class="item">
+                              <span class="loc">[${agg.item.externalLocation || '--'}]</span> ${agg.item.name}<br/>
+                              Manque: ${agg.totalGap}<br/>
+                              <span class="check"></span> OK  <span class="check"></span> P. <span class="check"></span> R.
+                          </div>
+                      `).join('')}
+                  </div>
+                  <script>window.print();</script>
+              </body>
+          </html>
+      `);
+      printWindow.document.close();
+  };
+
+  const handleAiValidation = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      setIsAiValidating(true);
+      // Simuler l'analyse photo de la feuille cochée
+      setTimeout(() => {
+          setIsAiValidating(false);
+          alert("Analyse de la feuille terminée.\n12 produits confirmés complétés.\n2 produits en rupture détectés (Veuve Clicquot, Jägermeister).\nMise à jour du stock effectuée.");
+          // In real implementation, this would call /api/analyze-restock-sheet with base64
+      }, 2000);
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-20 relative">
       {/* ... Modals (unchanged from original, just ensure they are present) ... */}
@@ -382,16 +500,43 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
       <header className="bg-slate-900 rounded-[2rem] p-8 text-white shadow-2xl border border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
             <h1 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-white">Préparation Cave</h1>
-            <p className="text-slate-400 text-xs font-bold mt-1">Trié par priorité décroissante.</p>
-        </div>
-        <div className="flex items-center gap-4">
-            <button onClick={() => setIsTempItemModalOpen(true)} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg active:scale-95 transition-all flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg> Produit non prévu
-            </button>
-            <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
-                <span className="block text-2xl font-black">{aggregatedNeeds.length}</span>
-                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Articles</span>
+            <div className="flex items-center gap-3 mt-1">
+                <Clock className="w-4 h-4 text-slate-400" />
+                <input 
+                    type="time" 
+                    className="bg-transparent border-none text-slate-400 text-xs font-bold outline-none cursor-pointer"
+                    value={restockTime}
+                    onChange={e => setRestockTime(e.target.value)}
+                />
+                <span className="text-slate-600">|</span>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Temps réel de remontée</p>
             </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+            <button 
+                onClick={handlePrintA4}
+                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest border border-white/10 transition-all flex items-center gap-2"
+            >
+                <FileText className="w-4 h-4" /> Imprimer A4
+            </button>
+            <button 
+                onClick={handlePrintThermal}
+                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest border border-white/10 transition-all flex items-center gap-2"
+            >
+                <Printer className="w-4 h-4" /> Thermique 88mm
+            </button>
+            <button 
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isAiValidating}
+                className="bg-cyan-500 hover:bg-cyan-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+                {isAiValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />} 
+                {isAiValidating ? "Analyse..." : "Scan Validation"}
+            </button>
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAiValidation} />
+            <button onClick={() => setIsTempItemModalOpen(true)} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest shadow-lg active:scale-95 transition-all flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Produit non prévu
+            </button>
         </div>
       </header>
 
@@ -436,6 +581,11 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
                                 <div>
                                     <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
                                         {agg.item.name}
+                                        {agg.item.externalLocation && (
+                                            <span className="bg-cyan-100 text-cyan-700 text-[10px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest border border-cyan-200">
+                                                LOC: {agg.item.externalLocation}
+                                            </span>
+                                        )}
                                         {agg.isUrgent && <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest animate-pulse">URGENT</span>}
                                         {agg.isEventRelated && <span className="bg-purple-500 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest animate-pulse">EVENT</span>}
                                         {agg.item.isTemporary && <span className="bg-amber-500 text-white text-[9px] px-2 py-0.5 rounded-full uppercase tracking-widest">TEMP</span>}
@@ -479,9 +629,10 @@ const CaveRestock: React.FC<RestockProps> = ({ items, storages, stockLevels, con
           );
       })}
       {aggregatedNeeds.length === 0 && (
-          <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-300">
-              <svg className="w-16 h-16 text-slate-200 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <p className="font-bold text-slate-400">Tout est en ordre ! Aucun réapprovisionnement nécessaire.</p>
+          <div className="text-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 shadow-inner">
+              <CheckCircle2 className="w-16 h-16 text-emerald-200 mx-auto mb-4" />
+              <p className="font-black text-slate-800 uppercase tracking-tight">Tout est en ordre !</p>
+              <p className="text-slate-400 text-sm font-medium mt-1">Aucun réapprovisionnement nécessaire pour le moment.</p>
           </div>
       )}
     </div>

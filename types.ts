@@ -107,6 +107,20 @@ export interface StockItem {
   isNoStock?: boolean; 
   inventoryLocation?: string;
   isHidden?: boolean;
+  externalLocation?: string; // e.g. "CAVE A-1" (max 8 chars suggested by user)
+}
+
+export interface RestockValidation {
+    id: string;
+    date: string;
+    time: string; // Heure de remontée
+    items: {
+        itemId: string;
+        quantity: number;
+        status: 'COMPLETE' | 'PARTIAL' | 'RUPTURE';
+    }[];
+    photoUrl?: string;
+    isValidated: boolean;
 }
 
 export interface DLCHistory {

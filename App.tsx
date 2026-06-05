@@ -1422,6 +1422,8 @@ const App: React.FC = () => {
                 productSheets={productSheets}
                 categories={categories}
                 formats={formats}
+                storages={storages}
+                consignes={consignes}
                 onSync={syncData}
                 userRole={currentUser.role}
             />
