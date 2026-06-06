@@ -487,7 +487,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'recipes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM recipes ORDER BY name) t),
                     'productSheets', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM product_sheets ORDER BY updated_at DESC) t),
                     'productTypes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM product_types ORDER BY name) t),
-                    'emailTemplates', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM email_templates ORDER BY name) t)
+                    'emailTemplates', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM email_templates ORDER BY name) t),
+                    'externalLocations', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM external_locations ORDER BY sort_order) t)
                 ) as data;
             `;
         } else if (scope === 'stock') {
@@ -505,7 +506,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     'dailyAffluence', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM daily_affluence WHERE date >= (CURRENT_DATE - INTERVAL '30 days')::text) t),
                     'activityMoments', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM activity_moments) t),
                     'absenceRequests', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM absence_requests) t),
-                    'adminNotes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM admin_notes ORDER BY created_at DESC LIMIT 50) t)
+                    'adminNotes', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM admin_notes ORDER BY created_at DESC LIMIT 50) t),
+                    'restockValidations', (SELECT COALESCE(json_agg(t), '[]') FROM (SELECT * FROM restock_validations ORDER BY date DESC LIMIT 200) t)
                 ) as data;
             `;
         } else if (scope === 'history') {
@@ -576,6 +578,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         if (rawData.emailTemplates) responseBody.emailTemplates = rawData.emailTemplates.map((t: any) => ({
             id: t.id, name: t.name, subject: t.subject, body: t.body
         }));
+        if (rawData.externalLocations) responseBody.externalLocations = rawData.externalLocations.map((l: any) => ({
+            id: l.id, name: l.name, order: l.sort_order
+        }));
 
         // --- STOCK ---
         if (rawData.stockLevels) responseBody.stockLevels = rawData.stockLevels.map((row: any) => ({ itemId: row.item_id, storageId: row.storage_id, currentQuantity: parseFloat(row.quantity || row.current_quantity || '0'), order: row.order || 0 }));
@@ -633,6 +638,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         if (rawData.dailyStockAlerts) responseBody.dailyStockAlerts = rawData.dailyStockAlerts.map((a: any) => ({ id: a.id, date: a.date, type: a.type, itemId: a.item_id, quantity: parseFloat(a.quantity || '0'), consigne: parseFloat(a.consigne || '0') }));
         if (rawData.eventComments) responseBody.eventComments = rawData.eventComments.map((c: any) => ({ id: c.id, eventId: c.event_id, userName: c.user_name, content: c.content, createdAt: c.created_at }));
         if (rawData.userLogs) responseBody.userLogs = rawData.userLogs.map((l: any) => ({ id: l.id, userName: l.user_name, action: l.action, details: l.details, timestamp: l.timestamp }));
+        if (rawData.restockValidations) responseBody.restockValidations = rawData.restockValidations.map((v: any) => ({
+            id: v.id, itemId: v.item_id, userName: v.user_name, isFull: v.is_full, isPartial: v.is_partial, isRupture: v.is_rupture,
+            partialQuantity: parseFloat(v.partial_quantity || '0'), date: v.date
+        }));
 
         return new Response(JSON.stringify(responseBody), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
@@ -773,6 +782,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         
         case 'SAVE_MEAL_RESERVATION': { await pool.query(`INSERT INTO meal_reservations (id, user_id, date, slot) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`, [payload.id, payload.userId, payload.date, payload.slot]); break; }
         case 'DELETE_MEAL_RESERVATION': { await pool.query('DELETE FROM meal_reservations WHERE id = $1', [payload.id]); break; }
+        
+        case 'SAVE_RESTOCK_VALIDATION': {
+            const { id, itemId, userName, isFull, isPartial, isRupture, partialQuantity, date } = payload;
+            await pool.query(`
+                INSERT INTO restock_validations (id, item_id, user_name, is_full, is_partial, is_rupture, partial_quantity, date) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, NOW()))
+                ON CONFLICT (id) DO UPDATE SET 
+                is_full = EXCLUDED.is_full, is_partial = EXCLUDED.is_partial, is_rupture = EXCLUDED.is_rupture, 
+                partial_quantity = EXCLUDED.partial_quantity
+            `, [id, itemId, userName, isFull, isPartial, isRupture, partialQuantity, date]);
+            break;
+        }
+        case 'DELETE_RESTOCK_VALIDATION': { await pool.query('DELETE FROM restock_validations WHERE id = $1', [payload.id]); break; }
 
         case 'SAVE_APP_CONFIG': {
             for (const [key, value] of Object.entries(payload)) {
@@ -900,7 +922,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'CHECK_DB_STRUCTURE': {
-            const tables = ['items', 'storage_spaces', 'formats', 'categories', 'dlc_profiles', 'stock_priorities', 'stock_levels', 'stock_consignes', 'transactions', 'orders', 'unfulfilled_orders', 'dlc_history', 'messages', 'losses', 'daily_stock_alerts', 'user_logs', 'tasks', 'events', 'event_comments', 'daily_cocktails', 'glassware', 'techniques', 'cocktail_categories', 'recipes', 'email_templates', 'product_sheets', 'product_types', 'admin_notes', 'staff_shifts', 'daily_affluence', 'activity_moments', 'absence_requests', 'meal_reservations'];
+            const tables = ['items', 'storage_spaces', 'formats', 'categories', 'dlc_profiles', 'stock_priorities', 'stock_levels', 'stock_consignes', 'transactions', 'orders', 'unfulfilled_orders', 'dlc_history', 'messages', 'losses', 'daily_stock_alerts', 'user_logs', 'tasks', 'events', 'event_comments', 'daily_cocktails', 'glassware', 'techniques', 'cocktail_categories', 'recipes', 'email_templates', 'product_sheets', 'product_types', 'admin_notes', 'staff_shifts', 'daily_affluence', 'activity_moments', 'absence_requests', 'meal_reservations', 'external_locations', 'restock_validations'];
             
             const results: any = {};
             for (const table of tables) {
@@ -908,14 +930,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 results[table] = res.rows[0].exists;
             }
             
-            // Check specific columns for V1.3/V1.4
+            // Check specific columns for V1.3/V1.4/V1.6
             const columnChecks = [
                 { table: 'product_sheets', column: 'full_name' },
                 { table: 'product_sheets', column: 'custom_fields' },
                 { table: 'recipes', column: 'tva_rate' },
                 { table: 'admin_notes', column: 'user_name' },
                 { table: 'dlc_profiles', column: 'type' },
-                { table: 'items', column: 'is_no_stock' }
+                { table: 'items', column: 'is_no_stock' },
+                { table: 'items', column: 'external_location' },
+                { table: 'items', column: 'external_location_id' }
             ];
             
             const colResults: any = {};

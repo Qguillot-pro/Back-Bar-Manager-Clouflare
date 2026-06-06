@@ -9,25 +9,44 @@ const SqlEditor: React.FC<SqlEditorProps> = ({ onSync }) => {
     const [result, setResult] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [history, setHistory] = useState<string[]>([]);
 
     const handleExecute = async () => {
         if (!query.trim()) return;
+        
+        // Split by semicolon and filter empty parts
+        const individualQueries = query.split(';').map(q => q.trim()).filter(q => q.length > 0);
+        
+        let queriesToRun: string[] = [];
+        
+        // If current script is very long (> 1000 chars), we batch the individual semicolon-separated queries
+        // If no semicolon found, we try to run as one (might fail if truly too large for the environment)
+        if (query.length > 1000 && individualQueries.length > 1) {
+            queriesToRun = individualQueries;
+        } else {
+            queriesToRun = [query];
+        }
+
         setLoading(true);
         setError(null);
         setResult(null);
+        
         try {
-            // We use fetch directly because syncData doesn't return the response body
-            const response = await fetch('/api/action', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'EXECUTE_SQL', payload: { query } })
-            });
-            const data = await response.json();
-            if (data.success) {
-                setResult(data);
-            } else {
-                setError(data.error);
+            let lastResult = null;
+            for (const q of queriesToRun) {
+                const response = await fetch('/api/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'EXECUTE_SQL', payload: { query: q + (queriesToRun.length > 1 ? ';' : '') } })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error);
+                }
+                lastResult = data;
             }
+            setResult(lastResult);
+            setHistory(prev => [query, ...prev].slice(0, 5));
         } catch (e: any) {
             setError(e.message);
         } finally {

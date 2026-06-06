@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { StockItem, Recipe, ProductSheet, Category, Format, UserRole, StorageSpace, StockConsigne } from '../types';
-import { Camera, Upload, AlertCircle, CheckCircle2, FileSearch, Plus, Search, Loader2, Info, Martini } from 'lucide-react';
+import { Camera, Upload, AlertCircle, CheckCircle2, FileSearch, Plus, Search, Loader2, Info, Martini, Save, X } from 'lucide-react';
 
 interface MenuVerificationProps {
     items: StockItem[];
@@ -154,12 +154,46 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
         if (sheet) {
             const updated = { ...sheet, actualPrice: item.menuPrice, updatedAt: new Date().toISOString() };
             onSync('SAVE_PRODUCT_SHEET', updated);
-            alert(`Prix mis à jour pour ${item.name} : ${item.menuPrice} €`);
             setAnalyzedItems(prev => prev.map(ai => ai.name === item.name ? { ...ai, currentPrice: item.menuPrice } : ai));
         } else {
             alert("Aucune fiche produit trouvée pour cet article. Veuillez d'abord créer la fiche.");
         }
     };
+
+    const handleMassUpdatePrices = () => {
+        const itemsToUpdate = analyzedItems.filter(item => 
+            item.databaseItem && 
+            item.menuPrice !== undefined && 
+            item.currentPrice !== undefined && 
+            item.menuPrice !== item.currentPrice
+        );
+
+        if (itemsToUpdate.length === 0) return;
+        if (!confirm(`Voulez-vous mettre à jour les tarifs de ${itemsToUpdate.length} produits ?`)) return;
+
+        itemsToUpdate.forEach(item => {
+            const sheet = productSheets.find(ps => ps.itemId === item.databaseItem?.id);
+            if (sheet && item.menuPrice) {
+                const updated = { ...sheet, actualPrice: item.menuPrice, updatedAt: new Date().toISOString() };
+                onSync('SAVE_PRODUCT_SHEET', updated);
+            }
+        });
+
+        setAnalyzedItems(prev => prev.map(ai => {
+            const up = itemsToUpdate.find(i => i.name === ai.name);
+            if (up) return { ...ai, currentPrice: up.menuPrice };
+            return ai;
+        }));
+        
+        alert(`${itemsToUpdate.length} tarifs mis à jour.`);
+    };
+
+    const mismatchCount = analyzedItems.filter(item => 
+        item.databaseItem && 
+        item.menuPrice !== undefined && 
+        item.currentPrice !== undefined && 
+        item.menuPrice !== item.currentPrice
+    ).length;
 
     const mapTypeToCategory = (type: string): Category => {
         switch(type) {
@@ -234,6 +268,24 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
                             <span className="w-2 h-6 bg-cyan-500 rounded-full"></span>
                             Résultats de l'analyse ({analyzedItems.length} produits)
                         </h2>
+                        
+                        <div className="flex gap-2">
+                            {mismatchCount > 0 && (
+                                <button 
+                                    onClick={handleMassUpdatePrices}
+                                    className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-700 transition-all shadow-lg shadow-amber-200"
+                                >
+                                    <Save className="w-4 h-4" />
+                                    Mettre à jour {mismatchCount} tarifs
+                                </button>
+                            )}
+                            <button 
+                                onClick={() => { setAnalyzedItems([]); }}
+                                className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

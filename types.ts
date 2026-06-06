@@ -119,15 +119,13 @@ export interface ExternalStorageLocation {
 
 export interface RestockValidation {
     id: string;
+    itemId: string;
     date: string;
-    time: string; // Heure de remontée
-    items: {
-        itemId: string;
-        quantity: number;
-        status: 'COMPLETE' | 'PARTIAL' | 'RUPTURE';
-    }[];
-    photoUrl?: string;
-    isValidated: boolean;
+    userName?: string;
+    isFull: boolean;
+    isPartial: boolean;
+    isRupture: boolean;
+    partialQuantity?: number;
 }
 
 export interface DLCHistory {

@@ -105,6 +105,7 @@ const App: React.FC = () => {
   const [externalLocations, setExternalLocations] = useState<ExternalStorageLocation[]>([]);
   const [dailyAlerts, setDailyAlerts] = useState<DailyAlert[]>([]);
   const [mealReservations, setMealReservations] = useState<MealReservation[]>([]);
+  const [restockValidations, setRestockValidations] = useState<RestockValidation[]>([]);
   const [showDailyBriefing, setShowDailyBriefing] = useState(false);
   const [staffShifts, setStaffShifts] = useState<StaffShift[]>([]);
   const [dailyAffluence, setDailyAffluence] = useState<DailyAffluence[]>([]);
@@ -302,6 +303,7 @@ const App: React.FC = () => {
           if (dataS.productSheets) setProductSheets(dataS.productSheets);
           if (dataS.productTypes) setProductTypes(dataS.productTypes);
           if (dataS.emailTemplates) setEmailTemplates(dataS.emailTemplates);
+          if (dataS.externalLocations) setExternalLocations(dataS.externalLocations);
 
           if (dataSt.stockLevels) setStockLevels(dataSt.stockLevels);
           if (dataSt.consignes) setConsignes(dataSt.consignes);
@@ -311,6 +313,7 @@ const App: React.FC = () => {
           if (dataSt.unfulfilledOrders) setUnfulfilledOrders(dataSt.unfulfilledOrders);
           if (dataSt.orders) setOrders(dataSt.orders);
           if (dataSt.mealReservations) setMealReservations(dataSt.mealReservations);
+          if (dataSt.restockValidations) setRestockValidations(dataSt.restockValidations);
           if (dataSt.staffShifts) setStaffShifts(dataSt.staffShifts);
           if (dataSt.dailyAffluence) setDailyAffluence(dataSt.dailyAffluence);
           if (dataSt.activityMoments) setActivityMoments(dataSt.activityMoments);
@@ -1028,6 +1031,14 @@ const App: React.FC = () => {
 
   const handleRestockAction = (itemId: string, storageId: string, qtyNeeded: number, qtyToOrder?: number, isRupture?: boolean) => {
       if (qtyNeeded > 0) {
+          // Annuler le statut Rupture ou Tendu si le produit est remonté de la cave
+          const existingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING' && !!o.ruptureDate);
+          if (existingOrder) {
+              const updatedOrder = { ...existingOrder, ruptureDate: undefined };
+              setOrders(prev => prev.map(o => o.id === existingOrder.id ? updatedOrder : o));
+              syncData('SAVE_ORDER', updatedOrder);
+          }
+
           const trans: Transaction = { id: 't_' + Date.now(), itemId, storageId, type: 'IN', quantity: qtyNeeded, date: new Date().toISOString(), userName: currentUser?.name, isCaveTransfer: true };
           setTransactions(p => [trans, ...p]);
           syncData('SAVE_TRANSACTION', trans);
