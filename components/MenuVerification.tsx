@@ -22,6 +22,8 @@ interface AnalyzedMenuItem {
     hasRecipe: boolean;
     hasProductSheet: boolean;
     databaseItem?: StockItem;
+    menuPrice?: number;
+    currentPrice?: number;
 }
 
 const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, productSheets, categories, formats, storages, consignes, onSync, userRole }) => {
@@ -75,21 +77,24 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
                 }
 
                 const data = await response.json();
-                const extractedNames: {name: string, type: string}[] = data.items || [];
+                const extractedNames: {name: string, type: string, price?: number}[] = data.items || [];
                 
                 const results: AnalyzedMenuItem[] = extractedNames.map(extracted => {
                     const dbItem = items.find(i => 
                         i.name.toLowerCase().includes(extracted.name.toLowerCase()) || 
                         extracted.name.toLowerCase().includes(i.name.toLowerCase())
                     );
+                    const sheet = dbItem ? productSheets.find(ps => ps.itemId === dbItem.id) : null;
 
                     return {
                         name: extracted.name,
                         type: extracted.type as any,
                         inDatabase: !!dbItem,
                         hasRecipe: dbItem ? recipes.some(r => r.name.toLowerCase() === dbItem.name.toLowerCase() || r.name.toLowerCase() === extracted.name.toLowerCase()) : recipes.some(r => r.name.toLowerCase() === extracted.name.toLowerCase()),
-                        hasProductSheet: dbItem ? productSheets.some(ps => ps.itemId === dbItem.id) : false,
-                        databaseItem: dbItem
+                        hasProductSheet: !!sheet,
+                        databaseItem: dbItem,
+                        menuPrice: extracted.price,
+                        currentPrice: sheet?.actualPrice
                     };
                 });
 
@@ -140,6 +145,19 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
         
         if (similarItem) {
             alert(`Produit "${item.name}" intégré.\nConfigurations copiées depuis "${similarItem.name}" :\n- Catégorie : ${category}\n- Espaces de stockage : ${suggestedConsignes.length}\n- Consignes appliquées.`);
+        }
+    };
+
+    const handleUpdatePrice = (item: AnalyzedMenuItem) => {
+        if (!item.databaseItem || !item.menuPrice) return;
+        const sheet = productSheets.find(ps => ps.itemId === item.databaseItem?.id);
+        if (sheet) {
+            const updated = { ...sheet, actualPrice: item.menuPrice, updatedAt: new Date().toISOString() };
+            onSync('SAVE_PRODUCT_SHEET', updated);
+            alert(`Prix mis à jour pour ${item.name} : ${item.menuPrice} €`);
+            setAnalyzedItems(prev => prev.map(ai => ai.name === item.name ? { ...ai, currentPrice: item.menuPrice } : ai));
+        } else {
+            alert("Aucune fiche produit trouvée pour cet article. Veuillez d'abord créer la fiche.");
         }
     };
 
@@ -273,6 +291,27 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
                                             </span>
                                         )}
                                     </div>
+
+                                    {item.menuPrice !== undefined && item.currentPrice !== undefined && item.menuPrice !== item.currentPrice && (
+                                        <div className="bg-amber-50 border border-amber-100 p-2 rounded-xl mt-3 space-y-2 animate-in slide-in-from-top-1">
+                                            <div className="flex justify-between items-center text-[10px] font-black uppercase text-amber-700">
+                                                <span>Différence Prix</span>
+                                                <AlertCircle className="w-3 h-3" />
+                                            </div>
+                                            <div className="flex justify-between items-end">
+                                                <div>
+                                                    <p className="text-[9px] font-bold text-slate-400">Menu: {item.menuPrice}€</p>
+                                                    <p className="text-[9px] font-bold text-slate-400">Base: {item.currentPrice}€</p>
+                                                </div>
+                                                <button 
+                                                    onClick={() => handleUpdatePrice(item)}
+                                                    className="bg-amber-600 text-white px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tight shadow-lg shadow-amber-200"
+                                                >
+                                                    Mettre à jour
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {!item.hasProductSheet && item.inDatabase && (
                                         <button 

@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice, StockLevel, StockConsigne, DailyCocktail, Recipe } from '../types';
+import { ProductSheet, StockItem, UserRole, ProductType, Glassware, Format, SuggestedPrice, StockLevel, StockConsigne, DailyCocktail, Recipe, ExternalStorageLocation, PendingOrder } from '../types';
 import { generateProductSheetWithAI } from '../services/geminiService';
+import { MapPin, Warehouse, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 interface ProductKnowledgeProps {
   sheets: ProductSheet[];
@@ -16,9 +17,15 @@ interface ProductKnowledgeProps {
   canEditStock?: boolean;
   dailyCocktails?: DailyCocktail[];
   recipes?: Recipe[];
+  externalLocations?: ExternalStorageLocation[];
+  orders?: PendingOrder[];
+  storages?: { id: string, name: string }[];
 }
 
-const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [], stockLevels = [], consignes = [], canEditStock = false, dailyCocktails = [], recipes = [] }) => {
+const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ 
+    sheets, items, currentUserRole, onSync, productTypes = [], glassware = [], formats = [], stockLevels = [], consignes = [], 
+    canEditStock = false, dailyCocktails = [], recipes = [], externalLocations = [], orders = [], storages = [] 
+}) => {
   const [viewMode, setViewMode] = useState<'LIST' | 'CREATE' | 'DETAIL'>('LIST');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<ProductSheet | null>(null);
@@ -196,11 +203,21 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
       const item = items.find(i => i.id === itemId);
       if (!item) return null;
       
-      const currentQty = stockLevels.filter(l => l.itemId === itemId).reduce((acc, curr) => acc + curr.currentQuantity, 0);
-      const consigne = consignes.filter(c => c.itemId === itemId).reduce((acc, curr) => acc + curr.minQuantity, 0);
+      const barLevels = stockLevels.filter(l => l.itemId === itemId && l.storageId !== 's0' && l.storageId !== 's_global');
+      const totalBarStock = barLevels.reduce((acc, curr) => acc + curr.currentQuantity, 0);
+      const consigne = consignes.filter(c => c.itemId === itemId && c.storageId !== 's0').reduce((acc, curr) => acc + curr.minQuantity, 0);
 
-      if (currentQty === 0) return { label: 'RUPTURE PRODUIT', color: 'bg-red-500 text-white' };
-      if (currentQty < consigne) return { label: 'SOUS TENSION', color: 'bg-orange-500 text-white' };
+      // Check if restock is impossible (has pending order with rupture date)
+      const isRestockImpossible = orders.some(o => o.itemId === itemId && o.status === 'PENDING' && !!o.ruptureDate);
+
+      if (isRestockImpossible) {
+          if (totalBarStock === 0) return { label: 'RUPTURE', color: 'bg-rose-600 text-white', icon: <AlertTriangle className="w-3 h-3" /> };
+          return { label: 'TENDU', color: 'bg-amber-500 text-white', icon: <AlertTriangle className="w-3 h-3" /> };
+      }
+
+      if (totalBarStock === 0) return { label: 'VIDE BAR', color: 'bg-red-500 text-white', icon: <AlertTriangle className="w-3 h-3" /> };
+      if (totalBarStock < consigne) return { label: 'SOUS TENSION', color: 'bg-orange-500 text-white', icon: <AlertTriangle className="w-3 h-3" /> };
+      
       return null;
   };
 
@@ -283,7 +300,12 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                                             <span className="text-[9px] font-black uppercase tracking-widest text-cyan-500">{s.type}</span>
                                             {(() => {
                                                 const status = getProductStatus(s.itemId);
-                                                if (status) return <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${status.color}`}>{status.label}</span>;
+                                                if (status) return (
+                                                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded flex items-center gap-1 ${status.color}`}>
+                                                        {status.icon}
+                                                        {status.label}
+                                                    </span>
+                                                );
                                                 return null;
                                             })()}
                                           </div>
@@ -493,7 +515,12 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                             <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-2 py-1 rounded text-white inline-block">{selectedSheet.type}</span>
                             {(() => {
                                 const status = getProductStatus(selectedSheet.itemId);
-                                if (status) return <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded ${status.color}`}>{status.label}</span>;
+                                if (status) return (
+                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1.5 ${status.color}`}>
+                                        {status.icon}
+                                        {status.label}
+                                    </span>
+                                );
                                 return null;
                             })()}
                           </div>
@@ -541,6 +568,65 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({ sheets, items, curr
                   <div className="flex-1 overflow-y-auto p-8 space-y-8">
                       <p className="text-lg text-slate-700 font-medium leading-relaxed">{selectedSheet.description}</p>
                       
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* STORAGE BAR */}
+                        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200">
+                            <h3 className="font-black text-[10px] uppercase text-slate-400 tracking-widest mb-4 flex items-center gap-2">
+                                <MapPin className="w-3 h-3 text-indigo-500" />
+                                Emplacements Bar
+                            </h3>
+                            <div className="space-y-2">
+                                {consignes.filter(c => c.itemId === selectedSheet.itemId && c.storageId !== 's0').length > 0 ? (
+                                    consignes.filter(c => c.itemId === selectedSheet.itemId && c.storageId !== 's0').map(c => {
+                                        const storage = storages.find(st => st.id === c.storageId);
+                                        const level = stockLevels.find(l => l.itemId === selectedSheet.itemId && l.storageId === c.storageId)?.currentQuantity || 0;
+                                        return (
+                                            <div key={c.storageId} className="flex justify-between items-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                                <span className="text-sm font-bold text-slate-700">{storage?.name || 'Inconnu'}</span>
+                                                <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${level < c.minQuantity ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                                    {level} / {c.minQuantity}
+                                                </span>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <p className="text-xs text-slate-400 italic">Aucun emplacement bar dédié</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* STORAGE EXTERNAL */}
+                        <div className="bg-cyan-50 p-6 rounded-3xl border border-cyan-100">
+                            <h3 className="font-black text-[10px] uppercase text-cyan-500 tracking-widest mb-4 flex items-center gap-2">
+                                <Warehouse className="w-3 h-3 text-cyan-500" />
+                                Stockage Hors-Bar
+                            </h3>
+                            {(() => {
+                                const item = items.find(i => i.id === selectedSheet.itemId);
+                                const lieu = externalLocations.find(l => l.id === item?.externalLocationId);
+                                const surstock = stockLevels.find(l => l.itemId === selectedSheet.itemId && l.storageId === 's0')?.currentQuantity || 0;
+                                
+                                return (
+                                    <div className="space-y-3">
+                                        <div className="p-3 bg-white rounded-xl border border-cyan-200">
+                                            <p className="text-[9px] font-black text-cyan-400 uppercase tracking-widest">Lieu Principal</p>
+                                            <p className="text-sm font-black text-cyan-800 uppercase tracking-tight">{lieu?.name || 'Non défini'}</p>
+                                            {item?.externalLocation && (
+                                                <p className="text-[11px] font-bold text-cyan-600 mt-1 uppercase tracking-widest">Emplacement: {item.externalLocation}</p>
+                                            )}
+                                        </div>
+                                        {surstock > 0 && (
+                                            <div className="p-3 bg-amber-100 rounded-xl border border-amber-200 flex justify-between items-center">
+                                                <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Surstock (s0)</span>
+                                                <span className="text-xs font-black text-amber-600">{surstock} UT</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                      </div>
+
                       {canEditStock && (selectedSheet.salesFormat || 0) > 0 && (selectedSheet.actualPrice || 0) > 0 && (
                           <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
                               <h3 className="font-black text-sm uppercase text-emerald-600 tracking-widest border-b border-emerald-200 pb-2 mb-4">Prix Conseillés (Admin)</h3>

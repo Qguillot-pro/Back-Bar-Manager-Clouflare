@@ -71,6 +71,19 @@ const ExternalStorageConfig: React.FC<ExternalStorageConfigProps> = ({
         onSync('DELETE_EXTERNAL_LOCATION', { id });
     };
 
+    const handleMassUpdate = (category: string, lieuId: string) => {
+        if (!lieuId) return;
+        if (!confirm(`Attribuer le lieu "${externalLocations.find(l => l.id === lieuId)?.name}" à TOUS les produits de la catégorie "${category}" ?`)) return;
+        
+        const productsToUpdate = items.filter(i => i.category === category);
+        const updatedItems = items.map(i => i.category === category ? { ...i, externalLocationId: lieuId } : i);
+        
+        setItems(updatedItems);
+        productsToUpdate.forEach(item => {
+            onSync('SAVE_ITEM', { ...item, externalLocationId: lieuId });
+        });
+    };
+
     const handlePrintList = () => {
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
@@ -225,7 +238,7 @@ const ExternalStorageConfig: React.FC<ExternalStorageConfigProps> = ({
                                     onChange={e => setPrintCategoryId(e.target.value)}
                                 >
                                     <option value="ALL">Toutes les catégories</option>
-                                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                    {categories.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
                                 </select>
                             </div>
                             <div>
@@ -269,6 +282,42 @@ const ExternalStorageConfig: React.FC<ExternalStorageConfigProps> = ({
                     </button>
                 </div>
             </header>
+
+            <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 flex flex-col md:flex-row gap-6 items-end">
+                <div className="flex-1 space-y-2">
+                    <h3 className="text-sm font-black text-indigo-900 uppercase tracking-tight flex items-center gap-2">
+                        <CheckSquare className="w-4 h-4" />
+                        Modification de masse par catégorie
+                    </h3>
+                    <p className="text-xs text-indigo-600 font-bold italic">Attribuer un lieu complet (ex: Cave A) à toute une catégorie.</p>
+                </div>
+                <div className="flex flex-wrap gap-4 items-end">
+                    <div>
+                        <label className="block text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1 ml-1">Catégorie</label>
+                        <select id="mass-cat-select" className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm">
+                            <option value="">Sélectionner...</option>
+                            {categories.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1 ml-1">Lieu Stockage</label>
+                        <select id="mass-lieu-select" className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm">
+                            <option value="">Sélectionner...</option>
+                            {externalLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        </select>
+                    </div>
+                    <button 
+                        onClick={() => {
+                            const cat = (document.getElementById('mass-cat-select') as HTMLSelectElement).value;
+                            const lieu = (document.getElementById('mass-lieu-select') as HTMLSelectElement).value;
+                            if (cat && lieu) handleMassUpdate(cat, lieu);
+                        }}
+                        className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-900 transition-all shadow-lg shadow-indigo-100"
+                    >
+                        Appliquer
+                    </button>
+                </div>
+            </div>
 
             <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/50">
                 <div className="p-6 bg-slate-50/80 backdrop-blur-md border-b border-slate-200 flex flex-col md:flex-row gap-4 justify-between items-center">
