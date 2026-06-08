@@ -73,7 +73,8 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
                 });
 
                 if (!response.ok) {
-                    throw new Error("Erreur lors de l'analyse par l'IA.");
+                    const errPayload = await response.json().catch(() => ({}));
+                    throw new Error(errPayload.error || "Erreur lors de l'analyse par l'IA.");
                 }
 
                 const data = await response.json();

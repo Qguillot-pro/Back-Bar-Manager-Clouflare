@@ -1,5 +1,6 @@
 
 import { Pool } from '@neondatabase/serverless';
+import { GoogleGenAI } from "@google/genai";
 
 interface Env {
   DATABASE_URL: string;
@@ -268,15 +269,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 return new Response(JSON.stringify({ error: "Clé API Gemini manquante. Assurez-vous qu'elle est configurée comme secret dans Cloudflare Pages." }), { status: 500, headers: corsHeaders });
             }
 
-            let GoogleGenAI;
-            try {
-                const mod = await import("@google/genai");
-                GoogleGenAI = mod.GoogleGenAI;
-            } catch (importErr: any) {
-                console.error("Failed to import @google/genai:", importErr);
-                return new Response(JSON.stringify({ error: "Échec de l'importation de l'IA: " + importErr.message }), { status: 500, headers: corsHeaders });
-            }
-
             const genAI = new GoogleGenAI(apiKey);
             const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
@@ -284,23 +276,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Pour chaque produit, détermine son type parmis: COCKTAIL, WINE, BEER, SPIRIT, SOFT, OTHER.
             Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
 
-            try {
-                const result = await model.generateContent({
-                    contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: image } }] }],
-                    generationConfig: {
-                        responseMimeType: "application/json"
-                    }
-                });
+            const result = await model.generateContent({
+                contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: image } }] }],
+                generationConfig: {
+                    responseMimeType: "application/json"
+                }
+            });
 
-                const responseText = result.response.text();
-                return new Response(responseText, {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json', ...corsHeaders }
-                });
-            } catch (genErr: any) {
-                console.error("Gemini Content Generation Error:", genErr);
-                return new Response(JSON.stringify({ error: "Erreur de génération Gemini: " + genErr.message }), { status: 500, headers: corsHeaders });
-            }
+            const responseText = result.response.text();
+            return new Response(responseText, {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
         } catch (e: any) {
             console.error("Global analyze-menu error:", e);
             return new Response(JSON.stringify({ error: "Erreur système: " + e.message }), { status: 500, headers: corsHeaders });
