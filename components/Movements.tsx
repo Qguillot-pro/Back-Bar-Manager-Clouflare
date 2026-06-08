@@ -1,12 +1,13 @@
 
 import React, { useState } from 'react';
-import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile, DLCHistory, StockLevel } from '../types';
+import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile, DLCHistory, StockLevel, StockConsigne } from '../types';
 
 interface MovementsProps {
   items: StockItem[];
   transactions: Transaction[];
   storages: StorageSpace[];
   stockLevels: StockLevel[];
+  consignes: StockConsigne[];
   onTransaction: (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer?: boolean) => void;
   onOpenKeypad: (config: any) => void;
   unfulfilledOrders: UnfulfilledOrder[];
@@ -22,7 +23,7 @@ interface MovementsProps {
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, stockLevels, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [], onUndo, dlcHistory = [], onDlcEntry, onDlcConsumption }) => {
+const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, stockLevels, consignes, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [], onUndo, dlcHistory = [], onDlcEntry, onDlcConsumption }) => {
   const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'UNFULFILLED'>('MOVEMENTS');
   const [search, setSearch] = useState('');
   const [qty, setQty] = useState<string>('1');
@@ -282,13 +283,27 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, st
                             {(() => {
                                 const matchedItem = items.find(i => normalizeText(i.name) === normalizeText(search.trim()));
                                 if (!matchedItem) return null;
-                                const levels = stockLevels.filter(sl => sl.itemId === matchedItem.id && sl.currentQuantity !== 0);
-                                if (levels.length === 0) return <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest">Stock: 0</span>;
+                                
+                                const itemLevels = stockLevels.filter(sl => sl.itemId === matchedItem.id);
+                                const itemConsignes = consignes.filter(c => c.itemId === matchedItem.id);
+                                
+                                const storageIds = Array.from(new Set([
+                                    ...itemLevels.map(l => l.storageId),
+                                    ...itemConsignes.map(c => c.storageId)
+                                ]));
+
+                                if (storageIds.length === 0) return <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest">Stock: 0</span>;
+                                
                                 return (
-                                    <div className="flex gap-2 text-[9px] font-black uppercase tracking-widest">
-                                        {levels.map(sl => {
-                                            const storage = storages.find(s => s.id === sl.storageId);
-                                            return <span key={sl.storageId} className="text-indigo-600">{storage?.name || 'Stock'}: {sl.currentQuantity}</span>
+                                    <div className="flex flex-wrap gap-2 text-[9px] font-black uppercase tracking-widest">
+                                        {storageIds.map(sid => {
+                                            const storage = storages.find(s => s.id === sid);
+                                            const level = itemLevels.find(l => l.storageId === sid)?.currentQuantity || 0;
+                                            return (
+                                                <span key={sid} className={level === 0 ? 'text-rose-400' : 'text-indigo-600'}>
+                                                    {storage?.name || 'Stock'}: {level}
+                                                </span>
+                                            );
                                         })}
                                     </div>
                                 );
