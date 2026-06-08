@@ -1034,7 +1034,7 @@ const App: React.FC = () => {
           // Annuler le statut Rupture ou Tendu si le produit est remonté de la cave
           const existingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING' && !!o.ruptureDate);
           if (existingOrder) {
-              const updatedOrder = { ...existingOrder, ruptureDate: undefined };
+              const updatedOrder: PendingOrder = { ...existingOrder, ruptureDate: undefined, ruptureType: undefined };
               setOrders(prev => prev.map(o => o.id === existingOrder.id ? updatedOrder : o));
               syncData('SAVE_ORDER', updatedOrder);
           }
@@ -1060,15 +1060,34 @@ const App: React.FC = () => {
           }
       }
       if ((qtyToOrder && qtyToOrder > 0) || isRupture) {
+          // Determiner RUPTURE vs TENSION
+          const itemLevels = stockLevels.filter(l => l.itemId === itemId && l.storageId !== 'cave'); // bar stock
+          const barStock = itemLevels.reduce((sum, l) => sum + l.currentQuantity, 0);
+          const ruptureType: 'RUPTURE' | 'TENSION' = barStock === 0 ? 'RUPTURE' : 'TENSION';
+
           // MERGE LOGIC: Check if pending order exists
           const existingOrder = orders.find(o => o.itemId === itemId && o.status === 'PENDING');
           if (existingOrder) {
               const newOrderQty = (existingOrder.quantity || 0) + (qtyToOrder || 0);
-              const updatedOrder = { ...existingOrder, quantity: newOrderQty, ruptureDate: isRupture ? new Date().toISOString() : existingOrder.ruptureDate };
+              const updatedOrder: PendingOrder = { 
+                  ...existingOrder, 
+                  quantity: newOrderQty, 
+                  ruptureDate: isRupture ? new Date().toISOString() : existingOrder.ruptureDate,
+                  ruptureType: isRupture ? ruptureType : existingOrder.ruptureType
+              };
               setOrders(prev => prev.map(o => o.id === existingOrder.id ? updatedOrder : o));
               syncData('SAVE_ORDER', updatedOrder);
           } else {
-              const order: PendingOrder = { id: 'ord_' + Date.now(), itemId, quantity: qtyToOrder || 0, date: new Date().toISOString(), status: 'PENDING', userName: currentUser?.name, ruptureDate: isRupture ? new Date().toISOString() : undefined };
+              const order: PendingOrder = { 
+                  id: 'ord_' + Date.now(), 
+                  itemId, 
+                  quantity: qtyToOrder || 0, 
+                  date: new Date().toISOString(), 
+                  status: 'PENDING', 
+                  userName: currentUser?.name, 
+                  ruptureDate: isRupture ? new Date().toISOString() : undefined,
+                  ruptureType: isRupture ? ruptureType : undefined
+              };
               setOrders(prev => [...prev, order]);
               syncData('SAVE_ORDER', order);
           }
@@ -1366,7 +1385,7 @@ const App: React.FC = () => {
             />
           )}
           {view === 'restock' && <CaveRestock items={items} storages={storages} stockLevels={stockLevels} consignes={consignes} priorities={priorities} transactions={transactions} onAction={handleRestockAction} categories={categories} unfulfilledOrders={unfulfilledOrders} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} orders={orders} currentUser={currentUser} events={events} dlcProfiles={dlcProfiles} />}
-          {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={handleAddDlc} onDlcConsumption={(id) => handleDlcConsumption(id)} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} onUndo={handleUndoLastTransaction} />}
+          {view === 'movements' && <Movements items={items} transactions={transactions} storages={storages} stockLevels={stockLevels} onTransaction={handleTransaction} onOpenKeypad={()=>{}} unfulfilledOrders={unfulfilledOrders} onReportUnfulfilled={(id, q) => { const unf = { id: 'unf_'+Date.now(), itemId:id, date:new Date().toISOString(), userName:currentUser.name, quantity:q }; setUnfulfilledOrders(p=>[unf, ...p]); syncData('SAVE_UNFULFILLED_ORDER', unf); }} formats={formats} dlcProfiles={dlcProfiles} dlcHistory={dlcHistory} onDlcEntry={handleAddDlc} onDlcConsumption={(id) => handleDlcConsumption(id)} onCreateTemporaryItem={(n,q)=> { const it: StockItem = {id:'t_'+Date.now(), name:n, category:'Autre', formatId:'f1', pricePerUnit:0, lastUpdated:new Date().toISOString(), isTemporary:true, order:items.length }; setItems(p=>[...p, it]); syncData('SAVE_ITEM', it); if(q>0){ const c={itemId:it.id, storageId:'s0', minQuantity:q}; setConsignes(p=>[...p, c]); syncData('SAVE_CONSIGNE', c); } return it.id; }} onUndo={handleUndoLastTransaction} />}
           {view === 'stock_table' && <StockTable items={items} storages={storages} stockLevels={stockLevels} setStockLevels={setStockLevels} priorities={priorities} onUpdateStock={handleUpdateStock} consignes={consignes} onAdjustTransaction={handleQuickAdjust} currentUser={currentUser} onSync={syncData} canEdit={canEdit('inventory')} />}
           {view === 'inventory' && <GlobalInventory items={items} setItems={setItems} storages={storages} stockLevels={stockLevels} categories={categories} consignes={consignes} onSync={syncData} onUpdateStock={handleUpdateStock} formats={formats} canEdit={canEdit('global_inventory')} />}
           {view === 'consignes' && <Consignes items={items} storages={storages} consignes={consignes} priorities={priorities} setConsignes={setConsignes} onSync={syncData} canEdit={canEdit('consignes')} stockLevels={stockLevels} />}

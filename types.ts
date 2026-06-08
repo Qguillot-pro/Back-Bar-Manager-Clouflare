@@ -107,6 +107,8 @@ export interface StockItem {
   isNoStock?: boolean; 
   inventoryLocation?: string;
   isHidden?: boolean;
+  isNotFollowed?: boolean;
+  analysisPostponedUntil?: string; // ISO Date string
   externalLocation?: string; // e.g. "CAVE A-1" (max 8 chars)
   externalLocationId?: string; // Link to the new ExternalStorageLocation entity
 }
@@ -187,6 +189,7 @@ export interface PendingOrder {
   initialQuantity?: number; 
   date: string;
   ruptureDate?: string;
+  ruptureType?: 'RUPTURE' | 'TENSION';
   orderedAt?: string;
   status: 'PENDING' | 'ORDERED' | 'RECEIVED' | 'ARCHIVED'; 
   receivedAt?: string;

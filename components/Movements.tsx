@@ -1,11 +1,12 @@
 
 import React, { useState } from 'react';
-import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile, DLCHistory } from '../types';
+import { StockItem, Transaction, StorageSpace, UnfulfilledOrder, Format, DLCProfile, DLCHistory, StockLevel } from '../types';
 
 interface MovementsProps {
   items: StockItem[];
   transactions: Transaction[];
   storages: StorageSpace[];
+  stockLevels: StockLevel[];
   onTransaction: (itemId: string, type: 'IN' | 'OUT', qty: number, isServiceTransfer?: boolean) => void;
   onOpenKeypad: (config: any) => void;
   unfulfilledOrders: UnfulfilledOrder[];
@@ -21,7 +22,7 @@ interface MovementsProps {
 
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [], onUndo, dlcHistory = [], onDlcEntry, onDlcConsumption }) => {
+const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, stockLevels, onTransaction, unfulfilledOrders, onReportUnfulfilled, onCreateTemporaryItem, formats, dlcProfiles = [], onUndo, dlcHistory = [], onDlcEntry, onDlcConsumption }) => {
   const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'UNFULFILLED'>('MOVEMENTS');
   const [search, setSearch] = useState('');
   const [qty, setQty] = useState<string>('1');
@@ -276,7 +277,23 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, on
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
                   <div className="flex gap-4 items-end">
                       <div className="flex-1">
-                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Produit</label>
+                          <div className="flex justify-between items-end mb-1 px-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Produit</label>
+                            {(() => {
+                                const matchedItem = items.find(i => normalizeText(i.name) === normalizeText(search.trim()));
+                                if (!matchedItem) return null;
+                                const levels = stockLevels.filter(sl => sl.itemId === matchedItem.id && sl.currentQuantity !== 0);
+                                if (levels.length === 0) return <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest">Stock: 0</span>;
+                                return (
+                                    <div className="flex gap-2 text-[9px] font-black uppercase tracking-widest">
+                                        {levels.map(sl => {
+                                            const storage = storages.find(s => s.id === sl.storageId);
+                                            return <span key={sl.storageId} className="text-indigo-600">{storage?.name || 'Stock'}: {sl.currentQuantity}</span>
+                                        })}
+                                    </div>
+                                );
+                            })()}
+                          </div>
                           <input list="movement-items" className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-indigo-100" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} />
                           <datalist id="movement-items">{items.filter(i => !i.isNoStock).map(i => <option key={i.id} value={i.name} />)}</datalist>
                       </div>

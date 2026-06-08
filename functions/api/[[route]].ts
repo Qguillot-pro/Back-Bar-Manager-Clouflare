@@ -144,8 +144,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   try {
       await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS is_no_stock BOOLEAN DEFAULT FALSE');
       await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE');
+      await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS is_not_followed BOOLEAN DEFAULT FALSE');
+      await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS analysis_postponed_until TEXT');
       await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS external_location VARCHAR(8)');
       await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS external_location_id TEXT');
+      await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS rupture_type TEXT');
       await pool.query(`
           CREATE TABLE IF NOT EXISTS external_locations (
               id TEXT PRIMARY KEY,
@@ -259,10 +262,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             const { image } = await request.json() as any;
             if (!image) return new Response(JSON.stringify({ error: "Image manquante" }), { status: 400, headers: corsHeaders });
 
-            const apiKey = env.GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '');
+            const apiKey = env.GEMINI_API_KEY;
             if (!apiKey) return new Response(JSON.stringify({ error: "Clé API Gemini manquante" }), { status: 500, headers: corsHeaders });
 
-            // Import dynamically to avoid issues if not needed elsewhere
             const { GoogleGenAI } = await import("@google/genai");
             const genAI = new GoogleGenAI(apiKey);
             const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -271,21 +273,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Pour chaque produit, détermine son type parmis: COCKTAIL, WINE, BEER, SPIRIT, SOFT, OTHER.
             Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
 
-            const result = await model.generateContent([
-                prompt,
-                {
-                    inlineData: {
-                        data: image,
-                        mimeType: "image/jpeg"
-                    }
+            const result = await model.generateContent({
+                contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: image } }] }],
+                generationConfig: {
+                    responseMimeType: "application/json"
                 }
-            ]);
+            });
 
             const responseText = result.response.text();
-            // Nettoyage markdown si présent
-            const cleanJson = responseText.replace(/```json|```/g, '').trim();
-            
-            return new Response(cleanJson, {
+            return new Response(responseText, {
                 status: 200,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
             });
@@ -538,7 +534,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             id: row.id, articleCode: row.article_code, name: row.name, category: row.category, formatId: row.format_id,
             pricePerUnit: parseFloat(row.price_per_unit || '0'), lastUpdated: row.last_updated, createdAt: row.created_at,
             isDLC: row.is_dlc, dlcProfileId: row.dlc_profile_id, isConsigne: row.is_consigne, order: row.sort_order,
-            isDraft: row.is_draft, isTemporary: row.is_temporary, isInventoryOnly: row.is_inventory_only, isNoStock: row.is_no_stock, isHidden: row.is_hidden, 
+            isDraft: row.is_draft, isTemporary: row.is_temporary, isInventoryOnly: row.is_inventory_only, isNoStock: row.is_no_stock, 
+            isNotFollowed: row.is_not_followed, analysisPostponedUntil: row.analysis_postponed_until,
+            isHidden: row.is_hidden, 
             externalLocation: row.external_location, externalLocationId: row.external_location_id, inventoryLocation: row.inventory_location
         }));
         if (rawData.storages) responseBody.storages = rawData.storages.map((s: any) => ({ id: s.id, name: s.name, order: s.sort_order }));
@@ -620,7 +618,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         
         const orderMapper = (row: any) => ({ 
             id: row.id, itemId: row.item_id, quantity: parseFloat(row.quantity || '0'), initialQuantity: row.initial_quantity ? parseFloat(row.initial_quantity) : null,
-            date: row.date, status: row.status, userName: row.user_name, ruptureDate: row.rupture_date, orderedAt: row.ordered_at, receivedAt: row.received_at
+            date: row.date, status: row.status, userName: row.user_name, ruptureDate: row.rupture_date, ruptureType: row.rupture_type, orderedAt: row.ordered_at, receivedAt: row.received_at
         });
         if (rawData.orders) responseBody.orders = rawData.orders.map(orderMapper);
         if (rawData.archivedOrders) responseBody.orders = (responseBody.orders || []).concat(rawData.archivedOrders.map(orderMapper));
@@ -696,7 +694,32 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'SAVE_CONFIG': { await pool.query(`INSERT INTO app_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [payload.key, String(payload.value)]); break; }
-        case 'SAVE_ITEM': { const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt, isInventoryOnly, isNoStock, isHidden, externalLocation, externalLocationId, inventoryLocation } = payload; await pool.query(`INSERT INTO items (id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, is_consigne, sort_order, is_draft, is_temporary, is_inventory_only, is_no_stock, is_hidden, external_location, external_location_id, inventory_location, created_at, last_updated) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, COALESCE($19, NOW()), NOW()) ON CONFLICT (id) DO UPDATE SET article_code = EXCLUDED.article_code, name = EXCLUDED.name, category = EXCLUDED.category, format_id = EXCLUDED.format_id, price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, dlc_profile_id = EXCLUDED.dlc_profile_id, is_consigne = EXCLUDED.is_consigne, sort_order = EXCLUDED.sort_order, is_draft = EXCLUDED.is_draft, is_temporary = EXCLUDED.is_temporary, is_inventory_only = EXCLUDED.is_inventory_only, is_no_stock = EXCLUDED.is_no_stock, is_hidden = EXCLUDED.is_hidden, external_location = EXCLUDED.external_location, external_location_id = EXCLUDED.external_location_id, inventory_location = EXCLUDED.inventory_location, last_updated = NOW()`, [id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, isInventoryOnly, isNoStock, isHidden || false, externalLocation, externalLocationId, inventoryLocation, createdAt]); break; }
+        case 'SAVE_ITEM': { 
+            const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt, isInventoryOnly, isNoStock, isHidden, isNotFollowed, analysisPostponedUntil, externalLocation, externalLocationId, inventoryLocation } = payload; 
+            await pool.query(`
+                INSERT INTO items (
+                    id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, is_consigne, 
+                    sort_order, is_draft, is_temporary, is_inventory_only, is_no_stock, is_hidden, 
+                    is_not_followed, analysis_postponed_until,
+                    external_location, external_location_id, inventory_location, created_at, last_updated
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, COALESCE($21, NOW()), NOW()) 
+                ON CONFLICT (id) DO UPDATE SET 
+                    article_code = EXCLUDED.article_code, name = EXCLUDED.name, category = EXCLUDED.category, 
+                    format_id = EXCLUDED.format_id, price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, 
+                    dlc_profile_id = EXCLUDED.dlc_profile_id, is_consigne = EXCLUDED.is_consigne, sort_order = EXCLUDED.sort_order, 
+                    is_draft = EXCLUDED.is_draft, is_temporary = EXCLUDED.is_temporary, is_inventory_only = EXCLUDED.is_inventory_only, 
+                    is_no_stock = EXCLUDED.is_no_stock, is_hidden = EXCLUDED.is_hidden, 
+                    is_not_followed = EXCLUDED.is_not_followed, analysis_postponed_until = EXCLUDED.analysis_postponed_until,
+                    external_location = EXCLUDED.external_location, external_location_id = EXCLUDED.external_location_id, 
+                    inventory_location = EXCLUDED.inventory_location, last_updated = NOW()
+            `, [
+                id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, 
+                order, isDraft, isTemporary, isInventoryOnly, isNoStock, isHidden || false, 
+                isNotFollowed || false, analysisPostponedUntil,
+                externalLocation, externalLocationId, inventoryLocation, createdAt
+            ]); 
+            break; 
+        }
         case 'DELETE_ITEM': { await pool.query('DELETE FROM items WHERE id = $1', [payload.id]); break; }
         case 'SAVE_EXTERNAL_LOCATION': { const { id, name, order } = payload; await pool.query('INSERT INTO external_locations (id, name, sort_order) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order', [id, name, order]); break; }
         case 'DELETE_EXTERNAL_LOCATION': { await pool.query('DELETE FROM external_locations WHERE id = $1', [payload.id]); break; }
@@ -704,7 +727,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         case 'SAVE_STOCK_LEVEL': { await pool.query(`INSERT INTO stock_levels (item_id, storage_id, quantity, "order") VALUES ($1, $2, $3, $4) ON CONFLICT (item_id, storage_id) DO UPDATE SET quantity = EXCLUDED.quantity, "order" = EXCLUDED."order"`, [payload.itemId, payload.storageId, payload.currentQuantity, payload.order || 0]); break; }
         case 'SAVE_TRANSACTION': { await pool.query(`INSERT INTO transactions (id, item_id, storage_id, type, quantity, date, note, is_cave_transfer, user_name, is_service_transfer) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [payload.id, payload.itemId, payload.storageId, payload.type, payload.quantity, payload.date, payload.note, payload.isCaveTransfer, payload.userName, payload.isServiceTransfer || false]); break; }
         case 'DELETE_TRANSACTION': { await pool.query('DELETE FROM transactions WHERE id = $1', [payload.id]); break; }
-        case 'SAVE_ORDER': { const { id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, orderedAt, receivedAt } = payload; await pool.query(`INSERT INTO orders (id, item_id, quantity, initial_quantity, date, status, user_name, rupture_date, ordered_at, received_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, quantity = EXCLUDED.quantity, initial_quantity = EXCLUDED.initial_quantity, rupture_date = EXCLUDED.rupture_date, ordered_at = EXCLUDED.ordered_at, received_at = EXCLUDED.received_at`, [id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, orderedAt, receivedAt]); break; }
+        case 'SAVE_ORDER': { const { id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, ruptureType, orderedAt, receivedAt } = payload; await pool.query(`INSERT INTO orders (id, item_id, quantity, initial_quantity, date, status, user_name, rupture_date, rupture_type, ordered_at, received_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, quantity = EXCLUDED.quantity, initial_quantity = EXCLUDED.initial_quantity, rupture_date = EXCLUDED.rupture_date, rupture_type = EXCLUDED.rupture_type, ordered_at = EXCLUDED.ordered_at, received_at = EXCLUDED.received_at`, [id, itemId, quantity, initialQuantity, date, status, userName, ruptureDate, ruptureType, orderedAt, receivedAt]); break; }
         case 'DELETE_ORDER': { await pool.query('DELETE FROM orders WHERE id = $1', [payload.id]); break; }
         case 'SAVE_UNFULFILLED_ORDER': { await pool.query(`INSERT INTO unfulfilled_orders (id, item_id, date, user_name, quantity) VALUES ($1, $2, $3, $4, $5)`, [payload.id, payload.itemId, payload.date, payload.userName, payload.quantity || 1]); break; }
         case 'SAVE_DLC_HISTORY': { 
