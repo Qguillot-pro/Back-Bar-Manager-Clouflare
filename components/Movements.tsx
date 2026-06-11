@@ -54,7 +54,11 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, st
     }
 
     const searchNormalized = normalizeText(search.trim());
-    const item = items.filter(i => !i.isNoStock).find(i => normalizeText(i.name.trim()) === searchNormalized);
+    const matchedItems = items.filter(i => !i.isNoStock).filter(i => 
+        normalizeText(i.name.trim()) === searchNormalized || 
+        (i.articleCode && normalizeText(i.articleCode) === searchNormalized)
+    );
+    const item = matchedItems[0];
 
     if (!item) {
         if (type === 'IN' && onCreateTemporaryItem) {
@@ -281,8 +285,18 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, st
                           <div className="flex justify-between items-end mb-1 px-1">
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Produit</label>
                             {(() => {
-                                const matchedItem = items.find(i => normalizeText(i.name) === normalizeText(search.trim()));
-                                if (!matchedItem) return null;
+                                const searchVal = search.trim();
+                                if (searchVal.length < 2) return null;
+                                
+                                const searchNormalized = normalizeText(searchVal);
+                                // Prioritize exact match, then startsWith
+                                const matchedItems = items.filter(i => !i.isNoStock).filter(i => 
+                                    normalizeText(i.name) === searchNormalized || 
+                                    (i.articleCode && normalizeText(i.articleCode) === searchNormalized)
+                                );
+                                
+                                if (matchedItems.length === 0) return null;
+                                const matchedItem = matchedItems[0];
                                 
                                 const itemLevels = stockLevels.filter(sl => sl.itemId === matchedItem.id && sl.currentQuantity > 0);
                                 const itemConsignes = consignes.filter(c => c.itemId === matchedItem.id);
@@ -292,19 +306,48 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, st
                                     ...itemConsignes.map(c => c.storageId)
                                 ]));
 
-                                if (storageIds.length === 0) return <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest">Stock: 0</span>;
-                                
                                 return (
-                                    <div className="flex flex-wrap gap-2 text-[9px] font-black uppercase tracking-widest">
-                                        {storageIds.map(sid => {
-                                            const storage = storages.find(s => s.id === sid);
-                                            const level = stockLevels.find(l => l.itemId === matchedItem.id && l.storageId === sid)?.currentQuantity || 0;
-                                            return (
-                                                <span key={sid} className={level === 0 ? 'text-rose-400' : 'text-indigo-600'}>
-                                                    {storage?.name || 'Stock'}: {level}
-                                                </span>
-                                            );
-                                        })}
+                                    <div className="flex flex-col items-end gap-1">
+                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-black uppercase tracking-widest justify-end max-w-[250px]">
+                                            {(() => {
+                                                const barConsignes = itemConsignes.filter(c => c.storageId !== 's0');
+                                                const barStorageIds = new Set(barConsignes.map(c => c.storageId));
+                                                
+                                                const bars = barConsignes.map(c => {
+                                                    const s = storages.find(st => st.id === c.storageId);
+                                                    const val = stockLevels.find(l => l.itemId === matchedItem.id && l.storageId === c.storageId)?.currentQuantity || 0;
+                                                    return { name: s?.name || '?', val, consigne: c.minQuantity };
+                                                });
+                                                
+                                                const others = stockLevels
+                                                    .filter(l => l.itemId === matchedItem.id && !barStorageIds.has(l.storageId) && l.currentQuantity > 0)
+                                                    .map(l => {
+                                                        const s = storages.find(st => st.id === l.storageId);
+                                                        return { name: s?.name || 'Réserve', val: l.currentQuantity };
+                                                    });
+
+                                                return (
+                                                    <>
+                                                        {bars.map((b, idx) => (
+                                                            <span key={`bar-${idx}`} className={b.val < b.consigne ? 'text-rose-500 bg-rose-50 px-1 rounded' : 'text-emerald-600 bg-emerald-50 px-1 rounded'}>
+                                                                {b.name}: {b.val}/{b.consigne}
+                                                            </span>
+                                                        ))}
+                                                        {others.map((o, idx) => (
+                                                            <span key={`other-${idx}`} className="text-slate-400 italic">
+                                                                {o.name}: {o.val}
+                                                            </span>
+                                                        ))}
+                                                        {bars.length === 0 && others.length === 0 && (
+                                                            <span className="text-rose-400">Stock total: 0</span>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+                                        <span className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter">
+                                            {matchedItem.category} {matchedItem.articleCode ? `• ${matchedItem.articleCode}` : ''}
+                                        </span>
                                     </div>
                                 );
                             })()}

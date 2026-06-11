@@ -264,17 +264,31 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             const envKey = env.GEMINI_API_KEY;
             
-            if (!envKey || envKey === '' || envKey === 'undefined') {
-                console.error("Missing or invalid GEMINI_API_KEY in env");
+            if (!envKey || envKey === '' || envKey === 'undefined' || typeof envKey !== 'string') {
+                console.error("Missing or invalid GEMINI_API_KEY in env. Type:", typeof envKey);
                 return new Response(JSON.stringify({ 
-                    error: "Clé API Gemini manquante ou invalide dans Cloudflare Pages.",
-                    details: "Assurez-vous que GEMINI_API_KEY est défini dans Dashboard -> Pages -> Settings -> Functions -> Environment variables" 
+                    error: "Clé API Gemini configurée de manière incorrecte dans Cloudflare.",
+                    details: "Vérifiez que GEMINI_API_KEY est bien un SECRET dans Dashboard -> Pages -> Settings -> Functions -> Environment variables" 
                 }), { status: 500, headers: corsHeaders });
             }
 
+            // Explicitly ensure the key is a string for the library
+            const apiKey = String(envKey).trim();
+
+            // Debug log key prefix (safely)
+            console.log("Using Gemini API Key starting with:", apiKey.substring(0, 7) + "...");
+
             // Dynamic import to avoid top-level issues in some worker environments
-            const { GoogleGenAI } = await import("@google/genai");
-            const genAI = new GoogleGenAI(envKey);
+            const { GoogleGenerativeAI } = await import("@google/genai");
+            
+            let genAI;
+            try {
+                genAI = new GoogleGenerativeAI(apiKey);
+            } catch (initError: any) {
+                console.error("Failed to initialize GoogleGenerativeAI:", initError);
+                return new Response(JSON.stringify({ error: "Erreur d'initialisation IA: " + initError.message }), { status: 500, headers: corsHeaders });
+            }
+            
             const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
             const prompt = `Analyse cette image de menu de bar. Extrait tous les noms de produits et cocktails. 
