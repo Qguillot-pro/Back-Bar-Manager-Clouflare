@@ -331,7 +331,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
-                contents: prompt,
+                contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: "application/json" }
             });
 
@@ -385,7 +385,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             const response = await genAI.models.generateContent({
                 model: "gemini-1.5-pro",
-                contents: prompt,
+                contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: "application/json" }
             });
 
@@ -412,15 +412,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
-                contents: prompt,
+                contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
                     responseSchema: {
-                        type: Type.OBJECT,
+                        type: "object",
                         properties: {
-                            summary: { type: Type.STRING },
-                            alerts: { type: Type.ARRAY, items: { type: Type.STRING } },
-                            recommendations: { type: Type.ARRAY, items: { type: Type.STRING } }
+                            summary: { type: "string" },
+                            alerts: { type: "array", items: { type: "string" } },
+                            recommendations: { type: "array", items: { type: "string" } }
                         },
                         required: ["summary", "alerts", "recommendations"]
                     }
@@ -450,25 +450,25 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
-                contents: prompt,
+                contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
                     responseSchema: {
-                        type: Type.OBJECT,
+                        type: "object",
                         properties: {
-                            description: { type: Type.STRING },
-                            history: { type: Type.STRING },
-                            technique: { type: Type.STRING },
-                            decoration: { type: Type.STRING },
-                            suggestedGlassware: { type: Type.STRING },
+                            description: { type: "string" },
+                            history: { type: "string" },
+                            technique: { type: "string" },
+                            decoration: { type: "string" },
+                            suggestedGlassware: { type: "string" },
                             ingredients: {
-                                type: Type.ARRAY,
+                                type: "array",
                                 items: {
-                                    type: Type.OBJECT,
+                                    type: "object",
                                     properties: {
-                                        name: { type: Type.STRING },
-                                        quantity: { type: Type.NUMBER },
-                                        unit: { type: Type.STRING }
+                                        name: { type: "string" },
+                                        quantity: { type: "number" },
+                                        unit: { type: "string" }
                                     },
                                     required: ["name", "quantity", "unit"]
                                 }
@@ -500,20 +500,20 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
-                contents: prompt,
+                contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
                     responseSchema: {
-                        type: Type.OBJECT,
+                        type: "object",
                         properties: {
-                            description: { type: Type.STRING },
-                            region: { type: Type.STRING },
-                            country: { type: Type.STRING },
-                            eye: { type: Type.STRING },
-                            nose: { type: Type.STRING },
-                            mouth: { type: Type.STRING },
-                            pairing: { type: Type.STRING },
-                            temp: { type: Type.STRING }
+                            description: { type: "string" },
+                            region: { type: "string" },
+                            country: { type: "string" },
+                            eye: { type: "string" },
+                            nose: { type: "string" },
+                            mouth: { type: "string" },
+                            pairing: { type: "string" },
+                            temp: { type: "string" }
                         },
                         required: ["description", "region", "country", "eye", "nose", "mouth", "pairing"]
                     }
@@ -539,7 +539,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
             const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
-                contents: prompt
+                contents: { parts: [{ text: prompt }] }
             });
             return new Response(JSON.stringify({ formatted: response.text.trim() }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
