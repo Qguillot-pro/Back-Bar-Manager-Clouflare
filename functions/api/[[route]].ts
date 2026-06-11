@@ -278,7 +278,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             // Debug log key prefix (safely)
             console.log("Using Gemini API Key starting with:", apiKey.substring(0, 7) + "...");
 
-            // Dynamic import to avoid top-level issues in some worker environments
+            // Use standard @google/genai package
             const { GoogleGenerativeAI } = await import("@google/genai");
             
             let genAI;
@@ -289,18 +289,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 return new Response(JSON.stringify({ error: "Erreur d'initialisation IA: " + initError.message }), { status: 500, headers: corsHeaders });
             }
             
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
             const prompt = `Analyse cette image de menu de bar. Extrait tous les noms de produits et cocktails. 
             Pour chaque produit, détermine son type parmis: COCKTAIL, WINE, BEER, SPIRIT, SOFT, OTHER.
             Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
 
-            const result = await model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: image } }] }],
-                generationConfig: {
-                    responseMimeType: "application/json"
-                }
-            });
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const result = await model.generateContent([
+                prompt,
+                { inlineData: { mimeType: 'image/jpeg', data: image } }
+            ]);
 
             const responseText = result.response.text();
             return new Response(responseText, {
@@ -311,6 +308,216 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             console.error("Global analyze-menu error:", e);
             return new Response(JSON.stringify({ error: "Erreur système: " + (e.message || "Erreur inconnue") }), { status: 500, headers: corsHeaders });
         }
+    }
+
+    if (request.method === 'POST' && path.includes('/schedule-context')) {
+        try {
+            const { weekDates, location } = await request.json() as any;
+            const apiKey = env.GEMINI_API_KEY;
+            if (!apiKey) throw new Error('API Key missing');
+
+            const { GoogleGenerativeAI } = await import("@google/genai");
+            const genAI = new GoogleGenerativeAI(apiKey);
+            
+            const prompt = `Recherche les informations suivantes pour la semaine du ${weekDates[0]} à ${location}:
+            1. Vacances scolaires (Zone A, B, C en France) et jours fériés.
+            2. Rappel rapide de la législation française sur le temps de travail (pauses, durée max, coupures).
+            
+            Réponds en JSON: { 
+              "holidays": ["..."], 
+              "legislation": "...",
+              "dailyWeather": [
+                { "date": "YYYY-MM-DD", "morning": "SUN/CLOUD/RAIN/STORM/WIND", "afternoon": "SUN/CLOUD/RAIN/STORM/WIND" },
+                ... (pour les 7 jours)
+              ]
+            }`;
+
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const response = await model.generateContent(prompt);
+
+            return new Response(response.response.text(), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
+        } catch (e: any) {
+            return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+        }
+    }
+
+    if (request.method === 'POST' && path.includes('/schedule-optimize')) {
+        try {
+            const payload = await request.json() as any;
+            const apiKey = env.GEMINI_API_KEY;
+            if (!apiKey) throw new Error('API Key missing');
+
+            const { GoogleGenerativeAI } = await import("@google/genai");
+            const genAI = new GoogleGenerativeAI(apiKey);
+            
+            const prompt = `Optimise le planning du staff pour la semaine du ${payload.weekDates[0]} au ${payload.weekDates[6]}.
+            
+            CONTEXTE EXTERNE:
+            - Météo prévue: ${JSON.stringify(payload.externalContext.dailyWeather)}
+            
+            CONTRAINTES:
+            - Horaires d'ouverture: ${JSON.stringify(payload.scheduleConfig.openingHours)}
+            - Temps de préparation: ${payload.scheduleConfig.setupTimeMinutes} min
+            - Temps de fermeture: ${payload.scheduleConfig.closingTimeMinutes} min
+            - Amplitude max: ${payload.scheduleConfig.maxAmplitude} min
+            - Travail max/jour: ${payload.scheduleConfig.maxWorkedTime} min
+            - Coupure max: ${payload.scheduleConfig.maxSplitTime} min
+            - Travail continu max: ${payload.scheduleConfig.maxContinuousWorkTime} min
+            - Agents disponibles: ${payload.users.map((u: any) => u.name).join(', ')}
+            - Affluence prévue: ${JSON.stringify(payload.dailyAffluence)}
+            - Absences approuvées: ${JSON.stringify(payload.absenceRequests.filter((a: any) => a.status === 'APPROVED'))}
+            
+            RÈGLES PERSONNALISÉES DU MANAGER:
+            ${payload.scheduleConfig.customAiRules || "Aucune règle spécifique."}
+            
+            OBJECTIF:
+            Générer un planning équilibré respectant toutes les contraintes et les règles personnalisées.
+            Utilise les types de tuiles: SHIFT (travail), PAUSE (pause non payée), SPLIT (coupure).
+            
+            Réponds UNIQUEMENT en JSON (tableau d'objets StaffShift):
+            [{ "userId": "Nom de l'agent", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "type": "SHIFT/PAUSE/SPLIT" }]`;
+
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const response = await model.generateContent(prompt);
+
+            return new Response(response.response.text(), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
+        } catch (e: any) {
+            return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+        }
+    }
+
+    if (request.method === 'POST' && path.includes('/analyze-stock')) {
+        try {
+            const { items } = await request.json() as any;
+            const apiKey = env.GEMINI_API_KEY;
+            const { GoogleGenerativeAI, SchemaType } = await import("@google/genai");
+            const genAI = new GoogleGenerativeAI(apiKey!);
+            
+            const prompt = `Analyse l'état des stocks pour ce bar d'hôtel. Voici les données: ${JSON.stringify(items)}. Fournis un résumé, des alertes et des recommandations.`;
+
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                            summary: { type: SchemaType.STRING },
+                            alerts: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+                            recommendations: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
+                        },
+                        required: ["summary", "alerts", "recommendations"]
+                    }
+                }
+            });
+
+            const response = await model.generateContent(prompt);
+            return new Response(response.response.text(), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
+    }
+
+    if (request.method === 'POST' && path.includes('/generate-cocktail')) {
+        try {
+            const { cocktailName, availableItems } = await request.json() as any;
+            const apiKey = env.GEMINI_API_KEY;
+            const { GoogleGenerativeAI, SchemaType } = await import("@google/genai");
+            const genAI = new GoogleGenerativeAI(apiKey!);
+            
+            const prompt = `Créé une recette précise pour le cocktail "${cocktailName}". 
+            Utilise de préférence les ingrédients de cette liste si possible : ${availableItems.join(', ')}.
+            Donne une description courte (max 150 chars) et une anecdote historique (max 150 chars).
+            Les unités doivent être 'cl' pour les liquides, 'dash' pour les bitters, 'piece' pour les fruits/oeufs.`;
+
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                            description: { type: SchemaType.STRING },
+                            history: { type: SchemaType.STRING },
+                            technique: { type: SchemaType.STRING },
+                            decoration: { type: SchemaType.STRING },
+                            suggestedGlassware: { type: SchemaType.STRING },
+                            ingredients: {
+                                type: SchemaType.ARRAY,
+                                items: {
+                                    type: SchemaType.OBJECT,
+                                    properties: {
+                                        name: { type: SchemaType.STRING },
+                                        quantity: { type: SchemaType.NUMBER },
+                                        unit: { type: SchemaType.STRING }
+                                    },
+                                    required: ["name", "quantity", "unit"]
+                                }
+                            }
+                        },
+                        required: ["description", "history", "technique", "ingredients"]
+                    }
+                }
+            });
+
+            const response = await model.generateContent(prompt);
+            return new Response(response.response.text(), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
+    }
+
+    if (request.method === 'POST' && path.includes('/generate-product-sheet')) {
+        try {
+            const { productName, type, specificFields } = await request.json() as any;
+            const apiKey = env.GEMINI_API_KEY;
+            const { GoogleGenerativeAI, SchemaType } = await import("@google/genai");
+            const genAI = new GoogleGenerativeAI(apiKey!);
+            
+            const prompt = `Génère une fiche technique professionnelle pour le produit "${productName}" de type ${type}.`;
+
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                            description: { type: SchemaType.STRING },
+                            region: { type: SchemaType.STRING },
+                            country: { type: SchemaType.STRING },
+                            eye: { type: SchemaType.STRING },
+                            nose: { type: SchemaType.STRING },
+                            mouth: { type: SchemaType.STRING },
+                            pairing: { type: SchemaType.STRING },
+                            temp: { type: SchemaType.STRING }
+                        },
+                        required: ["description", "region", "country", "eye", "nose", "mouth", "pairing"]
+                    }
+                }
+            });
+
+            const response = await model.generateContent(prompt);
+            return new Response(response.response.text(), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
+    }
+
+    if (request.method === 'POST' && path.includes('/format-location')) {
+        try {
+            const { location } = await request.json() as any;
+            const apiKey = env.GEMINI_API_KEY;
+            const { GoogleGenerativeAI } = await import("@google/genai");
+            const genAI = new GoogleGenerativeAI(apiKey!);
+            
+            const prompt = `Valide et formate l'adresse suivante pour une utilisation météo: "${location}". 
+            Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
+
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const response = await model.generateContent(prompt);
+            return new Response(JSON.stringify({ formatted: response.response.text().trim() }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }
 
     // --- 2. ROUTE INIT AUTH ---

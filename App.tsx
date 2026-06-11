@@ -1469,6 +1469,8 @@ const App: React.FC = () => {
                 consignes={consignes}
                 transactions={transactions}
                 formats={formats}
+                orders={orders}
+                onAction={handleRestockAction}
                 onSync={syncData}
             />
           )}
