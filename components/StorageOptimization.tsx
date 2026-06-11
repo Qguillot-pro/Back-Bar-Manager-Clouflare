@@ -157,7 +157,7 @@ const StorageOptimization: React.FC<StorageOptimizationProps> = ({ items, storag
         });
 
         return results;
-    }, [items, storages, stockLevels, consignes, transactions, selectedStorageIds]);
+    }, [items, storages, stockLevels, consignes, transactions, selectedStorageIds, orders, sessionHiddenItems]);
 
     const optimizations = useMemo(() => {
         const proposals: any[] = [];

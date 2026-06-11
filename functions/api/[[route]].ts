@@ -257,67 +257,62 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
 
     // --- NEW: ROUTE ANALYZE MENU ---
-    if (request.method === 'POST' && path.includes('/analyze-menu')) {
+    if (path.includes('/analyze-menu')) {
+        if (request.method === 'GET') {
+            return new Response(JSON.stringify({ message: "Endpoint d'analyse menu actif. Utilisez POST avec une image base64." }), { status: 200, headers: corsHeaders });
+        }
+        
         try {
-            const { image } = await request.json() as any;
+            const { image, mimeType } = await request.json() as any;
             if (!image) return new Response(JSON.stringify({ error: "Image manquante" }), { status: 400, headers: corsHeaders });
 
             const envKey = env.GEMINI_API_KEY;
-            
-            if (!envKey || envKey === '' || envKey === 'undefined' || typeof envKey !== 'string') {
-                console.error("Missing or invalid GEMINI_API_KEY in env. Type:", typeof envKey);
-                return new Response(JSON.stringify({ 
-                    error: "Clé API Gemini configurée de manière incorrecte dans Cloudflare.",
-                    details: "Vérifiez que GEMINI_API_KEY est bien un SECRET dans Dashboard -> Pages -> Settings -> Functions -> Environment variables" 
-                }), { status: 500, headers: corsHeaders });
-            }
+            if (!envKey) return new Response(JSON.stringify({ error: "Clé API Gemini manquante dans les variables d'environnement." }), { status: 500, headers: corsHeaders });
 
-            // Explicitly ensure the key is a string for the library
-            const apiKey = String(envKey).trim();
-
-            // Debug log key prefix (safely)
-            console.log("Using Gemini API Key starting with:", apiKey.substring(0, 7) + "...");
-
-            // Use standard @google/genai package
-            const { GoogleGenerativeAI } = await import("@google/genai");
-            
-            let genAI;
-            try {
-                genAI = new GoogleGenerativeAI(apiKey);
-            } catch (initError: any) {
-                console.error("Failed to initialize GoogleGenerativeAI:", initError);
-                return new Response(JSON.stringify({ error: "Erreur d'initialisation IA: " + initError.message }), { status: 500, headers: corsHeaders });
-            }
+            const { GoogleGenAI } = await import("@google/genai");
+            const ai = new GoogleGenAI({ 
+                apiKey: envKey,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+            });
             
             const prompt = `Analyse cette image de menu de bar. Extrait tous les noms de produits et cocktails. 
             Pour chaque produit, détermine son type parmis: COCKTAIL, WINE, BEER, SPIRIT, SOFT, OTHER.
             Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
 
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const result = await model.generateContent([
-                prompt,
-                { inlineData: { mimeType: 'image/jpeg', data: image } }
-            ]);
+            const response = await ai.models.generateContent({
+                model: "gemini-1.5-flash",
+                contents: {
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: mimeType || 'image/jpeg', data: image } }
+                    ]
+                },
+                config: {
+                    responseMimeType: "application/json"
+                }
+            });
 
-            const responseText = result.response.text();
-            return new Response(responseText, {
+            return new Response(response.text, {
                 status: 200,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
             });
         } catch (e: any) {
             console.error("Global analyze-menu error:", e);
-            return new Response(JSON.stringify({ error: "Erreur système: " + (e.message || "Erreur inconnue") }), { status: 500, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: "Erreur système: " + e.message }), { status: 500, headers: corsHeaders });
         }
     }
 
-    if (request.method === 'POST' && path.includes('/schedule-context')) {
+    if (path.includes('/schedule-context')) {
         try {
             const { weekDates, location } = await request.json() as any;
             const apiKey = env.GEMINI_API_KEY;
             if (!apiKey) throw new Error('API Key missing');
 
-            const { GoogleGenerativeAI } = await import("@google/genai");
-            const genAI = new GoogleGenerativeAI(apiKey);
+            const { GoogleGenAI } = await import("@google/genai");
+            const genAI = new GoogleGenAI({ 
+                apiKey,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+            });
             
             const prompt = `Recherche les informations suivantes pour la semaine du ${weekDates[0]} à ${location}:
             1. Vacances scolaires (Zone A, B, C en France) et jours fériés.
@@ -332,10 +327,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               ]
             }`;
 
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const response = await model.generateContent(prompt);
+            const response = await genAI.models.generateContent({
+                model: "gemini-1.5-flash",
+                contents: prompt,
+                config: { responseMimeType: "application/json" }
+            });
 
-            return new Response(response.response.text(), {
+            return new Response(response.text, {
                 status: 200,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
             });
@@ -344,14 +342,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
     }
 
-    if (request.method === 'POST' && path.includes('/schedule-optimize')) {
+    if (path.includes('/schedule-optimize')) {
         try {
             const payload = await request.json() as any;
             const apiKey = env.GEMINI_API_KEY;
             if (!apiKey) throw new Error('API Key missing');
 
-            const { GoogleGenerativeAI } = await import("@google/genai");
-            const genAI = new GoogleGenerativeAI(apiKey);
+            const { GoogleGenAI } = await import("@google/genai");
+            const genAI = new GoogleGenAI({ 
+                apiKey,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+            });
             
             const prompt = `Optimise le planning du staff pour la semaine du ${payload.weekDates[0]} au ${payload.weekDates[6]}.
             
@@ -380,10 +381,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Réponds UNIQUEMENT en JSON (tableau d'objets StaffShift):
             [{ "userId": "Nom de l'agent", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "type": "SHIFT/PAUSE/SPLIT" }]`;
 
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const response = await model.generateContent(prompt);
+            const response = await genAI.models.generateContent({
+                model: "gemini-1.5-pro",
+                contents: prompt,
+                config: { responseMimeType: "application/json" }
+            });
 
-            return new Response(response.response.text(), {
+            return new Response(response.text, {
                 status: 200,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
             });
@@ -392,68 +396,75 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
     }
 
-    if (request.method === 'POST' && path.includes('/analyze-stock')) {
+    if (path.includes('/analyze-stock')) {
         try {
             const { items } = await request.json() as any;
             const apiKey = env.GEMINI_API_KEY;
-            const { GoogleGenerativeAI, SchemaType } = await import("@google/genai");
-            const genAI = new GoogleGenerativeAI(apiKey!);
+            const { GoogleGenAI, Type } = await import("@google/genai");
+            const genAI = new GoogleGenAI({ 
+                apiKey: apiKey!,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+            });
             
             const prompt = `Analyse l'état des stocks pour ce bar d'hôtel. Voici les données: ${JSON.stringify(items)}. Fournis un résumé, des alertes et des recommandations.`;
 
-            const model = genAI.getGenerativeModel({ 
+            const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
-                generationConfig: {
+                contents: prompt,
+                config: {
                     responseMimeType: "application/json",
                     responseSchema: {
-                        type: SchemaType.OBJECT,
+                        type: Type.OBJECT,
                         properties: {
-                            summary: { type: SchemaType.STRING },
-                            alerts: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
-                            recommendations: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
+                            summary: { type: Type.STRING },
+                            alerts: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            recommendations: { type: Type.ARRAY, items: { type: Type.STRING } }
                         },
                         required: ["summary", "alerts", "recommendations"]
                     }
                 }
             });
 
-            const response = await model.generateContent(prompt);
-            return new Response(response.response.text(), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }
 
-    if (request.method === 'POST' && path.includes('/generate-cocktail')) {
+    if (path.includes('/generate-cocktail')) {
         try {
             const { cocktailName, availableItems } = await request.json() as any;
             const apiKey = env.GEMINI_API_KEY;
-            const { GoogleGenerativeAI, SchemaType } = await import("@google/genai");
-            const genAI = new GoogleGenerativeAI(apiKey!);
+            const { GoogleGenAI, Type } = await import("@google/genai");
+            const genAI = new GoogleGenAI({ 
+                apiKey: apiKey!,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+            });
             
             const prompt = `Créé une recette précise pour le cocktail "${cocktailName}". 
             Utilise de préférence les ingrédients de cette liste si possible : ${availableItems.join(', ')}.
             Donne une description courte (max 150 chars) et une anecdote historique (max 150 chars).
             Les unités doivent être 'cl' pour les liquides, 'dash' pour les bitters, 'piece' pour les fruits/oeufs.`;
 
-            const model = genAI.getGenerativeModel({ 
+            const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
-                generationConfig: {
+                contents: prompt,
+                config: {
                     responseMimeType: "application/json",
                     responseSchema: {
-                        type: SchemaType.OBJECT,
+                        type: Type.OBJECT,
                         properties: {
-                            description: { type: SchemaType.STRING },
-                            history: { type: SchemaType.STRING },
-                            technique: { type: SchemaType.STRING },
-                            decoration: { type: SchemaType.STRING },
-                            suggestedGlassware: { type: SchemaType.STRING },
+                            description: { type: Type.STRING },
+                            history: { type: Type.STRING },
+                            technique: { type: Type.STRING },
+                            decoration: { type: Type.STRING },
+                            suggestedGlassware: { type: Type.STRING },
                             ingredients: {
-                                type: SchemaType.ARRAY,
+                                type: Type.ARRAY,
                                 items: {
-                                    type: SchemaType.OBJECT,
+                                    type: Type.OBJECT,
                                     properties: {
-                                        name: { type: SchemaType.STRING },
-                                        quantity: { type: SchemaType.NUMBER },
-                                        unit: { type: SchemaType.STRING }
+                                        name: { type: Type.STRING },
+                                        quantity: { type: Type.NUMBER },
+                                        unit: { type: Type.STRING }
                                     },
                                     required: ["name", "quantity", "unit"]
                                 }
@@ -464,59 +475,66 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
             });
 
-            const response = await model.generateContent(prompt);
-            return new Response(response.response.text(), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }
 
-    if (request.method === 'POST' && path.includes('/generate-product-sheet')) {
+    if (path.includes('/generate-product-sheet')) {
         try {
             const { productName, type, specificFields } = await request.json() as any;
             const apiKey = env.GEMINI_API_KEY;
-            const { GoogleGenerativeAI, SchemaType } = await import("@google/genai");
-            const genAI = new GoogleGenerativeAI(apiKey!);
+            const { GoogleGenAI, Type } = await import("@google/genai");
+            const genAI = new GoogleGenAI({ 
+                apiKey: apiKey!,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+            });
             
             const prompt = `Génère une fiche technique professionnelle pour le produit "${productName}" de type ${type}.`;
 
-            const model = genAI.getGenerativeModel({ 
+            const response = await genAI.models.generateContent({
                 model: "gemini-1.5-flash",
-                generationConfig: {
+                contents: prompt,
+                config: {
                     responseMimeType: "application/json",
                     responseSchema: {
-                        type: SchemaType.OBJECT,
+                        type: Type.OBJECT,
                         properties: {
-                            description: { type: SchemaType.STRING },
-                            region: { type: SchemaType.STRING },
-                            country: { type: SchemaType.STRING },
-                            eye: { type: SchemaType.STRING },
-                            nose: { type: SchemaType.STRING },
-                            mouth: { type: SchemaType.STRING },
-                            pairing: { type: SchemaType.STRING },
-                            temp: { type: SchemaType.STRING }
+                            description: { type: Type.STRING },
+                            region: { type: Type.STRING },
+                            country: { type: Type.STRING },
+                            eye: { type: Type.STRING },
+                            nose: { type: Type.STRING },
+                            mouth: { type: Type.STRING },
+                            pairing: { type: Type.STRING },
+                            temp: { type: Type.STRING }
                         },
                         required: ["description", "region", "country", "eye", "nose", "mouth", "pairing"]
                     }
                 }
             });
 
-            const response = await model.generateContent(prompt);
-            return new Response(response.response.text(), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }
 
-    if (request.method === 'POST' && path.includes('/format-location')) {
+    if (path.includes('/format-location')) {
         try {
             const { location } = await request.json() as any;
             const apiKey = env.GEMINI_API_KEY;
-            const { GoogleGenerativeAI } = await import("@google/genai");
-            const genAI = new GoogleGenerativeAI(apiKey!);
+            const { GoogleGenAI } = await import("@google/genai");
+            const genAI = new GoogleGenAI({ 
+                apiKey: apiKey!,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+            });
             
             const prompt = `Valide et formate l'adresse suivante pour une utilisation météo: "${location}". 
             Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
 
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const response = await model.generateContent(prompt);
-            return new Response(JSON.stringify({ formatted: response.response.text().trim() }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            const response = await genAI.models.generateContent({
+                model: "gemini-1.5-flash",
+                contents: prompt
+            });
+            return new Response(JSON.stringify({ formatted: response.text.trim() }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }
 

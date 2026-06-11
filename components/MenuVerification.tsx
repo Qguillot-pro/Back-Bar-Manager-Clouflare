@@ -47,7 +47,10 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = async () => {
-                const base64 = reader.result?.toString().split(',')[1];
+                const result = reader.result?.toString() || '';
+                const base64 = result.split(',')[1];
+                const mimeType = result.split(',')[0].split(':')[1].split(';')[0] || 'image/jpeg';
+                
                 if (!base64) {
                     setError("Impossible de lire l'image.");
                     setIsAnalyzing(false);
@@ -69,7 +72,7 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
                 const response = await fetch('/api/analyze-menu', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: base64 })
+                    body: JSON.stringify({ image: base64, mimeType })
                 });
 
                 if (!response.ok) {
