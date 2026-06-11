@@ -1,5 +1,6 @@
 
 import { Pool } from '@neondatabase/serverless';
+import { GoogleGenAI } from "@google/genai";
 
 interface Env {
   DATABASE_URL: string;
@@ -257,248 +258,40 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     }
 
     // --- NEW: ROUTE ANALYZE MENU ---
-    if (path.includes('/analyze-menu')) {
-        if (request.method === 'GET') {
-            return new Response(JSON.stringify({ message: "Endpoint d'analyse menu actif. Utilisez POST avec une image base64." }), { status: 200, headers: corsHeaders });
-        }
-        
+    if (request.method === 'POST' && path.includes('/analyze-menu')) {
         try {
-            const { image, mimeType } = await request.json() as any;
+            const { image } = await request.json() as any;
             if (!image) return new Response(JSON.stringify({ error: "Image manquante" }), { status: 400, headers: corsHeaders });
 
-            const envKey = env.GEMINI_API_KEY;
-            if (!envKey) return new Response(JSON.stringify({ error: "Clé API Gemini manquante. Configurez GEMINI_API_KEY." }), { status: 500, headers: corsHeaders });
+            const apiKey = env.GEMINI_API_KEY;
+            if (!apiKey) {
+                console.error("Missing GEMINI_API_KEY in env");
+                return new Response(JSON.stringify({ error: "Clé API Gemini manquante. Assurez-vous qu'elle est configurée comme secret dans Cloudflare Pages." }), { status: 500, headers: corsHeaders });
+            }
 
-            const { GoogleGenAI } = await import("@google/genai");
-            const ai = new GoogleGenAI({ 
-                apiKey: envKey,
-                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-            });
-            
+            const genAI = new GoogleGenAI(apiKey);
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
             const prompt = `Analyse cette image de menu de bar. Extrait tous les noms de produits et cocktails. 
             Pour chaque produit, détermine son type parmis: COCKTAIL, WINE, BEER, SPIRIT, SOFT, OTHER.
             Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
 
-            const response = await ai.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: {
-                    parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: mimeType || 'image/jpeg', data: image } }
-                    ]
-                },
-                config: {
+            const result = await model.generateContent({
+                contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: image } }] }],
+                generationConfig: {
                     responseMimeType: "application/json"
                 }
             });
 
-            if (!response.text) throw new Error("Réponse vide de l'IA lors de l'analyse du menu");
-
-            return new Response(response.text, {
+            const responseText = result.response.text();
+            return new Response(responseText, {
                 status: 200,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
             });
         } catch (e: any) {
-            console.error("Analyze Menu Error:", e);
-            return new Response(JSON.stringify({ error: "Erreur d'analyse IA: " + e.message }), { status: 500, headers: corsHeaders });
+            console.error("Global analyze-menu error:", e);
+            return new Response(JSON.stringify({ error: "Erreur système: " + e.message }), { status: 500, headers: corsHeaders });
         }
-    }
-
-    if (path.includes('/schedule-context')) {
-        try {
-            const { weekDates, location } = await request.json() as any;
-            const apiKey = env.GEMINI_API_KEY;
-            if (!apiKey) throw new Error('API Key missing');
-
-            const { GoogleGenAI } = await import("@google/genai");
-            const genAI = new GoogleGenAI({ 
-                apiKey,
-                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-            });
-            
-            const prompt = `Recherche les informations suivantes pour la semaine du ${weekDates[0]} à ${location}:
-            1. Vacances scolaires (Zone A, B, C en France) et jours fériés.
-            2. Rappel rapide de la législation française sur le temps de travail (pauses, durée max, coupures).
-            
-            Réponds en JSON: { 
-              "holidays": ["..."], 
-              "legislation": "...",
-              "dailyWeather": [
-                { "date": "YYYY-MM-DD", "morning": "SUN/CLOUD/RAIN/STORM/WIND", "afternoon": "SUN/CLOUD/RAIN/STORM/WIND" },
-                ... (pour les 7 jours)
-              ]
-            }`;
-
-            const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: { parts: [{ text: prompt }] },
-                config: { responseMimeType: "application/json" }
-            });
-
-            if (!response.text) throw new Error("Réponse vide de l'IA lors de la génération du brief");
-
-            return new Response(response.text, {
-                status: 200,
-                headers: { 'Content-Type': 'application/json', ...corsHeaders }
-            });
-        } catch (e: any) {
-            return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
-        }
-    }
-
-    if (path.includes('/schedule-optimize')) {
-        try {
-            const payload = await request.json() as any;
-            const apiKey = env.GEMINI_API_KEY;
-            if (!apiKey) throw new Error('API Key missing');
-
-            const { GoogleGenAI } = await import("@google/genai");
-            const genAI = new GoogleGenAI({ 
-                apiKey,
-                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-            });
-            
-            const prompt = `Optimise le planning du staff pour la semaine du ${payload.weekDates[0]} au ${payload.weekDates[6]}.
-            
-            CONTEXTE EXTERNE:
-            - Météo prévue: ${JSON.stringify(payload.externalContext.dailyWeather)}
-            
-            CONTRAINTES:
-            - Horaires d'ouverture: ${JSON.stringify(payload.scheduleConfig.openingHours)}
-            - Temps de préparation: ${payload.scheduleConfig.setupTimeMinutes} min
-            - Temps de fermeture: ${payload.scheduleConfig.closingTimeMinutes} min
-            - Amplitude max: ${payload.scheduleConfig.maxAmplitude} min
-            - Travail max/jour: ${payload.scheduleConfig.maxWorkedTime} min
-            - Coupure max: ${payload.scheduleConfig.maxSplitTime} min
-            - Travail continu max: ${payload.scheduleConfig.maxContinuousWorkTime} min
-            - Agents disponibles: ${payload.users.map((u: any) => u.name).join(', ')}
-            - Affluence prévue: ${JSON.stringify(payload.dailyAffluence)}
-            - Absences approuvées: ${JSON.stringify(payload.absenceRequests.filter((a: any) => a.status === 'APPROVED'))}
-            
-            RÈGLES PERSONNALISÉES DU MANAGER:
-            ${payload.scheduleConfig.customAiRules || "Aucune règle spécifique."}
-            
-            OBJECTIF:
-            Générer un planning équilibré respectant toutes les contraintes et les règles personnalisées.
-            Utilise les types de tuiles: SHIFT (travail), PAUSE (pause non payée), SPLIT (coupure).
-            
-            Réponds UNIQUEMENT en JSON (tableau d'objets StaffShift):
-            [{ "userId": "Nom de l'agent", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "type": "SHIFT/PAUSE/SPLIT" }]`;
-
-            const response = await genAI.models.generateContent({
-                model: "gemini-3.1-pro-preview",
-                contents: { parts: [{ text: prompt }] },
-                config: { responseMimeType: "application/json" }
-            });
-
-            if (!response.text) throw new Error("Réponse vide de l'IA lors de la génération de l'horaire");
-
-            return new Response(response.text, {
-                status: 200,
-                headers: { 'Content-Type': 'application/json', ...corsHeaders }
-            });
-        } catch (e: any) {
-            return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
-        }
-    }
-
-    if (path.includes('/analyze-stock')) {
-        try {
-            const { items } = await request.json() as any;
-            const apiKey = env.GEMINI_API_KEY;
-            const { GoogleGenAI, Type } = await import("@google/genai");
-            const genAI = new GoogleGenAI({ 
-                apiKey: apiKey!,
-                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-            });
-            
-            const prompt = `Analyse l'état des stocks pour ce bar d'hôtel. Voici les données: ${JSON.stringify(items)}. Fournis un résumé, des alertes et des recommandations.`;
-
-            const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: { parts: [{ text: prompt }] },
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "object",
-                        properties: {
-                            summary: { type: "string" },
-                            alerts: { type: "array", items: { type: "string" } },
-                            recommendations: { type: "array", items: { type: "string" } }
-                        },
-                        required: ["summary", "alerts", "recommendations"]
-                    }
-                }
-            });
-
-            if (!response.text) throw new Error("Réponse vide de l'IA lors de l'analyse du stock");
-
-            return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
-    }
-
-    if (path.includes('/generate-product-sheet')) {
-        try {
-            const { productName, type, specificFields } = await request.json() as any;
-            const apiKey = env.GEMINI_API_KEY;
-            const { GoogleGenAI, Type } = await import("@google/genai");
-            const genAI = new GoogleGenAI({ 
-                apiKey: apiKey!,
-                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-            });
-            
-            const prompt = `Génère une fiche technique professionnelle pour le produit "${productName}" de type ${type}.`;
-
-            const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: { parts: [{ text: prompt }] },
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "object",
-                        properties: {
-                            description: { type: "string" },
-                            region: { type: "string" },
-                            country: { type: "string" },
-                            eye: { type: "string" },
-                            nose: { type: "string" },
-                            mouth: { type: "string" },
-                            pairing: { type: "string" },
-                            temp: { type: "string" }
-                        },
-                        required: ["description", "region", "country", "eye", "nose", "mouth", "pairing"]
-                    }
-                }
-            });
-
-            if (!response.text) throw new Error("Réponse vide de l'IA lors de la génération de la fiche produit");
-
-            return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
-    }
-
-    if (path.includes('/format-location')) {
-        try {
-            const { location } = await request.json() as any;
-            const apiKey = env.GEMINI_API_KEY;
-            const { GoogleGenAI } = await import("@google/genai");
-            const genAI = new GoogleGenAI({ 
-                apiKey: apiKey!,
-                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-            });
-            
-            const prompt = `Valide et formate l'adresse suivante pour une utilisation météo: "${location}". 
-            Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
-
-            const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
-                contents: { parts: [{ text: prompt }] }
-            });
-
-            if (!response.text) throw new Error("Réponse vide de l'IA lors de la recherche de lieu");
-
-            return new Response(JSON.stringify({ formatted: response.text.trim() }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }
 
     // --- 2. ROUTE INIT AUTH ---

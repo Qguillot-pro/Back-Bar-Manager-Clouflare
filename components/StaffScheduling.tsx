@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { User, StaffShift, DailyAffluence, ActivityMoment, ScheduleConfig, Event, MealReservation } from '../types';
 import { Calendar, Clock, Settings, TrendingUp, Plus, Trash2, Save, Printer, Sparkles, ChevronLeft, ChevronRight, Lock, Loader2, Search, Sun, Cloud, CloudRain, CloudLightning, Wind, AlertTriangle, Copy } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 
 interface StaffSchedulingProps {
   users: User[];
@@ -145,20 +146,35 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   const handleFetchContext = async () => {
     setIsFetchingContext(true);
     try {
-      // 1. Fetch Weather from our API
+      // 1. Fetch Weather from our new API
       const weatherRes = await fetch('/api/weather');
       const weatherData = await weatherRes.json();
       
-      // 2. Fetch context from Backend (which uses Gemini)
-      const contextRes = await fetch('/api/schedule-context', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ weekDates, location: scheduleConfig.location })
-      });
+      // 2. Fetch other context from Gemini
+      const apiKey = (process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).GEMINI_API_KEY) as string;
+      if (!apiKey) throw new Error('API Key missing');
       
-      const data = await contextRes.json();
-      if (data.error) throw new Error(data.error);
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Recherche les informations suivantes pour la semaine du ${weekDates[0]} à ${scheduleConfig.location}:
+      1. Vacances scolaires (Zone A, B, C en France) et jours fériés.
+      2. Rappel rapide de la législation française sur le temps de travail (pauses, durée max, coupures).
+      
+      Réponds en JSON: { 
+        "holidays": ["..."], 
+        "legislation": "...",
+        "dailyWeather": [
+          { "date": "YYYY-MM-DD", "morning": "SUN/CLOUD/RAIN/STORM/WIND", "afternoon": "SUN/CLOUD/RAIN/STORM/WIND" },
+          ... (pour les 7 jours)
+        ]
+      }`;
 
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+      });
+
+      const data = JSON.parse(response.text || '{}');
       setExternalContext({
         ...data,
         weather: weatherData.title + ': ' + weatherData.description
@@ -362,22 +378,44 @@ const StaffScheduling: React.FC<StaffSchedulingProps> = ({
   const handleOptimize = async () => {
     setIsOptimizing(true);
     try {
-      const response = await fetch('/api/schedule-optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          weekDates,
-          externalContext,
-          scheduleConfig,
-          users,
-          dailyAffluence,
-          absenceRequests
-        })
+      const apiKey = (process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).GEMINI_API_KEY) as string;
+      if (!apiKey) throw new Error('API Key missing');
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Optimise le planning du staff pour la semaine du ${weekDates[0]} au ${weekDates[6]}.
+      
+      CONTEXTE EXTERNE:
+      - Météo prévue: ${JSON.stringify(externalContext.dailyWeather)}
+      
+      CONTRAINTES:
+      - Horaires d'ouverture: ${JSON.stringify(scheduleConfig.openingHours)}
+      - Temps de préparation: ${scheduleConfig.setupTimeMinutes} min
+      - Temps de fermeture: ${scheduleConfig.closingTimeMinutes} min
+      - Amplitude max: ${scheduleConfig.maxAmplitude} min
+      - Travail max/jour: ${scheduleConfig.maxWorkedTime} min
+      - Coupure max: ${scheduleConfig.maxSplitTime} min
+      - Travail continu max: ${scheduleConfig.maxContinuousWorkTime} min
+      - Agents disponibles: ${users.map(u => u.name).join(', ')}
+      - Affluence prévue: ${JSON.stringify(dailyAffluence)}
+      - Absences approuvées: ${JSON.stringify(absenceRequests.filter(a => a.status === 'APPROVED'))}
+      
+      RÈGLES PERSONNALISÉES DU MANAGER:
+      ${scheduleConfig.customAiRules || "Aucune règle spécifique."}
+      
+      OBJECTIF:
+      Générer un planning équilibré respectant toutes les contraintes et les règles personnalisées.
+      Utilise les types de tuiles: SHIFT (travail), PAUSE (pause non payée), SPLIT (coupure).
+      
+      Réponds UNIQUEMENT en JSON (tableau d'objets StaffShift):
+      [{ "userId": "Nom de l'agent", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "type": "SHIFT/PAUSE/SPLIT" }]`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
       });
 
-      const generatedShifts = await response.json();
-      if (generatedShifts.error) throw new Error(generatedShifts.error);
-
+      const generatedShifts = JSON.parse(response.text || '[]');
       if (Array.isArray(generatedShifts)) {
         generatedShifts.forEach(s => {
           const user = users.find(u => u.name === s.userId) || users[0];
@@ -1809,15 +1847,20 @@ const ConfigManager = ({ config, onSave }: {
   const handleLocationSearch = async () => {
     setIsSearchingLocation(true);
     try {
-      const response = await fetch('/api/format-location', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ location: editedConfig.location })
+      const apiKey = (process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).GEMINI_API_KEY) as string;
+      if (!apiKey) throw new Error('API Key missing');
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Valide et formate l'adresse suivante pour une utilisation météo: "${editedConfig.location}". 
+      Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
       });
       
-      const data = await response.json();
-      if (data.formatted) {
-        setEditedConfig({ ...editedConfig, location: data.formatted.trim() });
+      if (response.text) {
+        setEditedConfig({ ...editedConfig, location: response.text.trim() });
       }
     } catch (e) {
       console.error("Location Search Error", e);

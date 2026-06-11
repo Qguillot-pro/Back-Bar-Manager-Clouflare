@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
-import { StockItem, StorageSpace, StockLevel, StockConsigne, Transaction, Format, PendingOrder } from '../types';
-import { LayoutDashboard, TrendingDown, Clock, MoveHorizontal, ChevronRight, CheckCircle2, History as HistoryIcon, ArrowUpCircle, ArrowDownCircle, AlertCircle, EyeOff, Calendar, Settings2, Trash2, RotateCcw, ShoppingCart } from 'lucide-react';
+import { StockItem, StorageSpace, StockLevel, StockConsigne, Transaction, Format } from '../types';
+import { LayoutDashboard, TrendingDown, Clock, MoveHorizontal, ChevronRight, CheckCircle2, History as HistoryIcon, ArrowUpCircle, ArrowDownCircle, AlertCircle, EyeOff, Calendar, Settings2, Trash2, RotateCcw } from 'lucide-react';
 
 interface StorageOptimizationProps {
     items: StockItem[];
@@ -10,8 +10,6 @@ interface StorageOptimizationProps {
     consignes: StockConsigne[];
     transactions: Transaction[];
     formats: Format[];
-    orders: PendingOrder[];
-    onAction: (itemId: string, storageId: string, qtyNeeded: number, qtyToOrder?: number, isRupture?: boolean) => void;
     onSync: (action: string, payload: any) => void;
 }
 
@@ -25,10 +23,9 @@ const PERIODS: { label: string, value: Period, days: number }[] = [
     { label: '1 An', value: '1_YEAR', days: 365 },
 ];
 
-const StorageOptimization: React.FC<StorageOptimizationProps> = ({ items, storages, stockLevels, consignes, transactions, formats, orders, onAction, onSync }) => {
+const StorageOptimization: React.FC<StorageOptimizationProps> = ({ items, storages, stockLevels, consignes, transactions, formats, onSync }) => {
     const [selectedStorageIds, setSelectedStorageIds] = useState<Set<string>>(new Set(storages.map(s => s.id)));
     const [appliedOptimizations, setAppliedOptimizations] = useState<Set<string>>(new Set());
-    const [sessionHiddenItems, setSessionHiddenItems] = useState<Set<string>>(new Set());
     const [showNotFollowedModal, setShowNotFollowedModal] = useState(false);
 
     // Helper to get day of week in French
@@ -50,10 +47,6 @@ const StorageOptimization: React.FC<StorageOptimizationProps> = ({ items, storag
             // Filter out non-followed items or postponed analysis
             if (item.isNotFollowed) return;
             if (item.analysisPostponedUntil && new Date(item.analysisPostponedUntil) > now) return;
-            
-            // FILTRE: Masquer les produits déjà commandés (en attente) ou masqués manuellement dans la session
-            const hasPendingOrder = orders.some(o => o.itemId === item.id && o.status === 'PENDING');
-            if (hasPendingOrder || sessionHiddenItems.has(item.id)) return;
 
             const itemConsignes = consignes.filter(c => c.itemId === item.id && selectedStorageIds.has(c.storageId));
             
@@ -157,7 +150,7 @@ const StorageOptimization: React.FC<StorageOptimizationProps> = ({ items, storag
         });
 
         return results;
-    }, [items, storages, stockLevels, consignes, transactions, selectedStorageIds, orders, sessionHiddenItems]);
+    }, [items, storages, stockLevels, consignes, transactions, selectedStorageIds]);
 
     const optimizations = useMemo(() => {
         const proposals: any[] = [];
@@ -259,15 +252,6 @@ const StorageOptimization: React.FC<StorageOptimizationProps> = ({ items, storag
         onSync('SAVE_ITEM', { ...item, isNotFollowed: val });
     };
 
-    const handleOrder = (itemId: string, storageId: string, quantity: number) => {
-        onAction(itemId, storageId, 0, quantity, false);
-        setSessionHiddenItems(prev => new Set(prev).add(itemId));
-    };
-
-    const handleHideFromSession = (itemId: string) => {
-        setSessionHiddenItems(prev => new Set(prev).add(itemId));
-    };
-
     const notFollowedItems = useMemo(() => items.filter(i => i.isNotFollowed), [items]);
 
     return (
@@ -338,14 +322,11 @@ const StorageOptimization: React.FC<StorageOptimizationProps> = ({ items, storag
                                             
                                             {/* Action Buttons Overlay */}
                                             <div className="absolute right-0 top-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => handleOrder(a.item.id, a.storage.id, a.consigne.minQuantity)} className="p-1.5 bg-emerald-500 border border-emerald-400 rounded-lg text-white hover:bg-emerald-600 shadow-sm" title="Commander (ajoute au panier)">
-                                                    <ShoppingCart className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button onClick={() => handleHideFromSession(a.item.id)} className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-amber-600 shadow-sm" title="Masquer pour cette session">
-                                                    <EyeOff className="w-3.5 h-3.5" />
-                                                </button>
                                                 <button onClick={() => handlePostpone(a.item.id)} className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-indigo-600 shadow-sm" title="Rappeler dans 7 jours">
                                                     <Calendar className="w-3.4 h-3.5" />
+                                                </button>
+                                                <button onClick={() => handleSetNotFollowed(a.item.id, true)} className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-rose-600 shadow-sm" title="Ne plus suivre">
+                                                    <EyeOff className="w-3.5 h-3.5" />
                                                 </button>
                                             </div>
                                         </div>
