@@ -280,7 +280,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
 
             const response = await ai.models.generateContent({
-                model: "gemini-3.5-flash",
+                model: "gemini-1.5-flash",
                 contents: {
                     parts: [
                         { text: prompt },
@@ -330,7 +330,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             }`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
+                model: "gemini-1.5-flash",
                 contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: "application/json" }
             });
@@ -386,7 +386,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             [{ "userId": "Nom de l'agent", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "type": "SHIFT/PAUSE/SPLIT" }]`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-3.1-pro-preview",
+                model: "gemini-1.5-pro",
                 contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: "application/json" }
             });
@@ -415,7 +415,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             const prompt = `Analyse l'état des stocks pour ce bar d'hôtel. Voici les données: ${JSON.stringify(items)}. Fournis un résumé, des alertes et des recommandations.`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
+                model: "gemini-1.5-flash",
                 contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
@@ -455,7 +455,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Les unités doivent être 'cl' pour les liquides, 'dash' pour les bitters, 'piece' pour les fruits/oeufs.`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
+                model: "gemini-1.5-flash",
                 contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
@@ -507,7 +507,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             const prompt = `Génère une fiche technique professionnelle pour le produit "${productName}" de type ${type}.`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
+                model: "gemini-1.5-flash",
                 contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
@@ -548,7 +548,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-3.5-flash",
+                model: "gemini-1.5-flash",
                 contents: { parts: [{ text: prompt }] }
             });
 
