@@ -280,7 +280,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
 
             const response = await ai.models.generateContent({
-                model: "gemini-1.5-flash",
+                model: "gemini-3.5-flash",
                 contents: {
                     parts: [
                         { text: prompt },
@@ -292,7 +292,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
             });
 
-            if (!response.text) throw new Error("Réponse vide de l'IA");
+            if (!response.text) throw new Error("Réponse vide de l'IA lors de l'analyse du menu");
 
             return new Response(response.text, {
                 status: 200,
@@ -330,10 +330,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             }`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-1.5-flash",
+                model: "gemini-3.5-flash",
                 contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: "application/json" }
             });
+
+            if (!response.text) throw new Error("Réponse vide de l'IA lors de la génération du brief");
 
             return new Response(response.text, {
                 status: 200,
@@ -384,10 +386,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             [{ "userId": "Nom de l'agent", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "type": "SHIFT/PAUSE/SPLIT" }]`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-1.5-pro",
+                model: "gemini-3.1-pro-preview",
                 contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: "application/json" }
             });
+
+            if (!response.text) throw new Error("Réponse vide de l'IA lors de la génération de l'horaire");
 
             return new Response(response.text, {
                 status: 200,
@@ -411,7 +415,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             const prompt = `Analyse l'état des stocks pour ce bar d'hôtel. Voici les données: ${JSON.stringify(items)}. Fournis un résumé, des alertes et des recommandations.`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-1.5-flash",
+                model: "gemini-3.5-flash",
                 contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
@@ -426,6 +430,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     }
                 }
             });
+
+            if (!response.text) throw new Error("Réponse vide de l'IA lors de l'analyse du stock");
 
             return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
@@ -449,7 +455,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Les unités doivent être 'cl' pour les liquides, 'dash' pour les bitters, 'piece' pour les fruits/oeufs.`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-1.5-flash",
+                model: "gemini-3.5-flash",
                 contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
@@ -479,6 +485,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
             });
 
+            if (!response.text) throw new Error("Réponse vide de l'IA lors de la génération du cocktail");
+
             return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { 
             console.error("Generate Cocktail Error:", e);
@@ -499,7 +507,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             const prompt = `Génère une fiche technique professionnelle pour le produit "${productName}" de type ${type}.`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-1.5-flash",
+                model: "gemini-3.5-flash",
                 contents: { parts: [{ text: prompt }] },
                 config: {
                     responseMimeType: "application/json",
@@ -520,6 +528,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
             });
 
+            if (!response.text) throw new Error("Réponse vide de l'IA lors de la génération de la fiche produit");
+
             return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }
@@ -538,9 +548,12 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
 
             const response = await genAI.models.generateContent({
-                model: "gemini-1.5-flash",
+                model: "gemini-3.5-flash",
                 contents: { parts: [{ text: prompt }] }
             });
+
+            if (!response.text) throw new Error("Réponse vide de l'IA lors de la recherche de lieu");
+
             return new Response(JSON.stringify({ formatted: response.text.trim() }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }

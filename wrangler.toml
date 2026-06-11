@@ -3,4 +3,7 @@ name = "barstock-pro"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "dist"
 
+[vars]
+GEMINI_API_KEY = "AIzaSyANsHViKOE7jXg191vZPxuTYRZgYQCFc_w"
+
 # Note : Le nom du projet est défini ici pour la validation Cloudflare Wrangler v3+
