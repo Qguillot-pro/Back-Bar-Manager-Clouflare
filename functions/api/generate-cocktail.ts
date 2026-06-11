@@ -1,5 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -19,8 +17,12 @@ export async function onRequestPost(context: any) {
   try {
     const { cocktailName, availableItems } = await context.request.json();
     
-    // Initialisation du SDK à l'intérieur du handler de la requête
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+    // Initialisation dynamique du SDK à l'intérieur du handler de la requête
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ 
+      apiKey: apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
 
     const prompt = `Créé une recette précise pour le cocktail "${cocktailName}". 
 Utilise de préférence les ingrédients de cette liste si possible : ${availableItems?.join(', ') || 'Tout'}.
