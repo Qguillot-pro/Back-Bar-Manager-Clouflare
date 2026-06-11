@@ -437,63 +437,6 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
     }
 
-    if (path.includes('/generate-cocktail')) {
-        try {
-            const { cocktailName, availableItems } = await request.json() as any;
-            const apiKey = env.GEMINI_API_KEY;
-            if (!apiKey) return new Response(JSON.stringify({ error: "Clé API manquante" }), { status: 500, headers: corsHeaders });
-
-            const { GoogleGenAI, Type } = await import("@google/genai");
-            const genAI = new GoogleGenAI({ 
-                apiKey,
-                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-            });
-            
-            const prompt = `Créé une recette précise pour le cocktail "${cocktailName}". 
-            Utilise de préférence les ingrédients de cette liste si possible : ${availableItems?.join(', ') || 'Tout'}.
-            Donne une description courte (max 150 chars) et une anecdote historique (max 150 chars).
-            Les unités doivent être 'cl' pour les liquides, 'dash' pour les bitters, 'piece' pour les fruits/oeufs.`;
-
-            const response = await genAI.models.generateContent({
-                model: "gemini-1.5-flash",
-                contents: { parts: [{ text: prompt }] },
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "object",
-                        properties: {
-                            description: { type: "string" },
-                            history: { type: "string" },
-                            technique: { type: "string" },
-                            decoration: { type: "string" },
-                            suggestedGlassware: { type: "string" },
-                            ingredients: {
-                                type: "array",
-                                items: {
-                                    type: "object",
-                                    properties: {
-                                        name: { type: "string" },
-                                        quantity: { type: "number" },
-                                        unit: { type: "string" }
-                                    },
-                                    required: ["name", "quantity", "unit"]
-                                }
-                            }
-                        },
-                        required: ["description", "history", "technique", "ingredients"]
-                    }
-                }
-            });
-
-            if (!response.text) throw new Error("Réponse vide de l'IA lors de la génération du cocktail");
-
-            return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        } catch (e: any) { 
-            console.error("Generate Cocktail Error:", e);
-            return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); 
-        }
-    }
-
     if (path.includes('/generate-product-sheet')) {
         try {
             const { productName, type, specificFields } = await request.json() as any;
