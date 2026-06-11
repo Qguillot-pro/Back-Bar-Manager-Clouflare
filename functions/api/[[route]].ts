@@ -1,6 +1,5 @@
 
 import { Pool } from '@neondatabase/serverless';
-import { GoogleGenAI } from "@google/genai";
 
 interface Env {
   DATABASE_URL: string;
@@ -263,13 +262,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             const { image } = await request.json() as any;
             if (!image) return new Response(JSON.stringify({ error: "Image manquante" }), { status: 400, headers: corsHeaders });
 
-            const apiKey = env.GEMINI_API_KEY;
-            if (!apiKey) {
-                console.error("Missing GEMINI_API_KEY in env");
-                return new Response(JSON.stringify({ error: "Clé API Gemini manquante. Assurez-vous qu'elle est configurée comme secret dans Cloudflare Pages." }), { status: 500, headers: corsHeaders });
+            const envKey = env.GEMINI_API_KEY;
+            
+            if (!envKey || envKey === '' || envKey === 'undefined') {
+                console.error("Missing or invalid GEMINI_API_KEY in env");
+                return new Response(JSON.stringify({ 
+                    error: "Clé API Gemini manquante ou invalide dans Cloudflare Pages.",
+                    details: "Assurez-vous que GEMINI_API_KEY est défini dans Dashboard -> Pages -> Settings -> Functions -> Environment variables" 
+                }), { status: 500, headers: corsHeaders });
             }
 
-            const genAI = new GoogleGenAI(apiKey);
+            // Dynamic import to avoid top-level issues in some worker environments
+            const { GoogleGenAI } = await import("@google/genai");
+            const genAI = new GoogleGenAI(envKey);
             const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
             const prompt = `Analyse cette image de menu de bar. Extrait tous les noms de produits et cocktails. 
@@ -290,7 +295,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             });
         } catch (e: any) {
             console.error("Global analyze-menu error:", e);
-            return new Response(JSON.stringify({ error: "Erreur système: " + e.message }), { status: 500, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: "Erreur système: " + (e.message || "Erreur inconnue") }), { status: 500, headers: corsHeaders });
         }
     }
 

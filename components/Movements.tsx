@@ -284,7 +284,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, st
                                 const matchedItem = items.find(i => normalizeText(i.name) === normalizeText(search.trim()));
                                 if (!matchedItem) return null;
                                 
-                                const itemLevels = stockLevels.filter(sl => sl.itemId === matchedItem.id);
+                                const itemLevels = stockLevels.filter(sl => sl.itemId === matchedItem.id && sl.currentQuantity > 0);
                                 const itemConsignes = consignes.filter(c => c.itemId === matchedItem.id);
                                 
                                 const storageIds = Array.from(new Set([
@@ -298,7 +298,7 @@ const Movements: React.FC<MovementsProps> = ({ items, transactions, storages, st
                                     <div className="flex flex-wrap gap-2 text-[9px] font-black uppercase tracking-widest">
                                         {storageIds.map(sid => {
                                             const storage = storages.find(s => s.id === sid);
-                                            const level = itemLevels.find(l => l.storageId === sid)?.currentQuantity || 0;
+                                            const level = stockLevels.find(l => l.itemId === matchedItem.id && l.storageId === sid)?.currentQuantity || 0;
                                             return (
                                                 <span key={sid} className={level === 0 ? 'text-rose-400' : 'text-indigo-600'}>
                                                     {storage?.name || 'Stock'}: {level}
