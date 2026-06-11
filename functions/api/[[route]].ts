@@ -267,7 +267,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             if (!image) return new Response(JSON.stringify({ error: "Image manquante" }), { status: 400, headers: corsHeaders });
 
             const envKey = env.GEMINI_API_KEY;
-            if (!envKey) return new Response(JSON.stringify({ error: "Clé API Gemini manquante dans les variables d'environnement." }), { status: 500, headers: corsHeaders });
+            if (!envKey) return new Response(JSON.stringify({ error: "Clé API Gemini manquante. Configurez GEMINI_API_KEY." }), { status: 500, headers: corsHeaders });
 
             const { GoogleGenAI } = await import("@google/genai");
             const ai = new GoogleGenAI({ 
@@ -292,13 +292,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 }
             });
 
+            if (!response.text) throw new Error("Réponse vide de l'IA");
+
             return new Response(response.text, {
                 status: 200,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
             });
         } catch (e: any) {
-            console.error("Global analyze-menu error:", e);
-            return new Response(JSON.stringify({ error: "Erreur système: " + e.message }), { status: 500, headers: corsHeaders });
+            console.error("Analyze Menu Error:", e);
+            return new Response(JSON.stringify({ error: "Erreur d'analyse IA: " + e.message }), { status: 500, headers: corsHeaders });
         }
     }
 
@@ -433,14 +435,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         try {
             const { cocktailName, availableItems } = await request.json() as any;
             const apiKey = env.GEMINI_API_KEY;
+            if (!apiKey) return new Response(JSON.stringify({ error: "Clé API manquante" }), { status: 500, headers: corsHeaders });
+
             const { GoogleGenAI, Type } = await import("@google/genai");
             const genAI = new GoogleGenAI({ 
-                apiKey: apiKey!,
+                apiKey,
                 httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
             });
             
             const prompt = `Créé une recette précise pour le cocktail "${cocktailName}". 
-            Utilise de préférence les ingrédients de cette liste si possible : ${availableItems.join(', ')}.
+            Utilise de préférence les ingrédients de cette liste si possible : ${availableItems?.join(', ') || 'Tout'}.
             Donne une description courte (max 150 chars) et une anecdote historique (max 150 chars).
             Les unités doivent être 'cl' pour les liquides, 'dash' pour les bitters, 'piece' pour les fruits/oeufs.`;
 
@@ -476,7 +480,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             });
 
             return new Response(response.text, { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        } catch (e: any) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
+        } catch (e: any) { 
+            console.error("Generate Cocktail Error:", e);
+            return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); 
+        }
     }
 
     if (path.includes('/generate-product-sheet')) {
