@@ -1,5 +1,8 @@
 {
   "name": "Back-Bar-Manager V2 (Beta)",
   "description": "Version de développement 1.9 (Beta). Focus: Recettes, Fiches Techniques, Analyse de flux et Optimisation.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -1,6 +1,6 @@
 
 import { Pool } from '@neondatabase/serverless';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface Env {
   DATABASE_URL: string;
@@ -983,6 +983,274 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 return new Response(JSON.stringify({ success: true, rows: res.rows, fields: res.fields, rowCount: res.rowCount }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             } catch (e: any) {
                 return new Response(JSON.stringify({ success: false, error: e.message }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
+        }
+        case 'ANALYZE_STOCK': {
+            try {
+                const apiKey = env.GEMINI_API_KEY;
+                if (!apiKey) {
+                    return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
+                }
+                const { items } = payload;
+                const genAI = new GoogleGenAI({
+                    apiKey,
+                    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+                });
+                const prompt = `Analyse l'état des stocks pour ce bar d'hôtel. Voici les données: ${JSON.stringify(items)}. Fournis un résumé, des alertes et des recommandations.`;
+
+                const response = await genAI.models.generateContent({
+                    model: "gemini-3.5-flash",
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: Type.OBJECT,
+                            properties: {
+                                summary: { type: Type.STRING },
+                                alerts: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                recommendations: { type: Type.ARRAY, items: { type: Type.STRING } }
+                            },
+                            required: ["summary", "alerts", "recommendations"]
+                        }
+                    }
+                });
+
+                const resultText = response.text || "{}";
+                return new Response(JSON.stringify({ success: true, result: JSON.parse(resultText) }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            } catch (err: any) {
+                console.error("AI Stock Analysis server error:", err);
+                return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500, headers: corsHeaders });
+            }
+        }
+        case 'GENERATE_COCKTAIL': {
+            try {
+                const apiKey = env.GEMINI_API_KEY;
+                if (!apiKey) {
+                    return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
+                }
+                const { cocktailName, availableItems } = payload;
+                const genAI = new GoogleGenAI({
+                    apiKey,
+                    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+                });
+                const prompt = `Créé une recette précise pour le cocktail "${cocktailName}". 
+                Utilise de préférence les ingrédients de cette liste si possible : ${availableItems.join(', ')}.
+                Donne une description courte (max 150 chars) et une anecdote historique (max 150 chars).
+                Pour la technique, choisis parmi : Shaker, Verre à mélange, Construit, Blender, Throwing.
+                Les unités doivent être 'cl' pour les liquides, 'dash' pour les bitters, 'piece' pour les fruits/oeufs.`;
+
+                const response = await genAI.models.generateContent({
+                    model: "gemini-3.5-flash",
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: Type.OBJECT,
+                            properties: {
+                                description: { type: Type.STRING },
+                                history: { type: Type.STRING },
+                                technique: { type: Type.STRING },
+                                decoration: { type: Type.STRING },
+                                suggestedGlassware: { type: Type.STRING },
+                                ingredients: {
+                                    type: Type.ARRAY,
+                                    items: {
+                                        type: Type.OBJECT,
+                                        properties: {
+                                            name: { type: Type.STRING },
+                                            quantity: { type: Type.NUMBER },
+                                            unit: { type: Type.STRING }
+                                        },
+                                        required: ["name", "quantity", "unit"]
+                                    }
+                                }
+                            },
+                            required: ["description", "history", "technique", "ingredients"]
+                        }
+                    }
+                });
+
+                const resultText = response.text || "{}";
+                return new Response(JSON.stringify({ success: true, result: JSON.parse(resultText) }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            } catch (err: any) {
+                console.error("AI Cocktail Generation server error:", err);
+                return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500, headers: corsHeaders });
+            }
+        }
+        case 'GENERATE_PRODUCT_SHEET': {
+            try {
+                const apiKey = env.GEMINI_API_KEY;
+                if (!apiKey) {
+                    return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
+                }
+                const { productName, type, specificFields = [] } = payload;
+                const genAI = new GoogleGenAI({
+                    apiKey,
+                    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+                });
+                const prompt = `Génère une fiche technique professionnelle pour le produit "${productName}" de type ${type} (Vin, Spiritueux, Bière...).
+                Sois précis et commercial. Pour les vins, indique la région et le cépage probable.
+                Tasting notes : 3 mots clés max par champ.
+                Food pairing : 1 suggestion courte.
+                Temp : en degrés celsius.
+                Si possible, complète également ces caractéristiques spécifiques : ${specificFields.join(', ')}.`;
+
+                const specProps: any = {};
+                specificFields.forEach((field: string) => {
+                    specProps[field] = { type: Type.STRING };
+                });
+
+                const response = await genAI.models.generateContent({
+                    model: "gemini-3.5-flash",
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: Type.OBJECT,
+                            properties: {
+                                description: { type: Type.STRING },
+                                region: { type: Type.STRING },
+                                country: { type: Type.STRING },
+                                eye: { type: Type.STRING },
+                                nose: { type: Type.STRING },
+                                mouth: { type: Type.STRING },
+                                pairing: { type: Type.STRING },
+                                temp: { type: Type.STRING },
+                                customFields: {
+                                    type: Type.OBJECT,
+                                    properties: specProps
+                                }
+                            },
+                            required: ["description", "region", "country", "eye", "nose", "mouth", "pairing"]
+                        }
+                    }
+                });
+
+                const resultText = response.text || "{}";
+                return new Response(JSON.stringify({ success: true, result: JSON.parse(resultText) }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            } catch (err: any) {
+                console.error("AI Product Sheet Generation server error:", err);
+                return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500, headers: corsHeaders });
+            }
+        }
+        case 'SCHEDULING_AI_INFO': {
+            try {
+                const apiKey = env.GEMINI_API_KEY;
+                if (!apiKey) {
+                    return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
+                }
+                const { weekDates0, location } = payload;
+                const genAI = new GoogleGenAI({
+                    apiKey,
+                    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+                });
+                const prompt = `Recherche les informations suivantes pour la semaine du ${weekDates0} à ${location}:
+                1. Vacances scolaires (Zone A, B, C en France) et jours fériés.
+                2. Rappel rapide de la législation française sur le temps de travail (pauses, durée max, coupures).
+                
+                Réponds en JSON: { 
+                  "holidays": ["..."], 
+                  "legislation": "...",
+                  "dailyWeather": [
+                    { "date": "YYYY-MM-DD", "morning": "SUN/CLOUD/RAIN/STORM/WIND", "afternoon": "SUN/CLOUD/RAIN/STORM/WIND" },
+                    ... (pour les 7 jours)
+                  ]
+                }`;
+
+                const response = await genAI.models.generateContent({
+                    model: "gemini-3.5-flash",
+                    contents: prompt,
+                    config: { responseMimeType: "application/json" }
+                });
+
+                const resultText = response.text || "{}";
+                return new Response(JSON.stringify({ success: true, result: JSON.parse(resultText) }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            } catch (err: any) {
+                console.error("AI Scheduling Info server error:", err);
+                return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500, headers: corsHeaders });
+            }
+        }
+        case 'SCHEDULING_AI_OPTIMIZE': {
+            try {
+                const apiKey = env.GEMINI_API_KEY;
+                if (!apiKey) {
+                    return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
+                }
+                const { 
+                    weekDates0, weekDates6, dailyWeather, openingHours, setupTimeMinutes, closingTimeMinutes,
+                    maxAmplitude, maxWorkedTime, maxSplitTime, maxContinuousWorkTime, availableAgents,
+                    dailyAffluence, approvedAbsences, customAiRules
+                } = payload;
+
+                const genAI = new GoogleGenAI({
+                    apiKey,
+                    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+                });
+
+                const prompt = `Optimise le planning du staff pour la semaine du ${weekDates0} au ${weekDates6}.
+                
+                CONTEXTE EXTERNE:
+                - Météo prévue: ${JSON.stringify(dailyWeather)}
+                
+                CONTRAINTES:
+                - Horaires d'ouverture: ${JSON.stringify(openingHours)}
+                - Temps de préparation: ${setupTimeMinutes} min
+                - Temps de fermeture: ${closingTimeMinutes} min
+                - Amplitude max: ${maxAmplitude} min
+                - Travail max/jour: ${maxWorkedTime} min
+                - Coupure max: ${maxSplitTime} min
+                - Travail continu max: ${maxContinuousWorkTime} min
+                - Agents disponibles: ${availableAgents.join(', ')}
+                - Affluence prévue: ${JSON.stringify(dailyAffluence)}
+                - Absences approuvées: ${JSON.stringify(approvedAbsences)}
+                
+                RÈGLES PERSONNALISÉES DU MANAGER:
+                ${customAiRules || "Aucune règle spécifique."}
+                
+                OBJECTIF:
+                Générer un planning équilibré respectant toutes les contraintes et les règles personnalisées.
+                Utilise les types de tuiles: SHIFT (travail), PAUSE (pause non payée), SPLIT (coupure).
+                
+                Réponds UNIQUEMENT en JSON (tableau d'objets StaffShift):
+                [{ "userId": "Nom de l'agent", "date": "YYYY-MM-DD", "startTime": "HH:MM", "endTime": "HH:MM", "type": "SHIFT/PAUSE/SPLIT" }]`;
+
+                const response = await genAI.models.generateContent({
+                    model: "gemini-3.5-flash",
+                    contents: prompt,
+                    config: { responseMimeType: "application/json" }
+                });
+
+                const resultText = response.text || "[]";
+                return new Response(JSON.stringify({ success: true, result: JSON.parse(resultText) }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            } catch (err: any) {
+                console.error("AI Optimize server error:", err);
+                return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500, headers: corsHeaders });
+            }
+        }
+        case 'SCHEDULING_AI_FORMAT_LOCATION': {
+            try {
+                const apiKey = env.GEMINI_API_KEY;
+                if (!apiKey) {
+                    return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
+                }
+                const { location } = payload;
+                const genAI = new GoogleGenAI({
+                    apiKey,
+                    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+                });
+                const prompt = `Valide et formate l'adresse suivante pour une utilisation météo: "${location}". 
+                Réponds UNIQUEMENT avec l'adresse formatée (Ville, Pays).`;
+
+                const response = await genAI.models.generateContent({
+                    model: "gemini-3.5-flash",
+                    contents: prompt
+                });
+
+                const resultText = response.text || "";
+                return new Response(JSON.stringify({ success: true, result: resultText.trim() }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            } catch (err: any) {
+                console.error("AI Format Location server error:", err);
+                return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500, headers: corsHeaders });
             }
         }
         case 'SAVE_DLC_TRANSFER': {
