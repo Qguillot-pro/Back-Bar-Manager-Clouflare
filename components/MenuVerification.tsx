@@ -1,7 +1,8 @@
 
 import React, { useState, useRef } from 'react';
-import { StockItem, Recipe, ProductSheet, Category, Format, UserRole, StorageSpace, StockConsigne } from '../types';
+import { StockItem, Recipe, ProductSheet, Category, Format, UserRole, StorageSpace, StockConsigne, CocktailCategory, User } from '../types';
 import { Camera, Upload, AlertCircle, CheckCircle2, FileSearch, Plus, Search, Loader2, Info, Martini, Save, X } from 'lucide-react';
+import { generateCocktailWithAI } from '../services/geminiService';
 
 interface MenuVerificationProps {
     items: StockItem[];
@@ -13,6 +14,8 @@ interface MenuVerificationProps {
     consignes: StockConsigne[];
     onSync: (action: string, payload: any) => void;
     userRole: UserRole;
+    cocktailCategories?: CocktailCategory[];
+    currentUser?: User;
 }
 
 interface AnalyzedMenuItem {
@@ -24,9 +27,10 @@ interface AnalyzedMenuItem {
     databaseItem?: StockItem;
     menuPrice?: number;
     currentPrice?: number;
+    format?: string;
 }
 
-const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, productSheets, categories, formats, storages, consignes, onSync, userRole }) => {
+const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, productSheets, categories, formats, storages, consignes, onSync, userRole, cocktailCategories = [], currentUser }) => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analyzedItems, setAnalyzedItems] = useState<AnalyzedMenuItem[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -78,7 +82,7 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
                 }
 
                 const data = await response.json();
-                const extractedNames: {name: string, type: string, price?: number}[] = data.items || [];
+                const extractedNames: {name: string, type: string, price?: number, format?: string}[] = data.items || [];
                 
                 const results: AnalyzedMenuItem[] = extractedNames.map(extracted => {
                     const dbItem = items.find(i => 
@@ -95,7 +99,8 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
                         hasProductSheet: !!sheet,
                         databaseItem: dbItem,
                         menuPrice: extracted.price,
-                        currentPrice: sheet?.actualPrice
+                        currentPrice: sheet?.actualPrice,
+                        format: extracted.format
                     };
                 });
 
@@ -105,6 +110,112 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
         } catch (err: any) {
             setError(err.message || "Une erreur est survenue.");
             setIsAnalyzing(false);
+        }
+    };
+
+    const handleAssignProduct = (item: AnalyzedMenuItem, dbItem: StockItem) => {
+        const sheet = productSheets.find(ps => ps.itemId === dbItem.id);
+        setAnalyzedItems(prev => prev.map(ai => 
+            ai.name === item.name 
+                ? { 
+                    ...ai, 
+                    inDatabase: true, 
+                    databaseItem: dbItem, 
+                    hasProductSheet: !!sheet,
+                    currentPrice: sheet?.actualPrice,
+                    hasRecipe: recipes.some(r => r.name.toLowerCase() === dbItem.name.toLowerCase() || r.name.toLowerCase() === item.name.toLowerCase())
+                  } 
+                : ai
+        ));
+    };
+
+    const [isGeneratingRecipeMap, setIsGeneratingRecipeMap] = useState<Record<string, boolean>>({});
+
+    const handleCreateRecipeAI = async (item: AnalyzedMenuItem) => {
+        setIsGeneratingRecipeMap(prev => ({ ...prev, [item.name]: true }));
+        try {
+            const availableItems = items.map(i => i.name);
+            const result = await generateCocktailWithAI(item.name, availableItems);
+            
+            if (result) {
+                // Map the ingredients
+                const normalizedText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+                const mappedIngredients: any[] = [];
+                if (result.ingredients && Array.isArray(result.ingredients)) {
+                    result.ingredients.forEach((iaIng: any) => {
+                        const foundItem = items.find(i => normalizedText(i.name).includes(normalizedText(iaIng.name)));
+                        mappedIngredients.push({
+                            itemId: foundItem?.id,
+                            tempName: !foundItem ? iaIng.name : undefined,
+                            quantity: iaIng.quantity || 0,
+                            unit: iaIng.unit || 'cl'
+                        });
+                    });
+                }
+
+                // Compute cost
+                const getIngredientCost = (ing: any) => {
+                    if (!ing.itemId) return 0;
+                    const it = items.find(i => i.id === ing.itemId);
+                    if (!it || !it.pricePerUnit) return 0;
+                    
+                    const format = formats.find(f => f.id === it.formatId);
+                    const divider = format?.value || 70;
+
+                    let qtyInCl = ing.quantity;
+                    if (ing.unit === 'ml') qtyInCl = ing.quantity / 10;
+                    if (ing.unit === 'dash') qtyInCl = ing.quantity * 0.1;
+                    if (ing.unit === 'piece') qtyInCl = 1;
+
+                    return (it.pricePerUnit / divider) * qtyInCl;
+                };
+
+                const costPrice = mappedIngredients.reduce((acc, curr) => acc + getIngredientCost(curr), 0);
+                const defaultMargin = 82; // 82% margin
+                const sellingPrice = costPrice / (1 - (defaultMargin / 100));
+
+                // Determine category
+                let matchedCategory = 'Cocktails';
+                const lowerName = item.name.toLowerCase();
+                if (lowerName.includes('picon biere') || lowerName.includes('picon bière') || lowerName.includes('monaco')) {
+                    const foundBeerCat = cocktailCategories.find(c => c.name.toLowerCase().includes('biere') || c.name.toLowerCase().includes('bière'));
+                    matchedCategory = foundBeerCat ? foundBeerCat.name : 'Bière';
+                } else if (cocktailCategories.length > 0) {
+                    const pCat = cocktailCategories[0].name;
+                    matchedCategory = pCat;
+                }
+
+                const newRecipe: Recipe = {
+                    id: 'r' + Date.now(),
+                    name: item.name,
+                    category: matchedCategory,
+                    glasswareId: 'g1',
+                    technique: result.technique || 'Construit',
+                    technicalDetails: '',
+                    description: result.description || '',
+                    history: result.history || '',
+                    decoration: result.decoration || '',
+                    ingredients: mappedIngredients,
+                    costPrice: parseFloat(costPrice.toFixed(2)),
+                    sellingPrice: parseFloat(sellingPrice.toFixed(2)),
+                    status: 'VALIDATED',
+                    createdBy: currentUser?.name || 'IA Manager',
+                    createdAt: new Date().toISOString(),
+                    tvaRate: 20
+                };
+
+                onSync('SAVE_RECIPE', newRecipe);
+                
+                // Keep UI updated
+                setAnalyzedItems(prev => prev.map(ai => ai.name === item.name ? { ...ai, hasRecipe: true } : ai));
+                alert(`Recette pour "${item.name}" générée et sauvegardée ! (Catégories: ${matchedCategory}, Coût: ${costPrice.toFixed(2)}€, Prix suggéré: ${sellingPrice.toFixed(2)}€)`);
+            } else {
+                alert("Impossible de générer la recette via l'IA.");
+            }
+        } catch (e: any) {
+            alert("Erreur lors de la génération de recette : " + e.message);
+        } finally {
+            setIsGeneratingRecipeMap(prev => ({ ...prev, [item.name]: false }));
         }
     };
 
@@ -291,99 +402,164 @@ const MenuVerification: React.FC<MenuVerificationProps> = ({ items, recipes, pro
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {analyzedItems.map((item, idx) => (
-                            <div key={idx} className="bg-white rounded-3xl border border-slate-200 p-6 hover:shadow-xl transition-all group overflow-hidden relative">
-                                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                    <Martini className="w-12 h-12 text-slate-900" />
-                                </div>
-                                
-                                <div className="flex justify-between items-start mb-4 relative z-10">
-                                    <div>
-                                        <p className="font-black text-slate-900 text-lg leading-tight uppercase tracking-tight">{item.name}</p>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{item.type}</p>
+                            <div key={idx} className="bg-white rounded-3xl border border-slate-200 p-6 hover:shadow-xl transition-all group overflow-hidden relative flex flex-col justify-between">
+                                <div>
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                        <Martini className="w-12 h-12 text-slate-900" />
                                     </div>
-                                </div>
-
-                                <div className="space-y-3 relative z-10">
-                                    <div className="flex items-center justify-between text-[11px] font-bold">
-                                        <span className="text-slate-400 uppercase tracking-wider">Base de données</span>
-                                        {item.inDatabase ? (
-                                            <span className="text-emerald-500 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full">
-                                                <CheckCircle2 className="w-3 h-3" /> OK
-                                            </span>
-                                        ) : (
-                                            <span className="text-rose-500 flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-full">
-                                                <AlertCircle className="w-3 h-3" /> Manquant
-                                            </span>
-                                        )}
+                                    
+                                    <div className="flex justify-between items-start mb-4 relative z-10">
+                                        <div>
+                                            <p className="font-black text-slate-900 text-lg leading-tight uppercase tracking-tight">{item.name}</p>
+                                            <div className="flex flex-wrap gap-1.5 mt-1.5 items-center">
+                                                <span className="text-[9px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded uppercase tracking-widest">{item.type}</span>
+                                                {item.menuPrice !== undefined && (
+                                                    <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-widest">
+                                                        Tarif détecté: {item.menuPrice}€
+                                                    </span>
+                                                )}
+                                                {item.format && (
+                                                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase tracking-widest">
+                                                        Format: {item.format}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    {item.type === 'COCKTAIL' && (
+                                    <div className="space-y-3 relative z-10">
                                         <div className="flex items-center justify-between text-[11px] font-bold">
-                                            <span className="text-slate-400 uppercase tracking-wider">Recette</span>
-                                            {item.hasRecipe ? (
+                                            <span className="text-slate-400 uppercase tracking-wider">Base de données</span>
+                                            {item.inDatabase ? (
+                                                <span className="text-emerald-500 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                                    <CheckCircle2 className="w-3 h-3" /> OK
+                                                </span>
+                                            ) : (
+                                                <span className="text-rose-500 flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-full">
+                                                    <AlertCircle className="w-3 h-3" /> Manquant
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {item.type === 'COCKTAIL' && (
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center justify-between text-[11px] font-bold">
+                                                    <span className="text-slate-400 uppercase tracking-wider">Recette</span>
+                                                    {item.hasRecipe ? (
+                                                        <span className="text-emerald-500 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                                            <CheckCircle2 className="w-3 h-3" /> OK
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-amber-500 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full">
+                                                            <Info className="w-3 h-3" /> À créer
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {!item.hasRecipe && (
+                                                    <button
+                                                        onClick={() => handleCreateRecipeAI(item)}
+                                                        disabled={isGeneratingRecipeMap[item.name]}
+                                                        className="w-full text-[9px] font-black uppercase text-pink-600 bg-pink-50 hover:bg-pink-100 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-2 border border-pink-200/50 disabled:opacity-50"
+                                                    >
+                                                        {isGeneratingRecipeMap[item.name] ? (
+                                                            <>
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                Création de la Recette...
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Martini className="w-3.5 h-3.5" />
+                                                                Créer la Recette IA
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center justify-between text-[11px] font-bold">
+                                            <span className="text-slate-400 uppercase tracking-wider">Fiche Produit</span>
+                                            {item.hasProductSheet ? (
                                                 <span className="text-emerald-500 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full">
                                                     <CheckCircle2 className="w-3 h-3" /> OK
                                                 </span>
                                             ) : (
                                                 <span className="text-amber-500 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full">
-                                                    <Info className="w-3 h-3" /> À créer
+                                                    <Info className="w-3 h-3" /> À compléter
                                                 </span>
                                             )}
                                         </div>
-                                    )}
 
-                                    <div className="flex items-center justify-between text-[11px] font-bold">
-                                        <span className="text-slate-400 uppercase tracking-wider">Fiche Produit</span>
-                                        {item.hasProductSheet ? (
-                                            <span className="text-emerald-500 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full">
-                                                <CheckCircle2 className="w-3 h-3" /> OK
-                                            </span>
-                                        ) : (
-                                            <span className="text-amber-500 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full">
-                                                <Info className="w-3 h-3" /> À compléter
-                                            </span>
+                                        {item.menuPrice !== undefined && item.currentPrice !== undefined && item.menuPrice !== item.currentPrice && (
+                                            <div className="bg-amber-50 border border-amber-100 p-2 rounded-xl mt-3 space-y-2 animate-in slide-in-from-top-1">
+                                                <div className="flex justify-between items-center text-[10px] font-black uppercase text-amber-700">
+                                                    <span>Différence Prix</span>
+                                                    <AlertCircle className="w-3 h-3" />
+                                                </div>
+                                                <div className="flex justify-between items-end">
+                                                    <div>
+                                                        <p className="text-[9px] font-bold text-slate-400">Menu: {item.menuPrice}€</p>
+                                                        <p className="text-[9px] font-bold text-slate-400">Base: {item.currentPrice}€</p>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleUpdatePrice(item)}
+                                                        className="bg-amber-600 text-white px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tight shadow-lg shadow-amber-200"
+                                                    >
+                                                        Mettre à jour
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!item.hasProductSheet && item.inDatabase && (
+                                            <button 
+                                                className="w-full mt-2 text-[9px] font-black uppercase text-cyan-600 bg-cyan-50 py-2 rounded-lg hover:bg-cyan-100 transition-colors flex items-center justify-center gap-2"
+                                                onClick={() => alert("Recherche IA lancée pour " + item.name + ". Les informations seront ajoutées à la fiche produit.")}
+                                            >
+                                                <Search className="w-3 h-3" /> Recherche IA & Pré-remplir
+                                            </button>
                                         )}
                                     </div>
+                                </div>
 
-                                    {item.menuPrice !== undefined && item.currentPrice !== undefined && item.menuPrice !== item.currentPrice && (
-                                        <div className="bg-amber-50 border border-amber-100 p-2 rounded-xl mt-3 space-y-2 animate-in slide-in-from-top-1">
-                                            <div className="flex justify-between items-center text-[10px] font-black uppercase text-amber-700">
-                                                <span>Différence Prix</span>
-                                                <AlertCircle className="w-3 h-3" />
-                                            </div>
-                                            <div className="flex justify-between items-end">
-                                                <div>
-                                                    <p className="text-[9px] font-bold text-slate-400">Menu: {item.menuPrice}€</p>
-                                                    <p className="text-[9px] font-bold text-slate-400">Base: {item.currentPrice}€</p>
-                                                </div>
-                                                <button 
-                                                    onClick={() => handleUpdatePrice(item)}
-                                                    className="bg-amber-600 text-white px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tight shadow-lg shadow-amber-200"
-                                                >
-                                                    Mettre à jour
-                                                </button>
+                                <div className="mt-4 space-y-2">
+                                    {!item.inDatabase && (
+                                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                            <p className="text-[9px] font-black uppercase text-slate-500 tracking-wider mb-2">Associer à un produit existant</p>
+                                            <div className="flex flex-col gap-2">
+                                                <input 
+                                                    type="text"
+                                                    placeholder="Rechercher produit..."
+                                                    className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-100 text-slate-700"
+                                                    list={`assign-items-${idx}`}
+                                                    onChange={e => {
+                                                        const matchedItem = items.find(it => it.name.trim().toLowerCase() === e.target.value.trim().toLowerCase() || (it.commonName && it.commonName.trim().toLowerCase() === e.target.value.trim().toLowerCase()));
+                                                        if (matchedItem) {
+                                                            handleAssignProduct(item, matchedItem);
+                                                            e.target.value = '';
+                                                        }
+                                                    }}
+                                                />
+                                                <datalist id={`assign-items-${idx}`}>
+                                                    {items.map(it => (
+                                                        <option key={it.id} value={it.commonName || it.name}>
+                                                            {it.category}
+                                                        </option>
+                                                    ))}
+                                                </datalist>
                                             </div>
                                         </div>
                                     )}
 
-                                    {!item.hasProductSheet && item.inDatabase && (
+                                    {!item.inDatabase && userRole === 'ADMIN' && (
                                         <button 
-                                            className="w-full mt-2 text-[9px] font-black uppercase text-cyan-600 bg-cyan-50 py-2 rounded-lg hover:bg-cyan-100 transition-colors flex items-center justify-center gap-2"
-                                            onClick={() => alert("Recherche IA lancée pour " + item.name + ". Les informations seront ajoutées à la fiche produit.")}
+                                            onClick={() => handleIntegrateMissing(item)}
+                                            className="w-full bg-slate-900 text-white py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-cyan-600 transition-all flex items-center justify-center gap-2 shadow-sm"
                                         >
-                                            <Search className="w-3 h-3" /> Recherche IA & Pré-remplir
+                                            <Plus className="w-3 h-3" /> Intégrer l'article
                                         </button>
                                     )}
                                 </div>
-
-                                {!item.inDatabase && userRole === 'ADMIN' && (
-                                    <button 
-                                        onClick={() => handleIntegrateMissing(item)}
-                                        className="w-full mt-6 bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-cyan-600 transition-all flex items-center justify-center gap-2"
-                                    >
-                                        <Plus className="w-3 h-3" /> Intégrer l'article
-                                    </button>
-                                )}
                             </div>
                         ))}
                     </div>

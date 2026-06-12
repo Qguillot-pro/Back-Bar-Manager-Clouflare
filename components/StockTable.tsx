@@ -96,14 +96,22 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
   }, [storages, columnFilters]);
 
   const filteredItemsGlobal = useMemo<StockItem[]>(() => {
-      return items.filter(i => normalizeText(i.name).includes(normalizeText(searchTerm)));
+      const term = normalizeText(searchTerm);
+      return items.filter(i => 
+          normalizeText(i.name).includes(term) ||
+          (i.commonName && normalizeText(i.commonName).includes(term)) ||
+          (i.fullName && normalizeText(i.fullName).includes(term))
+      );
   }, [items, searchTerm]);
 
   const storageItems = useMemo<StockItem[]>(() => {
       const filtered = items.filter(i => {
           const qty = stockLevels.find(l => l.itemId === i.id && l.storageId === selectedStorageId)?.currentQuantity || 0;
           const consigne = getConsigneValue(i.id, selectedStorageId);
-          const matchesSearch = normalizeText(i.name).includes(normalizeText(searchTerm));
+          const term = normalizeText(searchTerm);
+          const matchesSearch = normalizeText(i.name).includes(term) ||
+              (i.commonName && normalizeText(i.commonName).includes(term)) ||
+              (i.fullName && normalizeText(i.fullName).includes(term));
           
           if (searchTerm) return matchesSearch;
           return qty > 0 || consigne > 0;
@@ -230,7 +238,22 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                     <tbody className="divide-y divide-slate-100">
                         {filteredItemsGlobal.map(item => (
                             <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
-                                <td className="p-6 sticky left-0 bg-white z-10 border-r font-bold text-sm text-slate-900 shadow-[1px_0_0_0_#e2e8f0] group-hover:bg-slate-50 transition-colors">{item.name}</td>
+                                <td className="p-6 sticky left-0 bg-white z-10 border-r text-slate-900 shadow-[1px_0_0_0_#e2e8f0] group-hover:bg-slate-50 transition-colors">
+                                    <div className="flex flex-col gap-0.5">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="font-bold text-sm text-slate-900">{item.commonName || item.name}</span>
+                                            {item.fullName && (
+                                                <span className="inline-flex items-center group/tooltip relative text-xs text-indigo-500 cursor-help" title={item.fullName}>
+                                                    <span className="w-3.5 h-3.5 rounded-full bg-indigo-50 border border-indigo-200 text-[8px] font-bold flex items-center justify-center">i</span>
+                                                    <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/tooltip:block bg-slate-900 text-white font-medium text-[10px] p-2 rounded shadow-xl whitespace-normal max-w-xs z-50">
+                                                        {item.fullName}
+                                                    </span>
+                                                </span>
+                                            )}
+                                        </div>
+                                        {item.fullName && <span className="text-[10px] font-medium text-slate-400">{item.fullName}</span>}
+                                    </div>
+                                </td>
                                 {visibleStorages.map(s => {
                                     const qty = stockLevels.find(l => l.itemId === item.id && l.storageId === s.id)?.currentQuantity || 0;
                                     const consigne = getConsigneValue(item.id, s.id);
@@ -404,14 +427,25 @@ const StockTable: React.FC<StockTableProps> = ({ items, storages, stockLevels, s
                                           </td>
                                       )}
                                       <td className="p-6 font-bold text-slate-700">
-                                          <div className="flex items-center gap-2">
-                                              {item.name}
-                                              {isUnauthorized && (
-                                                  <span className="bg-rose-100 text-rose-600 text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-widest flex items-center gap-1">
-                                                      <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                                                      Non Autorisé ici
-                                                  </span>
-                                              )}
+                                          <div className="flex flex-col gap-0.5">
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className="font-bold text-sm text-slate-900">{item.commonName || item.name}</span>
+                                                  {item.fullName && (
+                                                      <span className="inline-flex items-center group/tooltip relative text-xs text-indigo-500 cursor-help" title={item.fullName}>
+                                                          <span className="w-3.5 h-3.5 rounded-full bg-indigo-50 border border-indigo-200 text-[8px] font-bold flex items-center justify-center">i</span>
+                                                          <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/tooltip:block bg-slate-900 text-white font-medium text-[10px] p-2 rounded shadow-xl whitespace-normal max-w-xs z-50">
+                                                              {item.fullName}
+                                                          </span>
+                                                      </span>
+                                                  )}
+                                                  {isUnauthorized && (
+                                                      <span className="bg-rose-100 text-rose-600 text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-widest flex items-center gap-1">
+                                                          <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                                                          Non Autorisé ici
+                                                      </span>
+                                                  )}
+                                              </div>
+                                              {item.fullName && <span className="text-[10px] font-medium text-slate-400">{item.fullName}</span>}
                                           </div>
                                       </td>
                                       <td className="p-6 text-center">

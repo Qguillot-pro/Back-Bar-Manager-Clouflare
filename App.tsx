@@ -1483,6 +1483,8 @@ const App: React.FC = () => {
                 consignes={consignes}
                 onSync={syncData}
                 userRole={currentUser.role}
+                cocktailCategories={cocktailCategories}
+                currentUser={currentUser}
             />
           )}
           {view === 'staff_scheduling' && (

@@ -19,9 +19,11 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
     const defaultMargin = appConfig.defaultMargin || 82;
 
     const data = useMemo(() => {
-        const productData = productSheets.map(sheet => {
+        const productData: any[] = [];
+        
+        productSheets.forEach(sheet => {
             const item = items.find(i => i.id === sheet.itemId);
-            if (!item) return null;
+            if (!item) return;
 
             const format = formats.find(f => f.id === item.formatId);
             const formatValue = format?.value || 1;
@@ -31,34 +33,72 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
             const salesFormat = sheet.salesFormat || 0;
             const actualPriceTTC = sheet.actualPrice || 0;
 
-            const costHT = (item.pricePerUnit / formatValue) * salesFormat;
-            const recommendedPriceHT = marginRate < 100 ? costHT / (1 - marginRate / 100) : 0;
-            const recommendedPriceTTC = recommendedPriceHT * (1 + tvaRate / 100);
-            
-            const actualPriceHT = actualPriceTTC / (1 + tvaRate / 100);
-            const actualMargin = actualPriceHT > 0 ? ((actualPriceHT - costHT) / actualPriceHT) * 100 : 0;
-            const isRespected = actualPriceTTC >= recommendedPriceTTC;
+            if (sheet.salesFormats && sheet.salesFormats.length > 0) {
+                sheet.salesFormats.forEach((sf, sfIdx) => {
+                    const formatTva = tvaRate;
+                    const formatMargin = sf.marginRate !== undefined ? sf.marginRate : marginRate;
+                    const formatSales = sf.salesFormat || 0;
+                    const formatActualPrice = sf.actualPrice || 0;
 
-            return {
-                type: 'PRODUCT',
-                id: sheet.id,
-                name: item.name,
-                category: item.category,
-                buyPriceHT: item.pricePerUnit,
-                refFormat: formatValue,
-                salesFormat,
-                marginRate,
-                tvaRate,
-                recommendedPriceTTC,
-                actualPriceTTC,
-                actualMargin,
-                isRespected,
-                costHT
-            };
-        }).filter(Boolean);
+                    const costHT = (item.pricePerUnit / formatValue) * formatSales;
+                    const recommendedPriceHT = formatMargin < 100 ? costHT / (1 - formatMargin / 100) : 0;
+                    const recommendedPriceTTC = recommendedPriceHT * (1 + formatTva / 100);
+                    
+                    const actualPriceHT = formatActualPrice / (1 + formatTva / 100);
+                    const actualMargin = actualPriceHT > 0 ? ((actualPriceHT - costHT) / actualPriceHT) * 100 : 0;
+                    const isRespected = formatActualPrice >= recommendedPriceTTC;
+
+                    productData.push({
+                        type: 'PRODUCT_MULTIFORMAT',
+                        id: `${sheet.id}_sf_${sfIdx}`,
+                        sheetId: sheet.id,
+                        sfIdx,
+                        totalFormatsCount: sheet.salesFormats!.length,
+                        name: item.commonName || item.name,
+                        fullNameAttr: item.fullName || item.name,
+                        category: item.category,
+                        buyPriceHT: item.pricePerUnit,
+                        refFormat: formatValue,
+                        salesFormat: formatSales,
+                        marginRate: formatMargin,
+                        tvaRate: formatTva,
+                        recommendedPriceTTC,
+                        actualPriceTTC: formatActualPrice,
+                        actualMargin,
+                        isRespected,
+                        costHT
+                    });
+                });
+            } else {
+                const costHT = (item.pricePerUnit / formatValue) * salesFormat;
+                const recommendedPriceHT = marginRate < 100 ? costHT / (1 - marginRate / 100) : 0;
+                const recommendedPriceTTC = recommendedPriceHT * (1 + tvaRate / 100);
+                
+                const actualPriceHT = actualPriceTTC / (1 + tvaRate / 100);
+                const actualMargin = actualPriceHT > 0 ? ((actualPriceHT - costHT) / actualPriceHT) * 100 : 0;
+                const isRespected = actualPriceTTC >= recommendedPriceTTC;
+
+                productData.push({
+                    type: 'PRODUCT',
+                    id: sheet.id,
+                    name: item.commonName || item.name,
+                    fullNameAttr: item.fullName || item.name,
+                    category: item.category,
+                    buyPriceHT: item.pricePerUnit,
+                    refFormat: formatValue,
+                    salesFormat,
+                    marginRate,
+                    tvaRate,
+                    recommendedPriceTTC,
+                    actualPriceTTC,
+                    actualMargin,
+                    isRespected,
+                    costHT
+                });
+            }
+        });
 
         const cocktailData = recipes.map(recipe => {
-            // Calculate cost from ingredients
             const costHT = recipe.ingredients.reduce((acc, ing) => {
                 if (!ing.itemId) return acc;
                 const item = items.find(i => i.id === ing.itemId);
@@ -74,7 +114,7 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
 
             const tvaRate = recipe.tvaRate !== undefined ? recipe.tvaRate : 20;
             const actualPriceTTC = recipe.sellingPrice || 0;
-            const marginRate = defaultMargin; // Cocktails use default margin for recommendation
+            const marginRate = defaultMargin;
             
             const recommendedPriceHT = marginRate < 100 ? costHT / (1 - marginRate / 100) : 0;
             const recommendedPriceTTC = recommendedPriceHT * (1 + tvaRate / 100);
@@ -87,8 +127,9 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                 type: 'COCKTAIL',
                 id: recipe.id,
                 name: recipe.name,
-                category: 'Cocktail',
-                buyPriceHT: costHT, // For cocktails, buyPrice is the total cost
+                fullNameAttr: recipe.name,
+                category: recipe.category || 'Cocktail',
+                buyPriceHT: costHT,
                 refFormat: 1,
                 salesFormat: 1,
                 marginRate,
@@ -106,7 +147,8 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
 
     const filteredData = useMemo(() => {
         return data.filter(d => {
-            const matchesSearch = d.name.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesSearch = d.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                  (d.fullNameAttr && d.fullNameAttr.toLowerCase().includes(searchTerm.toLowerCase()));
             const matchesCategory = categoryFilter === 'ALL' || d.category === categoryFilter;
             return matchesSearch && matchesCategory;
         });
@@ -115,7 +157,24 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
     const categories = Array.from(new Set(data.map(d => d.category)));
 
     const handleUpdate = (id: string, type: string, field: string, value: number) => {
-        if (type === 'PRODUCT') {
+        if (type === 'PRODUCT_MULTIFORMAT' || id.includes('_sf_')) {
+            const [sheetId, , sfIdxStr] = id.split('_sf_');
+            const sfIdx = parseInt(sfIdxStr);
+            const sheet = productSheets.find(s => s.id === sheetId);
+            if (!sheet || !sheet.salesFormats) return;
+
+            const updatedFormats = [...sheet.salesFormats];
+            if (field === 'actualPrice') {
+                updatedFormats[sfIdx] = { ...updatedFormats[sfIdx], actualPrice: value };
+            } else if (field === 'marginRate') {
+                updatedFormats[sfIdx] = { ...updatedFormats[sfIdx], marginRate: value };
+            } else if (field === 'salesFormat') {
+                updatedFormats[sfIdx] = { ...updatedFormats[sfIdx], salesFormat: value };
+            }
+            const updatedSheet = { ...sheet, salesFormats: updatedFormats, updatedAt: new Date().toISOString() };
+            setProductSheets(prev => prev.map(s => s.id === sheetId ? updatedSheet : s));
+            onSync('SAVE_PRODUCT_SHEET', updatedSheet);
+        } else if (type === 'PRODUCT') {
             const sheet = productSheets.find(s => s.id === id);
             if (!sheet) return;
             const updatedSheet = { ...sheet, [field]: value, updatedAt: new Date().toISOString() };
@@ -162,7 +221,7 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                 <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm font-bold"
                 >
                     <option value="ALL">Toutes les catégories</option>
                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
@@ -186,89 +245,106 @@ const AdminPrices: React.FC<AdminPricesProps> = ({ items, productSheets, formats
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {filteredData.map((row) => (
-                                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="p-4">
-                                        <div className="font-bold text-slate-900">{row.name}</div>
-                                        <div className="text-xs text-slate-500">{row.category}</div>
-                                    </td>
-                                    <td className="p-4 text-right font-mono text-sm text-slate-600">
-                                        {row.buyPriceHT.toFixed(2)} €
-                                    </td>
-                                    <td className="p-4 text-right font-mono text-sm text-slate-600">
-                                        {row.refFormat || '-'}
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <input 
-                                            type="number" 
-                                            value={row.salesFormat || ''} 
-                                            onChange={(e) => handleUpdate(row.id, row.type, 'salesFormat', parseFloat(e.target.value) || 0)}
-                                            className="w-20 text-right p-1 border border-slate-200 rounded bg-white text-sm font-mono disabled:opacity-50"
-                                            placeholder="ex: 4"
-                                            step="0.1"
-                                            disabled={row.type === 'COCKTAIL'}
-                                        />
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <input 
-                                            type="number" 
-                                            value={row.marginRate !== undefined ? row.marginRate : ''} 
-                                            onChange={(e) => {
-                                                const val = e.target.value;
-                                                handleUpdate(row.id, row.type, 'marginRate', val === '' ? defaultMargin : parseFloat(val));
-                                            }}
-                                            className="w-16 text-right p-1 border border-slate-200 rounded bg-white text-sm font-mono disabled:opacity-50"
-                                            placeholder={defaultMargin.toString()}
-                                            step="1"
-                                            disabled={row.type === 'COCKTAIL'}
-                                        />
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <select
-                                            value={row.tvaRate}
-                                            onChange={(e) => handleUpdate(row.id, row.type, 'tvaRate', parseFloat(e.target.value))}
-                                            className="p-1 border border-slate-200 rounded bg-white text-sm font-mono"
-                                        >
-                                            {(appConfig.tvaRates || [5.5, 10, 20]).map(rate => (
-                                                <option key={rate} value={rate}>{rate}%</option>
-                                            ))}
-                                        </select>
-                                    </td>
-                                    <td className="p-4 text-right font-mono font-bold text-slate-900">
-                                        {row.recommendedPriceTTC > 0 ? `${row.recommendedPriceTTC.toFixed(2)} €` : '-'}
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <input 
-                                            type="number" 
-                                            value={row.actualPriceTTC || ''} 
-                                            onChange={(e) => handleUpdate(row.id, row.type, 'actualPrice', parseFloat(e.target.value) || 0)}
-                                            className={`w-24 text-right p-1 border rounded text-sm font-mono font-bold ${row.actualPriceTTC > 0 ? (row.isRespected ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700') : 'bg-white border-slate-200 text-slate-900'}`}
-                                            placeholder="0.00"
-                                            step="0.1"
-                                        />
-                                    </td>
-                                    <td className="p-4 text-center">
-                                        {row.actualPriceTTC > 0 && row.recommendedPriceTTC > 0 ? (
-                                            row.isRespected ? (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
-                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                                    OK ({row.actualMargin.toFixed(1)}%)
-                                                </span>
+                            {filteredData.map((row) => {
+                                const isMultiformat = row.type === 'PRODUCT_MULTIFORMAT';
+                                return (
+                                    <tr 
+                                        key={row.id} 
+                                        className={`transition-colors ${
+                                            isMultiformat 
+                                                ? 'bg-indigo-50/10 hover:bg-indigo-100/20' 
+                                                : 'hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        <td className={`p-4 ${isMultiformat ? 'border-l-4 border-indigo-500 pl-3' : ''}`}>
+                                            <div className="font-bold text-slate-900 flex items-center gap-2">
+                                                {row.name}
+                                                {isMultiformat && (
+                                                    <span className="text-[8px] font-black uppercase text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                                        {row.salesFormat} cl
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-slate-500">{row.category}</div>
+                                        </td>
+                                        <td className="p-4 text-right font-mono text-sm text-slate-600">
+                                            {row.buyPriceHT.toFixed(2)} €
+                                        </td>
+                                        <td className="p-4 text-right font-mono text-sm text-slate-600">
+                                            {row.refFormat || '-'}
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <input 
+                                                type="number" 
+                                                value={row.salesFormat || ''} 
+                                                onChange={(e) => handleUpdate(row.id, row.type, 'salesFormat', parseFloat(e.target.value) || 0)}
+                                                className="w-20 text-right p-1.5 border border-slate-200 rounded-lg bg-white text-xs font-mono disabled:bg-slate-50 disabled:opacity-75"
+                                                placeholder="ex: 4"
+                                                step="0.1"
+                                                disabled={row.type === 'COCKTAIL'}
+                                            />
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <input 
+                                                type="number" 
+                                                value={row.marginRate !== undefined ? row.marginRate : ''} 
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    handleUpdate(row.id, row.type, 'marginRate', val === '' ? defaultMargin : parseFloat(val));
+                                                }}
+                                                className="w-16 text-right p-1.5 border border-slate-200 rounded-lg bg-white text-xs font-mono disabled:bg-slate-50 disabled:opacity-75"
+                                                placeholder={defaultMargin.toString()}
+                                                step="1"
+                                                disabled={row.type === 'COCKTAIL'}
+                                            />
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <select
+                                                value={row.tvaRate}
+                                                onChange={(e) => handleUpdate(row.id, row.type, 'tvaRate', parseFloat(e.target.value))}
+                                                className="p-1 border border-slate-200 rounded-lg bg-white text-xs font-mono outline-none"
+                                            >
+                                                {(appConfig.tvaRates || [5.5, 10, 20]).map(rate => (
+                                                    <option key={rate} value={rate}>{rate}%</option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                        <td className="p-4 text-right font-mono font-bold text-slate-900">
+                                            {row.recommendedPriceTTC > 0 ? `${row.recommendedPriceTTC.toFixed(2)} €` : '-'}
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <input 
+                                                type="number" 
+                                                value={row.actualPriceTTC || ''} 
+                                                onChange={(e) => handleUpdate(row.id, row.type, 'actualPrice', parseFloat(e.target.value) || 0)}
+                                                className={`w-24 text-right p-1.5 border rounded-lg text-xs font-mono font-bold ${row.actualPriceTTC > 0 ? (row.isRespected ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700') : 'bg-white border-slate-200 text-slate-900'}`}
+                                                placeholder="0.00"
+                                                step="0.1"
+                                            />
+                                        </td>
+                                        <td className="p-4 text-center">
+                                            {row.actualPriceTTC > 0 && row.recommendedPriceTTC > 0 ? (
+                                                row.isRespected ? (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700">
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                                        RÉALISÉ ({row.actualMargin.toFixed(1)}%)
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-700">
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                        BAS ({row.actualMargin.toFixed(1)}%)
+                                                    </span>
+                                                )
                                             ) : (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
-                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                    Bas ({row.actualMargin.toFixed(1)}%)
-                                                </span>
-                                            )
-                                        ) : (
-                                            <span className="text-xs text-slate-400 font-medium">-</span>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
+                                                <span className="text-xs text-slate-400 font-medium">-</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                             {filteredData.length === 0 && (
                                 <tr>
-                                    <td colSpan={8} className="p-8 text-center text-slate-500">
+                                    <td colSpan={9} className="p-8 text-center text-slate-500 text-xs font-bold uppercase tracking-wider">
                                         Aucun produit trouvé.
                                     </td>
                                 </tr>

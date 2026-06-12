@@ -45,6 +45,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({
   const [glasswareIds, setGlasswareIds] = useState<string[]>([]);
   const [salesFormat, setSalesFormat] = useState<number>(0);
   const [actualPrice, setActualPrice] = useState<number>(0);
+  const [salesFormatsList, setSalesFormatsList] = useState<{ salesFormat: number; actualPrice: number; marginRate?: number }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const linkedItem = items.find(i => i.id === selectedSheet?.itemId);
@@ -82,8 +83,25 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({
       }
   };
 
+  const getAutoTvaRate = (category?: string): number => {
+      if (!category) return 20;
+      const lower = category.toLowerCase();
+      if (lower.includes('soft') || lower.includes('jus') || lower.includes('sirop') || lower.includes('ingrédient') || lower.includes('mocktail') || lower.includes('sans alcool')) {
+          return 10;
+      }
+      return 20;
+  };
+
   const handleSave = () => {
       if (!selectedItemId) return;
+      const item = items.find(i => i.id === selectedItemId);
+      const defaultTva = getAutoTvaRate(item?.category);
+
+      // Consolidate list: if empty, add a default row from main state
+      const finalFormats = salesFormatsList.length > 0 
+          ? salesFormatsList 
+          : [{ salesFormat: salesFormat || 0, actualPrice: actualPrice || 0 }];
+
       const newSheet: ProductSheet = {
           id: selectedSheet ? selectedSheet.id : 'sheet_' + Date.now(),
           itemId: selectedItemId,
@@ -98,8 +116,11 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({
           allergens: '',
           description: desc,
           glasswareIds,
-          salesFormat,
-          actualPrice,
+          salesFormats: finalFormats,
+          salesFormat: finalFormats[0]?.salesFormat || 0,
+          actualPrice: finalFormats[0]?.actualPrice || 0,
+          marginRate: finalFormats[0]?.marginRate || selectedSheet?.marginRate,
+          tvaRate: selectedSheet?.tvaRate !== undefined ? selectedSheet.tvaRate : defaultTva,
           status: currentUserRole === 'ADMIN' ? 'VALIDATED' : 'DRAFT',
           updatedAt: new Date().toISOString()
       };
@@ -121,6 +142,7 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({
       setGlasswareIds([]);
       setSalesFormat(0);
       setActualPrice(0);
+      setSalesFormatsList([]);
       setSelectedSheet(null);
   };
 
@@ -150,6 +172,9 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({
       setGlasswareIds(sheet.glasswareIds || []);
       setSalesFormat(sheet.salesFormat || 0);
       setActualPrice(sheet.actualPrice || 0);
+      setSalesFormatsList(sheet.salesFormats && sheet.salesFormats.length > 0 
+          ? sheet.salesFormats 
+          : [{ salesFormat: sheet.salesFormat || 0, actualPrice: sheet.actualPrice || 0, marginRate: sheet.marginRate }]);
       setViewMode('CREATE');
   };
 
@@ -428,30 +453,73 @@ const ProductKnowledge: React.FC<ProductKnowledgeProps> = ({
                   {canEditStock && (
                       <div className="bg-emerald-50 p-4 rounded-xl space-y-3 border border-emerald-100">
                           <div className="flex justify-between items-center">
-                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Prix Conseillés (Admin)</p>
+                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Formats & Prix de Vente (Admin)</p>
+                              <button 
+                                  type="button"
+                                  onClick={() => {
+                                      if (salesFormatsList.length === 0) {
+                                          setSalesFormatsList([{ salesFormat: salesFormat || 0, actualPrice: actualPrice || 0 }, { salesFormat: 12, actualPrice: 0 }]);
+                                      } else {
+                                          setSalesFormatsList(prev => [...prev, { salesFormat: 12, actualPrice: 0 }]);
+                                      }
+                                  }}
+                                  className="text-[9px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-150 hover:bg-emerald-250 px-3 py-1 rounded-lg transition-colors"
+                              >
+                                  + Ajouter un format
+                              </button>
                           </div>
-                          <div className="flex gap-4">
-                              <div className="flex-1 space-y-2">
-                                  <label className="text-[9px] font-black text-emerald-600 uppercase tracking-widest ml-1">Format de Vente (ex: 4cl)</label>
-                                  <input 
-                                      type="number"
-                                      step="0.1"
-                                      className="w-full bg-white border border-emerald-200 rounded-xl p-3 font-bold text-sm outline-none text-emerald-800" 
-                                      value={salesFormat || ''} 
-                                      onChange={e => setSalesFormat(parseFloat(e.target.value) || 0)} 
-                                  />
+                          
+                          {(salesFormatsList.length === 0 ? [{ salesFormat, actualPrice }] : salesFormatsList).map((f, idx) => (
+                              <div key={idx} className="flex gap-4 items-center bg-white p-3 rounded-xl border border-emerald-100 relative">
+                                  <div className="flex-1 space-y-1">
+                                      <label className="text-[8px] font-black text-emerald-500 uppercase tracking-widest ml-1">Format (ex: 12cl, 75cl...)</label>
+                                      <input 
+                                          type="number"
+                                          step="0.1"
+                                          placeholder="12"
+                                          className="w-full bg-emerald-50/20 border border-emerald-100 rounded-lg p-2 font-bold text-xs outline-none text-emerald-800" 
+                                          value={f.salesFormat || ''} 
+                                          onChange={e => {
+                                              const val = parseFloat(e.target.value) || 0;
+                                              if (salesFormatsList.length === 0) {
+                                                  setSalesFormat(val);
+                                              } else {
+                                                  setSalesFormatsList(prev => prev.map((item, i) => i === idx ? { ...item, salesFormat: val } : item));
+                                              }
+                                          }} 
+                                      />
+                                  </div>
+                                  <div className="flex-1 space-y-1">
+                                      <label className="text-[8px] font-black text-emerald-500 uppercase tracking-widest ml-1">Prix de Vente TTC (€)</label>
+                                      <input 
+                                          type="number"
+                                          step="0.05"
+                                          placeholder="12.5"
+                                          className="w-full bg-emerald-50/20 border border-emerald-100 rounded-lg p-2 font-bold text-xs outline-none text-emerald-800" 
+                                          value={f.actualPrice || ''} 
+                                          onChange={e => {
+                                              const val = parseFloat(e.target.value) || 0;
+                                              if (salesFormatsList.length === 0) {
+                                                  setActualPrice(val);
+                                              } else {
+                                                  setSalesFormatsList(prev => prev.map((item, i) => i === idx ? { ...item, actualPrice: val } : item));
+                                              }
+                                          }} 
+                                      />
+                                  </div>
+                                  
+                                  {salesFormatsList.length > 1 && (
+                                      <button 
+                                          type="button"
+                                          onClick={() => setSalesFormatsList(prev => prev.filter((_, i) => i !== idx))}
+                                          className="p-1 px-2.5 text-rose-500 hover:text-white hover:bg-rose-500 border border-rose-100 hover:border-rose-500 rounded-lg transition-all mt-4 text-[10px] uppercase font-black"
+                                          title="Supprimer ce format"
+                                      >
+                                          Suppr.
+                                      </button>
+                                  )}
                               </div>
-                              <div className="flex-1 space-y-2">
-                                  <label className="text-[9px] font-black text-emerald-600 uppercase tracking-widest ml-1">Prix Actuel (Vérifier via POS) (€)</label>
-                                  <input 
-                                      type="number"
-                                      step="0.1"
-                                      className="w-full bg-white border border-emerald-200 rounded-xl p-3 font-bold text-sm outline-none text-emerald-800" 
-                                      value={actualPrice || ''} 
-                                      onChange={e => setActualPrice(parseFloat(e.target.value) || 0)} 
-                                  />
-                              </div>
-                          </div>
+                          ))}
                       </div>
                   )}
                   <div className="flex justify-end">

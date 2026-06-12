@@ -92,6 +92,8 @@ export interface StockItem {
   id: string;
   articleCode?: string; 
   name: string;
+  commonName?: string; // Nom courant (ex: "Muscadet" pour le vin muscadet de base à la verse)
+  fullName?: string; // Nom complet (ex: domaine, château, appellation spécifique)
   category: Category;
   formatId: string;
   pricePerUnit: number;
@@ -364,6 +366,12 @@ export interface SuggestedPrice {
     price: string;
 }
 
+export interface ProductSalesFormat {
+    salesFormat: number; // Volume ou taille (ex: 12 cl)
+    actualPrice: number; // Prix de vente TTC (€)
+    marginRate?: number; // Taux de marge spécifique
+}
+
 export interface ProductSheet {
     id: string;
     itemId: string; // Link to StockItem
@@ -385,6 +393,7 @@ export interface ProductSheet {
     actualPrice?: number; // Prix de vente actuel TTC
     marginRate?: number; // Taux de marge spécifique
     tvaRate?: number; // Taux de TVA
+    salesFormats?: ProductSalesFormat[]; // Plusieurs formats de ventes possibles
 }
 
 export interface MealReservation {

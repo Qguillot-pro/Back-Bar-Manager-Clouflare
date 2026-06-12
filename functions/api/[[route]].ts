@@ -71,6 +71,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       `);
       await pool.query('ALTER TABLE product_sheets ADD COLUMN IF NOT EXISTS full_name TEXT');
       await pool.query('ALTER TABLE product_sheets ADD COLUMN IF NOT EXISTS custom_fields TEXT');
+      await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS common_name TEXT');
+      await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS full_name TEXT');
       await pool.query('ALTER TABLE admin_notes ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()');
       await pool.query('ALTER TABLE admin_notes ADD COLUMN IF NOT EXISTS user_name TEXT');
       
@@ -286,8 +288,10 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             });
 
             const prompt = `Analyse cette image de menu de bar. Extrait tous les noms de produits et cocktails. 
-            Pour chaque produit, détermine son type parmis: COCKTAIL, WINE, BEER, SPIRIT, SOFT, OTHER.
-            Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
+            Pour chaque produit, détermine son type parmi: COCKTAIL, WINE, BEER, SPIRIT, SOFT, OTHER.
+            Extrait aussi le prix de vente TTC détecté (sous forme de nombre si présent, ex: 12.50 ou 4.5 ou null si non détecté) et le format de vente détecté (ex: "12 cl", "75 cl", "25 cl", "Verre", "Bouteille", "Pinte" ou null s'il n'y en a pas).
+            S'il y a plusieurs formats de vente différents pour un même produit sur le menu (ex: vendu au verre 12 cl et à la bouteille 75 cl), retourne des objets distincts pour chaque format dans le tableau "items".
+            Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type, price, format}.`;
 
             const result = await genAI.models.generateContent({
                 model: "gemini-3.5-flash",
@@ -551,7 +555,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         
         // --- STATIC ---
         if (rawData.items) responseBody.items = rawData.items.map((row: any) => ({
-            id: row.id, articleCode: row.article_code, name: row.name, category: row.category, formatId: row.format_id,
+            id: row.id, articleCode: row.article_code, name: row.name,
+            commonName: row.common_name, fullName: row.full_name,
+            category: row.category, formatId: row.format_id,
             pricePerUnit: parseFloat(row.price_per_unit || '0'), lastUpdated: row.last_updated, createdAt: row.created_at,
             isDLC: row.is_dlc, dlcProfileId: row.dlc_profile_id, isConsigne: row.is_consigne, order: row.sort_order,
             isDraft: row.is_draft, isTemporary: row.is_temporary, isInventoryOnly: row.is_inventory_only, isNoStock: row.is_no_stock, 
@@ -586,7 +592,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                 salesFormat: customFieldsObj['salesFormat'] || 0,
                 actualPrice: customFieldsObj['actualPrice'] || 0,
                 marginRate: customFieldsObj['marginRate'],
-                tvaRate: customFieldsObj['tvaRate']
+                tvaRate: customFieldsObj['tvaRate'],
+                salesFormats: customFieldsObj['salesFormats'] || []
             };
         });
         // NEW: Product Types
@@ -715,14 +722,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'SAVE_CONFIG': { await pool.query(`INSERT INTO app_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [payload.key, String(payload.value)]); break; }
         case 'SAVE_ITEM': { 
-            const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt, isInventoryOnly, isNoStock, isHidden, isNotFollowed, analysisPostponedUntil, externalLocation, externalLocationId, inventoryLocation } = payload; 
+            const { id, name, articleCode, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, order, isDraft, isTemporary, createdAt, isInventoryOnly, isNoStock, isHidden, isNotFollowed, analysisPostponedUntil, externalLocation, externalLocationId, inventoryLocation, commonName, fullName } = payload; 
             await pool.query(`
                 INSERT INTO items (
                     id, article_code, name, category, format_id, price_per_unit, is_dlc, dlc_profile_id, is_consigne, 
                     sort_order, is_draft, is_temporary, is_inventory_only, is_no_stock, is_hidden, 
                     is_not_followed, analysis_postponed_until,
-                    external_location, external_location_id, inventory_location, created_at, last_updated
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, COALESCE($21, NOW()), NOW()) 
+                    external_location, external_location_id, inventory_location, created_at, last_updated,
+                    common_name, full_name
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, COALESCE($21, NOW()), NOW(), $22, $23) 
                 ON CONFLICT (id) DO UPDATE SET 
                     article_code = EXCLUDED.article_code, name = EXCLUDED.name, category = EXCLUDED.category, 
                     format_id = EXCLUDED.format_id, price_per_unit = EXCLUDED.price_per_unit, is_dlc = EXCLUDED.is_dlc, 
@@ -731,12 +739,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     is_no_stock = EXCLUDED.is_no_stock, is_hidden = EXCLUDED.is_hidden, 
                     is_not_followed = EXCLUDED.is_not_followed, analysis_postponed_until = EXCLUDED.analysis_postponed_until,
                     external_location = EXCLUDED.external_location, external_location_id = EXCLUDED.external_location_id, 
-                    inventory_location = EXCLUDED.inventory_location, last_updated = NOW()
+                    inventory_location = EXCLUDED.inventory_location, last_updated = NOW(),
+                    common_name = EXCLUDED.common_name, full_name = EXCLUDED.full_name
             `, [
                 id, articleCode, name, category, formatId, pricePerUnit, isDLC, dlcProfileId, isConsigne, 
                 order, isDraft, isTemporary, isInventoryOnly, isNoStock, isHidden || false, 
                 isNotFollowed || false, analysisPostponedUntil,
-                externalLocation, externalLocationId, inventoryLocation, createdAt
+                externalLocation, externalLocationId, inventoryLocation, createdAt,
+                commonName, fullName
             ]); 
             break; 
         }
@@ -925,7 +935,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             break;
         }
         case 'SAVE_PRODUCT_SHEET': {
-            const { id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status, glasswareIds, salesFormat, actualPrice, marginRate, tvaRate } = payload;
+            const { id, itemId, fullName, type, region, country, tastingNotes, customFields, foodPairing, servingTemp, allergens, description, status, glasswareIds, salesFormat, actualPrice, marginRate, tvaRate, salesFormats } = payload;
             
             // Merge new fields into customFields
             let fieldsObj: any = {};
@@ -938,6 +948,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             if (actualPrice !== undefined) fieldsObj['actualPrice'] = actualPrice;
             if (marginRate !== undefined) fieldsObj['marginRate'] = marginRate;
             if (tvaRate !== undefined) fieldsObj['tvaRate'] = tvaRate;
+            if (salesFormats !== undefined) fieldsObj['salesFormats'] = salesFormats;
             
             const finalCustomFields = JSON.stringify(fieldsObj);
 

@@ -28,7 +28,9 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
       ? items.filter(i => i.isTemporary) 
       : items).filter(i => {
           const isHiddenMatch = showHidden ? true : !i.isHidden;
-          const searchMatch = normalizeText(i.name).includes(normalizeText(searchTerm)) || 
+          const searchMatch = normalizeText(i.name || '').includes(normalizeText(searchTerm)) || 
+              (i.commonName && normalizeText(i.commonName).includes(normalizeText(searchTerm))) ||
+              (i.fullName && normalizeText(i.fullName).includes(normalizeText(searchTerm))) ||
               (i.articleCode && normalizeText(i.articleCode).includes(normalizeText(searchTerm))) ||
               (i.isDraft && normalizeText('brouillon').includes(normalizeText(searchTerm)));
           return isHiddenMatch && searchMatch;
@@ -235,6 +237,28 @@ const ArticlesList: React.FC<ArticlesListProps> = ({ items, setItems, formats, c
                     onChange={e => updateItem(item.id, 'name', e.target.value)}
                     disabled={isReorderMode}
                   />
+                  <div className="mt-2 space-y-1 pl-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-bold text-slate-400 w-16 uppercase">Courant :</span>
+                      <input 
+                        className="bg-transparent border-b border-transparent hover:border-slate-250 focus:border-indigo-500 outline-none text-xs text-slate-600 font-medium py-0.5 flex-1"
+                        value={item.commonName || ''}
+                        placeholder={item.name}
+                        onChange={e => updateItem(item.id, 'commonName', e.target.value)}
+                        disabled={isReorderMode}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-bold text-slate-400 w-16 uppercase">Complet :</span>
+                      <input 
+                        className="bg-transparent border-b border-transparent hover:border-slate-250 focus:border-indigo-500 outline-none text-xs text-slate-600 font-medium py-0.5 flex-1"
+                        value={item.fullName || ''}
+                        placeholder="Ex: Domaine, Château..."
+                        onChange={e => updateItem(item.id, 'fullName', e.target.value)}
+                        disabled={isReorderMode}
+                      />
+                    </div>
+                  </div>
                   {item.isTemporary && <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest mt-1 block">Temporaire</span>}
                   {item.isDraft && !item.isTemporary && <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-1 block">Brouillon (Inactif)</span>}
                 </td>
