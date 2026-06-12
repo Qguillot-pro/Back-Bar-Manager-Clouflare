@@ -5,6 +5,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 interface Env {
   DATABASE_URL: string;
   GEMINI_API_KEY?: string;
+  API_KEY?: string;
 }
 
 interface EventContext<Env, P extends string, Data> {
@@ -27,6 +28,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
+
+function getGeminiApiKey(env: Env): string | undefined {
+  if (env?.GEMINI_API_KEY) return env.GEMINI_API_KEY;
+  if (env?.API_KEY) return env.API_KEY;
+  if (typeof process !== "undefined" && process?.env) {
+    if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+    if (process.env.API_KEY) return process.env.API_KEY;
+  }
+  return undefined;
+}
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const { request, env } = context;
@@ -263,27 +274,33 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             const { image } = await request.json() as any;
             if (!image) return new Response(JSON.stringify({ error: "Image manquante" }), { status: 400, headers: corsHeaders });
 
-            const apiKey = env.GEMINI_API_KEY;
+            const apiKey = getGeminiApiKey(env);
             if (!apiKey) {
-                console.error("Missing GEMINI_API_KEY in env");
-                return new Response(JSON.stringify({ error: "Clé API Gemini manquante. Assurez-vous qu'elle est configurée comme secret dans Cloudflare Pages." }), { status: 500, headers: corsHeaders });
+                console.error("Missing GEMINI_API_KEY or API_KEY in env/process");
+                return new Response(JSON.stringify({ error: "Clé API Gemini manquante. Assurez-vous qu'elle est configurée comme secret dans Cloudflare Pages ou .env." }), { status: 500, headers: corsHeaders });
             }
 
-            const genAI = new GoogleGenAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const genAI = new GoogleGenAI({
+                apiKey,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+            });
 
             const prompt = `Analyse cette image de menu de bar. Extrait tous les noms de produits et cocktails. 
             Pour chaque produit, détermine son type parmis: COCKTAIL, WINE, BEER, SPIRIT, SOFT, OTHER.
             Réponds uniquement en JSON avec une propriété "items" qui est un tableau d'objets {name, type}.`;
 
-            const result = await model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: image } }] }],
-                generationConfig: {
+            const result = await genAI.models.generateContent({
+                model: "gemini-3.5-flash",
+                contents: [
+                    { inlineData: { mimeType: 'image/jpeg', data: image } },
+                    prompt
+                ],
+                config: {
                     responseMimeType: "application/json"
                 }
             });
 
-            const responseText = result.response.text();
+            const responseText = result.text || "{}";
             return new Response(responseText, {
                 status: 200,
                 headers: { 'Content-Type': 'application/json', ...corsHeaders }
@@ -987,7 +1004,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'ANALYZE_STOCK': {
             try {
-                const apiKey = env.GEMINI_API_KEY;
+                const apiKey = getGeminiApiKey(env);
+                console.log("ANALYZE_STOCK: API Key is defined:", !!apiKey);
                 if (!apiKey) {
                     return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
                 }
@@ -1004,11 +1022,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     config: {
                         responseMimeType: "application/json",
                         responseSchema: {
-                            type: Type.OBJECT,
+                            type: "OBJECT" as any,
                             properties: {
-                                summary: { type: Type.STRING },
-                                alerts: { type: Type.ARRAY, items: { type: Type.STRING } },
-                                recommendations: { type: Type.ARRAY, items: { type: Type.STRING } }
+                                summary: { type: "STRING" as any },
+                                alerts: { type: "ARRAY" as any, items: { type: "STRING" as any } },
+                                recommendations: { type: "ARRAY" as any, items: { type: "STRING" as any } }
                             },
                             required: ["summary", "alerts", "recommendations"]
                         }
@@ -1024,7 +1042,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'GENERATE_COCKTAIL': {
             try {
-                const apiKey = env.GEMINI_API_KEY;
+                const apiKey = getGeminiApiKey(env);
+                console.log("GENERATE_COCKTAIL: API Key is defined:", !!apiKey);
                 if (!apiKey) {
                     return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
                 }
@@ -1045,21 +1064,21 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     config: {
                         responseMimeType: "application/json",
                         responseSchema: {
-                            type: Type.OBJECT,
+                            type: "OBJECT" as any,
                             properties: {
-                                description: { type: Type.STRING },
-                                history: { type: Type.STRING },
-                                technique: { type: Type.STRING },
-                                decoration: { type: Type.STRING },
-                                suggestedGlassware: { type: Type.STRING },
+                                description: { type: "STRING" as any },
+                                history: { type: "STRING" as any },
+                                technique: { type: "STRING" as any },
+                                decoration: { type: "STRING" as any },
+                                suggestedGlassware: { type: "STRING" as any },
                                 ingredients: {
-                                    type: Type.ARRAY,
+                                    type: "ARRAY" as any,
                                     items: {
-                                        type: Type.OBJECT,
+                                        type: "OBJECT" as any,
                                         properties: {
-                                            name: { type: Type.STRING },
-                                            quantity: { type: Type.NUMBER },
-                                            unit: { type: Type.STRING }
+                                            name: { type: "STRING" as any },
+                                            quantity: { type: "NUMBER" as any },
+                                            unit: { type: "STRING" as any }
                                         },
                                         required: ["name", "quantity", "unit"]
                                     }
@@ -1079,7 +1098,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'GENERATE_PRODUCT_SHEET': {
             try {
-                const apiKey = env.GEMINI_API_KEY;
+                const apiKey = getGeminiApiKey(env);
+                console.log("GENERATE_PRODUCT_SHEET: API Key is defined:", !!apiKey);
                 if (!apiKey) {
                     return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
                 }
@@ -1097,7 +1117,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
                 const specProps: any = {};
                 specificFields.forEach((field: string) => {
-                    specProps[field] = { type: Type.STRING };
+                    specProps[field] = { type: "STRING" as any };
                 });
 
                 const response = await genAI.models.generateContent({
@@ -1106,18 +1126,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
                     config: {
                         responseMimeType: "application/json",
                         responseSchema: {
-                            type: Type.OBJECT,
+                            type: "OBJECT" as any,
                             properties: {
-                                description: { type: Type.STRING },
-                                region: { type: Type.STRING },
-                                country: { type: Type.STRING },
-                                eye: { type: Type.STRING },
-                                nose: { type: Type.STRING },
-                                mouth: { type: Type.STRING },
-                                pairing: { type: Type.STRING },
-                                temp: { type: Type.STRING },
+                                description: { type: "STRING" as any },
+                                region: { type: "STRING" as any },
+                                country: { type: "STRING" as any },
+                                eye: { type: "STRING" as any },
+                                nose: { type: "STRING" as any },
+                                mouth: { type: "STRING" as any },
+                                pairing: { type: "STRING" as any },
+                                temp: { type: "STRING" as any },
                                 customFields: {
-                                    type: Type.OBJECT,
+                                    type: "OBJECT" as any,
                                     properties: specProps
                                 }
                             },
@@ -1135,7 +1155,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'SCHEDULING_AI_INFO': {
             try {
-                const apiKey = env.GEMINI_API_KEY;
+                const apiKey = getGeminiApiKey(env);
                 if (!apiKey) {
                     return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
                 }
@@ -1172,7 +1192,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'SCHEDULING_AI_OPTIMIZE': {
             try {
-                const apiKey = env.GEMINI_API_KEY;
+                const apiKey = getGeminiApiKey(env);
                 if (!apiKey) {
                     return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
                 }
@@ -1229,7 +1249,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         }
         case 'SCHEDULING_AI_FORMAT_LOCATION': {
             try {
-                const apiKey = env.GEMINI_API_KEY;
+                const apiKey = getGeminiApiKey(env);
                 if (!apiKey) {
                     return new Response(JSON.stringify({ success: false, error: "Clé API Gemini manquante dans la configuration serveur." }), { status: 500, headers: corsHeaders });
                 }
