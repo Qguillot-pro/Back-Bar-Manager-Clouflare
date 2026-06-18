@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Recipe, StockItem, Glassware, User, AppConfig, RecipeIngredient, Technique, CocktailCategory, StockLevel, Format, DailyCocktail } from '../types';
 import { generateCocktailWithAI } from '../services/geminiService';
+import { Printer, ArrowLeft } from 'lucide-react';
 
 interface RecipesViewProps {
   recipes: Recipe[];
@@ -22,7 +23,8 @@ interface RecipesViewProps {
 const normalizeText = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, currentUser, appConfig, onSync, setRecipes, techniques = [], cocktailCategories = [], stockLevels = [], formats = [], canEditStock = false, dailyCocktails = [] }) => {
-  const [viewMode, setViewMode] = useState<'CATEGORIES' | 'LIST' | 'CREATE' | 'DETAIL'>('CATEGORIES');
+  const [viewMode, setViewMode] = useState<'CATEGORIES' | 'LIST' | 'CREATE' | 'DETAIL' | 'BULK_PRINT'>('CATEGORIES');
+  const [selectedRecipesToPrint, setSelectedRecipesToPrint] = useState<Record<string, boolean>>({});
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -208,7 +210,21 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       )}
                   </div>
 
-                  <button onClick={() => { setEditingId(null); setNewName(''); setNewIngredients([]); setViewMode('CREATE'); }} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-all">+ Créer</button>
+                  <div className="flex gap-2 w-full md:w-auto justify-end">
+                      <button 
+                        onClick={() => {
+                            const initSelect: Record<string, boolean> = {};
+                            recipes.forEach(r => { initSelect[r.id] = false; });
+                            setSelectedRecipesToPrint(initSelect);
+                            setViewMode('BULK_PRINT');
+                        }} 
+                        className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-500 transition-all flex items-center gap-2"
+                      >
+                          <Printer className="w-3.5 h-3.5" />
+                          Imprimer en masse
+                      </button>
+                      <button onClick={() => { setEditingId(null); setNewName(''); setNewIngredients([]); setViewMode('CREATE'); }} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-all">+ Créer</button>
+                  </div>
               </div>
 
               {searchQuery.trim() ? (
@@ -301,17 +317,33 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
 
       return (
           <div className="space-y-6">
-              <div className="flex items-center gap-4 bg-white p-6 rounded-3xl border shadow-sm">
-                  <button onClick={() => { setViewMode('CATEGORIES'); setSelectedCategoryFilter(null); }} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600 transition-colors">
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                  </button>
-                  <div>
-                      <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                          <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
-                          {selectedCategoryFilter}
-                      </h2>
-                      <p className="text-xs text-slate-400 font-bold ml-3.5">{filteredRecipes.length} recettes</p>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-3xl border shadow-sm gap-4">
+                  <div className="flex items-center gap-4">
+                      <button onClick={() => { setViewMode('CATEGORIES'); setSelectedCategoryFilter(null); }} className="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600 transition-colors">
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                      </button>
+                      <div>
+                          <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                              <span className="w-1.5 h-6 bg-pink-500 rounded-full"></span>
+                              {selectedCategoryFilter}
+                          </h2>
+                          <p className="text-xs text-slate-400 font-bold ml-3.5">{filteredRecipes.length} recettes</p>
+                      </div>
                   </div>
+                  <button 
+                    onClick={() => {
+                        const initSelect: Record<string, boolean> = {};
+                        recipes.forEach(r => {
+                            initSelect[r.id] = filteredRecipes.some(fr => fr.id === r.id);
+                        });
+                        setSelectedRecipesToPrint(initSelect);
+                        setViewMode('BULK_PRINT');
+                    }} 
+                    className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-500 transition-all flex items-center gap-2 w-full sm:w-auto justify-center"
+                  >
+                      <Printer className="w-3.5 h-3.5" />
+                      Imprimer ces recettes ({filteredRecipes.length})
+                  </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-right-4">
@@ -328,6 +360,307 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       </div>
                   ))}
                   {filteredRecipes.length === 0 && <p className="col-span-full text-center py-20 text-slate-400 italic">Aucune recette dans ce dossier.</p>}
+              </div>
+          </div>
+      );
+  }
+
+  if (viewMode === 'BULK_PRINT') {
+      const selectedCount = Object.values(selectedRecipesToPrint).filter(Boolean).length;
+      const recipesToPrint = recipes.filter(r => selectedRecipesToPrint[r.id]);
+
+      // Categories to list
+      const categoriesList = ['Carte du Moment', ...cocktailCategories.map(c => c.name), 'Non Classé'];
+      const getRecipesForCategory = (catName: string) => {
+          if (catName === 'Carte du Moment') {
+              const today = new Date().toISOString().split('T')[0];
+              const momentRecipeIds = dailyCocktails.filter(c => c.date === today && c.recipeId).map(c => c.recipeId);
+              return recipes.filter(r => momentRecipeIds.includes(r.id));
+          } else if (catName === 'Non Classé') {
+              return recipes.filter(r => !cocktailCategories.some(c => c.name === r.category));
+          } else {
+              return recipes.filter(r => r.category === catName);
+          }
+      };
+
+      const handleToggleSelectAll = (select: boolean) => {
+          const updated = { ...selectedRecipesToPrint };
+          recipes.forEach(r => {
+              updated[r.id] = select;
+          });
+          setSelectedRecipesToPrint(updated);
+      };
+
+      const handleToggleCategorySelect = (catName: string, select: boolean) => {
+          const updated = { ...selectedRecipesToPrint };
+          const catRecipes = getRecipesForCategory(catName);
+          catRecipes.forEach(r => {
+              updated[r.id] = select;
+          });
+          setSelectedRecipesToPrint(updated);
+      };
+
+      const handleRecipeSelect = (id: string, select: boolean) => {
+          setSelectedRecipesToPrint(prev => ({ ...prev, [id]: select }));
+      };
+
+      return (
+          <div className="space-y-6 animate-in fade-in duration-300">
+              <style>{`
+                  @media print {
+                      body * { visibility: hidden; }
+                      #mass-print-container, #mass-print-container * { visibility: visible; }
+                      #mass-print-container {
+                          position: absolute;
+                          left: 0;
+                          top: 0;
+                          width: 100%;
+                          background: white !important;
+                          color: black !important;
+                          padding: 0;
+                          margin: 0;
+                      }
+                      .print-recipe-page {
+                          page-break-after: always;
+                          break-after: page;
+                          box-sizing: border-box;
+                          background: white !important;
+                          color: black !important;
+                          padding: 10mm 15mm;
+                          min-height: 297mm;
+                          display: flex !important;
+                          flex-direction: column !important;
+                          justify-content: space-between !important;
+                      }
+                      .no-print { display: none !important; }
+                  }
+              `}</style>
+              
+              {/* On-screen control panel UI */}
+              <div className="no-print space-y-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-3xl border shadow-sm gap-4">
+                      <div className="flex items-center gap-4">
+                          <button 
+                            onClick={() => { setViewMode('CATEGORIES'); setSelectedCategoryFilter(null); }} 
+                            className="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600 transition-colors"
+                          >
+                              <ArrowLeft className="w-5 h-5" />
+                          </button>
+                          <div>
+                              <h2 className="font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                                  <span className="w-1.5 h-6 bg-indigo-600 rounded-full"></span>
+                                  Impression en Masse
+                              </h2>
+                              <p className="text-xs text-slate-400 font-bold ml-3.5">
+                                  Sélectionnez les recettes à imprimer (1 par page A4)
+                              </p>
+                          </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+                          <button 
+                            onClick={() => handleToggleSelectAll(true)}
+                            className="px-4 py-2 bg-slate-50 border hover:bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all"
+                          >
+                              Tout sélectionner ({recipes.length})
+                          </button>
+                          <button 
+                            onClick={() => handleToggleSelectAll(false)}
+                            className="px-4 py-2 bg-slate-50 border hover:bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all"
+                          >
+                              Tout déselectionner
+                          </button>
+                          <button 
+                            onClick={() => {
+                                if (selectedCount === 0) {
+                                    alert("Veuillez sélectionner au moins une recette à imprimer.");
+                                    return;
+                                }
+                                window.print();
+                            }}
+                            disabled={selectedCount === 0}
+                            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 shadow-lg"
+                          >
+                              <Printer className="w-3.5 h-3.5" />
+                              Lancer l'impression ({selectedCount})
+                          </button>
+                      </div>
+                  </div>
+
+                  <div className="space-y-8">
+                      {categoriesList.map(catName => {
+                          const catRecipes = getRecipesForCategory(catName);
+                          if (catRecipes.length === 0) return null;
+
+                          const isAllCatSelected = catRecipes.every(r => selectedRecipesToPrint[r.id]);
+                          const isSomeCatSelected = catRecipes.some(r => selectedRecipesToPrint[r.id]) && !isAllCatSelected;
+
+                          return (
+                              <div key={catName} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                                  <div className="flex items-center justify-between border-b pb-3 border-slate-100">
+                                      <div className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-pink-500"></span>
+                                          <h3 className="font-black text-sm uppercase text-slate-700 tracking-wider">
+                                              {catName}
+                                          </h3>
+                                          <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold">
+                                              {catRecipes.length} recettes
+                                          </span>
+                                      </div>
+                                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                                          <input 
+                                            type="checkbox"
+                                            checked={isAllCatSelected}
+                                            ref={el => {
+                                                if (el) el.indeterminate = isSomeCatSelected;
+                                            }}
+                                            onChange={(e) => handleToggleCategorySelect(catName, e.target.checked)}
+                                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                                          />
+                                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                                              Tout cocher
+                                          </span>
+                                      </label>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                      {catRecipes.map(r => {
+                                          const isSelected = !!selectedRecipesToPrint[r.id];
+                                          return (
+                                              <div 
+                                                key={r.id}
+                                                onClick={() => handleRecipeSelect(r.id, !isSelected)}
+                                                className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 select-none ${
+                                                    isSelected 
+                                                      ? 'border-indigo-500 bg-indigo-50/20 shadow-sm scale-[1.01]' 
+                                                      : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                                                }`}
+                                              >
+                                                  <input 
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => {}} // handled by click parent
+                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mt-1 h-4 w-4 shrink-0"
+                                                  />
+                                                  <div className="flex-1 min-w-0">
+                                                      <h4 className="font-bold text-sm text-slate-800 truncate">
+                                                          {r.name}
+                                                      </h4>
+                                                      <p className="text-[9px] text-slate-400 font-extrabold tracking-widest uppercase mt-0.5">
+                                                          {r.technique}
+                                                      </p>
+                                                      {r.description && (
+                                                          <p className="text-xs text-slate-500 truncate mt-1 italic">
+                                                              "{r.description}"
+                                                          </p>
+                                                      )}
+                                                  </div>
+                                              </div>
+                                          );
+                                      })}
+                                  </div>
+                              </div>
+                          );
+                      })}
+                  </div>
+              </div>
+
+              {/* Printable container, entirely hidden on screen, visible only under @media print */}
+              <div id="mass-print-container" className="hidden print:block bg-white text-black">
+                  {recipesToPrint.map((recipe, idx) => {
+                      const rGlass = glassware.find(g => g.id === recipe.glasswareId);
+                      return (
+                          <div key={recipe.id} className="print-recipe-page mb-8 border-b-2 border-dashed border-slate-200 last:border-0 last:mb-0">
+                              <div>
+                                  {/* Print header */}
+                                  <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-end">
+                                      <div>
+                                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 block mb-1">
+                                              Fiche Technique • {recipe.category || 'Cocktail'}
+                                          </span>
+                                          <h2 className="text-3xl font-black uppercase tracking-tighter leading-none">
+                                              {recipe.name}
+                                          </h2>
+                                      </div>
+                                      <div className="text-right">
+                                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">
+                                              Méthode
+                                          </span>
+                                          <span className="font-black text-xs uppercase bg-black text-white px-2.5 py-1 rounded">
+                                              {recipe.technique}
+                                          </span>
+                                      </div>
+                                  </div>
+
+                                  {/* Glass and garnish metadata */}
+                                  <div className="grid grid-cols-2 gap-4 mb-6">
+                                      <div className="border border-slate-300 p-3.5 rounded-xl">
+                                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Verre Recommandé</p>
+                                          <p className="font-bold text-slate-800 text-xs uppercase tracking-tight">{rGlass?.name || 'Standard'}</p>
+                                      </div>
+                                      <div className="border border-slate-300 p-3.5 rounded-xl">
+                                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Garniture / Décoration</p>
+                                          <p className="font-bold text-slate-800 text-xs uppercase tracking-tight">
+                                              {recipe.decoration ? `🍋 ${recipe.decoration}` : 'Aucune'}
+                                          </p>
+                                      </div>
+                                  </div>
+
+                                  {/* Ingredients specifications */}
+                                  <div className="mb-6">
+                                      <h3 className="font-black text-[10px] uppercase text-black tracking-widest border-b-2 border-slate-200 pb-1.5 mb-3">
+                                          Composition / Ingrédients
+                                      </h3>
+                                      <table className="w-full text-left text-xs font-bold divide-y divide-slate-100">
+                                          <tbody>
+                                              {recipe.ingredients.map((ing, i) => {
+                                                  const item = items.find(it => it.id === ing.itemId);
+                                                  return (
+                                                      <tr key={i} className="border-b border-slate-100/50">
+                                                          <td className="py-2.5 pr-4 text-slate-400 font-bold">•</td>
+                                                          <td className="py-2.5 w-full text-slate-800 uppercase tracking-tight">
+                                                              {item?.name || ing.tempName}
+                                                          </td>
+                                                          <td className="py-2.5 text-right whitespace-nowrap font-black font-mono text-xs text-black border border-slate-200 bg-slate-50 px-3 py-1 rounded-md">
+                                                              {ing.quantity} {ing.unit}
+                                                          </td>
+                                                      </tr>
+                                                  );
+                                              })}
+                                          </tbody>
+                                      </table>
+                                  </div>
+
+                                  {/* Detailed instructions */}
+                                  {recipe.description && (
+                                      <div className="mb-6">
+                                          <h3 className="font-black text-[10px] uppercase text-black tracking-widest border-b-2 border-slate-200 pb-1.5 mb-3">
+                                              Instructions de Préparation
+                                          </h3>
+                                          <div className="bg-slate-50 p-5 rounded-2xl text-slate-700 text-xs leading-relaxed whitespace-pre-wrap font-medium border border-slate-200">
+                                              {recipe.description}
+                                          </div>
+                                      </div>
+                                  )}
+
+                                  {/* History Context if available */}
+                                  {recipe.history && (
+                                      <div className="bg-slate-50 p-5 rounded-2xl border border-dashed border-slate-300 italic">
+                                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">Histoire & Notes</p>
+                                          <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                                              "{recipe.history}"
+                                          </p>
+                                      </div>
+                                  )}
+                              </div>
+
+                              {/* Persistent professional A4 footer */}
+                              <div className="text-center text-[8px] font-black text-slate-400 uppercase tracking-widest pt-4 border-t border-slate-200 mt-auto">
+                                  Back-Bar Manager • Recette {idx + 1} sur {recipesToPrint.length}
+                              </div>
+                          </div>
+                      );
+                  })}
               </div>
           </div>
       );
