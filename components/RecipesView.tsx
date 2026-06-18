@@ -416,7 +416,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           size: A4 portrait;
                           margin: 10mm 15mm 10mm 15mm !important;
                       }
-                      #root, .no-print {
+                      #root, .no-print, .print-section {
                           display: none !important;
                       }
                       body {
@@ -434,6 +434,12 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           color: black !important;
                           padding: 0 !important;
                           margin: 0 !important;
+                      }
+                      #mass-print-container,
+                      #mass-print-container *,
+                      #single-recipe-print-container,
+                      #single-recipe-print-container * {
+                          visibility: visible !important;
                       }
                       #mass-print-container *, #single-recipe-print-container * {
                           color: #000000 !important;
@@ -457,7 +463,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           background: white !important;
                           color: black !important;
                           padding: 5mm 10mm !important;
-                          height: 255mm !important;
+                          min-height: 260mm !important;
                           display: flex !important;
                           flex-direction: column !important;
                           justify-content: space-between !important;
@@ -858,7 +864,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           size: A4 portrait;
                           margin: 10mm 15mm 10mm 15mm !important;
                       }
-                      #root, .no-print {
+                      #root, .no-print, .print-section {
                           display: none !important;
                       }
                       body {
@@ -876,6 +882,12 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           color: black !important;
                           padding: 0 !important;
                           margin: 0 !important;
+                      }
+                      #mass-print-container,
+                      #mass-print-container *,
+                      #single-recipe-print-container,
+                      #single-recipe-print-container * {
+                          visibility: visible !important;
                       }
                       #mass-print-container *, #single-recipe-print-container * {
                           color: #000000 !important;
@@ -899,7 +911,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           background: white !important;
                           color: black !important;
                           padding: 5mm 10mm !important;
-                          height: 255mm !important;
+                          min-height: 260mm !important;
                           display: flex !important;
                           flex-direction: column !important;
                           justify-content: space-between !important;
@@ -919,7 +931,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       }
                   }
               `}</style>
-              <div id="recipe-print-container" className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh] print-section">
+              <div id="recipe-print-container" className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
                   <div className="bg-slate-900 text-white p-10 relative shrink-0 no-print-bg">
                       <div className="flex justify-between items-start">
                           <div>
