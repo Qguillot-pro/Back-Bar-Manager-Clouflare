@@ -705,7 +705,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
 
                                   {/* Persistent professional A4 footer */}
                                   <div className="text-center text-[8px] font-black text-slate-400 uppercase tracking-widest pt-4 border-t border-slate-200 mt-auto">
-                                      Back-Bar Manager • Recette {idx + 1} sur {recipesToPrint.length}
+                                      Recette {idx + 1} sur {recipesToPrint.length}
                                   </div>
                               </div>
                           );
@@ -1091,7 +1091,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
 
                           {/* Persistent professional A4 footer */}
                           <div className="text-center text-[8px] font-black text-slate-400 uppercase tracking-widest pt-4 border-t border-slate-200 mt-auto">
-                              Back-Bar Manager • Fiche Technique
+                              Fiche Technique
                           </div>
                       </div>
                   </div>,
