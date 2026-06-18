@@ -408,11 +408,23 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       return (
           <div className="space-y-6 animate-in fade-in duration-300">
               <style>{`
+                  #mass-print-container, #single-recipe-print-container {
+                      display: none !important;
+                  }
                   @media print {
-                      #root {
+                      @page {
+                          size: A4 portrait;
+                          margin: 10mm 15mm 10mm 15mm !important;
+                      }
+                      #root, .no-print {
                           display: none !important;
                       }
-                      #mass-print-container {
+                      body {
+                          background-color: white !important;
+                          background: white !important;
+                          color: black !important;
+                      }
+                      #mass-print-container, #single-recipe-print-container {
                           display: block !important;
                           position: relative !important;
                           width: 100% !important;
@@ -423,21 +435,46 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           padding: 0 !important;
                           margin: 0 !important;
                       }
+                      #mass-print-container *, #single-recipe-print-container * {
+                          color: #000000 !important;
+                          text-shadow: none !important;
+                      }
+                      #mass-print-container .bg-black *, #single-recipe-print-container .bg-black * {
+                          color: #ffffff !important;
+                      }
+                      #mass-print-container .bg-pink-500\/10 *, #single-recipe-print-container .bg-pink-500\/10 * {
+                          color: #db2777 !important;
+                      }
+                      #mass-print-container .bg-black, #single-recipe-print-container .bg-black {
+                          background-color: #000000 !important;
+                      }
                       .print-recipe-page {
-                          page-break-after: always;
-                          break-after: page;
-                          page-break-inside: avoid;
-                          break-inside: avoid;
-                          box-sizing: border-box;
+                          page-break-after: always !important;
+                          break-after: page !important;
+                          page-break-inside: avoid !important;
+                          break-inside: avoid !important;
+                          box-sizing: border-box !important;
                           background: white !important;
                           color: black !important;
-                          padding: 10mm 15mm;
-                          min-height: 297mm;
+                          padding: 5mm 10mm !important;
+                          height: 255mm !important;
                           display: flex !important;
                           flex-direction: column !important;
                           justify-content: space-between !important;
                       }
-                      .no-print { display: none !important; }
+                      .bg-slate-50 {
+                          background-color: #f8fafc !important;
+                          border: 1px solid #cbd5e1 !important;
+                      }
+                      .border-slate-300 {
+                          border-color: #cbd5e1 !important;
+                      }
+                      .border-b-4 {
+                          border-bottom-width: 4px !important;
+                      }
+                      .border-b-2 {
+                          border-bottom-width: 2px !important;
+                      }
                   }
               `}</style>
               
@@ -572,7 +609,7 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
 
               {/* Printable container, entirely hidden on screen, visible only under @media print. Rendered outside #root via React Portal. */}
               {createPortal(
-                  <div id="mass-print-container" className="hidden print:block bg-white text-black">
+                  <div id="mass-print-container" className="bg-white text-black">
                       {recipesToPrint.map((recipe, idx) => {
                           const rGlass = glassware.find(g => g.id === recipe.glasswareId);
                           return (
@@ -813,11 +850,23 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
       return (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
               <style>{`
+                  #mass-print-container, #single-recipe-print-container {
+                      display: none !important;
+                  }
                   @media print {
-                      #root {
+                      @page {
+                          size: A4 portrait;
+                          margin: 10mm 15mm 10mm 15mm !important;
+                      }
+                      #root, .no-print {
                           display: none !important;
                       }
-                      #single-recipe-print-container {
+                      body {
+                          background-color: white !important;
+                          background: white !important;
+                          color: black !important;
+                      }
+                      #mass-print-container, #single-recipe-print-container {
                           display: block !important;
                           position: relative !important;
                           width: 100% !important;
@@ -828,19 +877,45 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                           padding: 0 !important;
                           margin: 0 !important;
                       }
+                      #mass-print-container *, #single-recipe-print-container * {
+                          color: #000000 !important;
+                          text-shadow: none !important;
+                      }
+                      #mass-print-container .bg-black *, #single-recipe-print-container .bg-black * {
+                          color: #ffffff !important;
+                      }
+                      #mass-print-container .bg-pink-500\/10 *, #single-recipe-print-container .bg-pink-500\/10 * {
+                          color: #db2777 !important;
+                      }
+                      #mass-print-container .bg-black, #single-recipe-print-container .bg-black {
+                          background-color: #000000 !important;
+                      }
                       .print-recipe-page {
-                          page-break-after: always;
-                          break-after: page;
-                          page-break-inside: avoid;
-                          break-inside: avoid;
-                          box-sizing: border-box;
+                          page-break-after: always !important;
+                          break-after: page !important;
+                          page-break-inside: avoid !important;
+                          break-inside: avoid !important;
+                          box-sizing: border-box !important;
                           background: white !important;
                           color: black !important;
-                          padding: 10mm 15mm;
-                          min-height: 297mm;
+                          padding: 5mm 10mm !important;
+                          height: 255mm !important;
                           display: flex !important;
                           flex-direction: column !important;
                           justify-content: space-between !important;
+                      }
+                      .bg-slate-50 {
+                          background-color: #f8fafc !important;
+                          border: 1px solid #cbd5e1 !important;
+                      }
+                      .border-slate-300 {
+                          border-color: #cbd5e1 !important;
+                      }
+                      .border-b-4 {
+                          border-bottom-width: 4px !important;
+                      }
+                      .border-b-2 {
+                          border-bottom-width: 2px !important;
                       }
                   }
               `}</style>
@@ -917,8 +992,8 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
 
               {/* Printable container rendered directly in document.body via React Portal to bypass #root page height and overflow-hidden styles */}
               {createPortal(
-                  <div id="single-recipe-print-container" className="hidden print:block bg-white text-black">
-                      <div className="print-recipe-page min-h-[297mm]">
+                  <div id="single-recipe-print-container" className="bg-white text-black">
+                      <div className="print-recipe-page">
                           <div>
                               {/* Print header */}
                               <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-end">
