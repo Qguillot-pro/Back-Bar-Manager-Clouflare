@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Recipe, StockItem, Glassware, User, AppConfig, RecipeIngredient, Technique, CocktailCategory, StockLevel, Format, DailyCocktail } from '../types';
 import { generateCocktailWithAI } from '../services/geminiService';
 import { Printer, ArrowLeft } from 'lucide-react';
@@ -408,21 +409,25 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           <div className="space-y-6 animate-in fade-in duration-300">
               <style>{`
                   @media print {
-                      body * { visibility: hidden; }
-                      #mass-print-container, #mass-print-container * { visibility: visible; }
+                      #root {
+                          display: none !important;
+                      }
                       #mass-print-container {
-                          position: absolute;
-                          left: 0;
-                          top: 0;
-                          width: 100%;
+                          display: block !important;
+                          position: relative !important;
+                          width: 100% !important;
+                          height: auto !important;
+                          overflow: visible !important;
                           background: white !important;
                           color: black !important;
-                          padding: 0;
-                          margin: 0;
+                          padding: 0 !important;
+                          margin: 0 !important;
                       }
                       .print-recipe-page {
                           page-break-after: always;
                           break-after: page;
+                          page-break-inside: avoid;
+                          break-inside: avoid;
                           box-sizing: border-box;
                           background: white !important;
                           color: black !important;
@@ -565,103 +570,106 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                   </div>
               </div>
 
-              {/* Printable container, entirely hidden on screen, visible only under @media print */}
-              <div id="mass-print-container" className="hidden print:block bg-white text-black">
-                  {recipesToPrint.map((recipe, idx) => {
-                      const rGlass = glassware.find(g => g.id === recipe.glasswareId);
-                      return (
-                          <div key={recipe.id} className="print-recipe-page mb-8 border-b-2 border-dashed border-slate-200 last:border-0 last:mb-0">
-                              <div>
-                                  {/* Print header */}
-                                  <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-end">
-                                      <div>
-                                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 block mb-1">
-                                              Fiche Technique • {recipe.category || 'Cocktail'}
-                                          </span>
-                                          <h2 className="text-3xl font-black uppercase tracking-tighter leading-none">
-                                              {recipe.name}
-                                          </h2>
-                                      </div>
-                                      <div className="text-right">
-                                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">
-                                              Méthode
-                                          </span>
-                                          <span className="font-black text-xs uppercase bg-black text-white px-2.5 py-1 rounded">
-                                              {recipe.technique}
-                                          </span>
-                                      </div>
-                                  </div>
-
-                                  {/* Glass and garnish metadata */}
-                                  <div className="grid grid-cols-2 gap-4 mb-6">
-                                      <div className="border border-slate-300 p-3.5 rounded-xl">
-                                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Verre Recommandé</p>
-                                          <p className="font-bold text-slate-800 text-xs uppercase tracking-tight">{rGlass?.name || 'Standard'}</p>
-                                      </div>
-                                      <div className="border border-slate-300 p-3.5 rounded-xl">
-                                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Garniture / Décoration</p>
-                                          <p className="font-bold text-slate-800 text-xs uppercase tracking-tight">
-                                              {recipe.decoration ? `🍋 ${recipe.decoration}` : 'Aucune'}
-                                          </p>
-                                      </div>
-                                  </div>
-
-                                  {/* Ingredients specifications */}
-                                  <div className="mb-6">
-                                      <h3 className="font-black text-[10px] uppercase text-black tracking-widest border-b-2 border-slate-200 pb-1.5 mb-3">
-                                          Composition / Ingrédients
-                                      </h3>
-                                      <table className="w-full text-left text-xs font-bold divide-y divide-slate-100">
-                                          <tbody>
-                                              {recipe.ingredients.map((ing, i) => {
-                                                  const item = items.find(it => it.id === ing.itemId);
-                                                  return (
-                                                      <tr key={i} className="border-b border-slate-100/50">
-                                                          <td className="py-2.5 pr-4 text-slate-400 font-bold">•</td>
-                                                          <td className="py-2.5 w-full text-slate-800 uppercase tracking-tight">
-                                                              {item?.name || ing.tempName}
-                                                          </td>
-                                                          <td className="py-2.5 text-right whitespace-nowrap font-black font-mono text-xs text-black border border-slate-200 bg-slate-50 px-3 py-1 rounded-md">
-                                                              {ing.quantity} {ing.unit}
-                                                          </td>
-                                                      </tr>
-                                                  );
-                                              })}
-                                          </tbody>
-                                      </table>
-                                  </div>
-
-                                  {/* Detailed instructions */}
-                                  {recipe.description && (
-                                      <div className="mb-6">
-                                          <h3 className="font-black text-[10px] uppercase text-black tracking-widest border-b-2 border-slate-200 pb-1.5 mb-3">
-                                              Instructions de Préparation
-                                          </h3>
-                                          <div className="bg-slate-50 p-5 rounded-2xl text-slate-700 text-xs leading-relaxed whitespace-pre-wrap font-medium border border-slate-200">
-                                              {recipe.description}
+              {/* Printable container, entirely hidden on screen, visible only under @media print. Rendered outside #root via React Portal. */}
+              {createPortal(
+                  <div id="mass-print-container" className="hidden print:block bg-white text-black">
+                      {recipesToPrint.map((recipe, idx) => {
+                          const rGlass = glassware.find(g => g.id === recipe.glasswareId);
+                          return (
+                              <div key={recipe.id} className="print-recipe-page mb-8 border-b-2 border-dashed border-slate-200 last:border-0 last:mb-0">
+                                  <div>
+                                      {/* Print header */}
+                                      <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-end">
+                                          <div>
+                                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 block mb-1">
+                                                  Fiche Technique • {recipe.category || 'Cocktail'}
+                                              </span>
+                                              <h2 className="text-3xl font-black uppercase tracking-tighter leading-none">
+                                                  {recipe.name}
+                                              </h2>
+                                          </div>
+                                          <div className="text-right">
+                                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">
+                                                  Méthode
+                                              </span>
+                                              <span className="font-black text-xs uppercase bg-black text-white px-2.5 py-1 rounded">
+                                                  {recipe.technique}
+                                              </span>
                                           </div>
                                       </div>
-                                  )}
 
-                                  {/* History Context if available */}
-                                  {recipe.history && (
-                                      <div className="bg-slate-50 p-5 rounded-2xl border border-dashed border-slate-300 italic">
-                                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">Histoire & Notes</p>
-                                          <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                                              "{recipe.history}"
-                                          </p>
+                                      {/* Glass and garnish metadata */}
+                                      <div className="grid grid-cols-2 gap-4 mb-6">
+                                          <div className="border border-slate-300 p-3.5 rounded-xl">
+                                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Verre Recommandé</p>
+                                              <p className="font-bold text-slate-800 text-xs uppercase tracking-tight">{rGlass?.name || 'Standard'}</p>
+                                          </div>
+                                          <div className="border border-slate-300 p-3.5 rounded-xl">
+                                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Garniture / Décoration</p>
+                                              <p className="font-bold text-slate-800 text-xs uppercase tracking-tight">
+                                                  {recipe.decoration ? `🍋 ${recipe.decoration}` : 'Aucune'}
+                                              </p>
+                                          </div>
                                       </div>
-                                  )}
-                              </div>
 
-                              {/* Persistent professional A4 footer */}
-                              <div className="text-center text-[8px] font-black text-slate-400 uppercase tracking-widest pt-4 border-t border-slate-200 mt-auto">
-                                  Back-Bar Manager • Recette {idx + 1} sur {recipesToPrint.length}
+                                      {/* Ingredients specifications */}
+                                      <div className="mb-6">
+                                          <h3 className="font-black text-[10px] uppercase text-black tracking-widest border-b-2 border-slate-200 pb-1.5 mb-3">
+                                              Composition / Ingrédients
+                                          </h3>
+                                          <table className="w-full text-left text-xs font-bold divide-y divide-slate-100">
+                                              <tbody>
+                                                  {recipe.ingredients.map((ing, i) => {
+                                                      const item = items.find(it => it.id === ing.itemId);
+                                                      return (
+                                                          <tr key={i} className="border-b border-slate-100/50">
+                                                              <td className="py-2.5 pr-4 text-slate-400 font-bold">•</td>
+                                                              <td className="py-2.5 w-full text-slate-800 uppercase tracking-tight">
+                                                                  {item?.name || ing.tempName}
+                                                              </td>
+                                                              <td className="py-2.5 text-right whitespace-nowrap font-black font-mono text-xs text-black border border-slate-200 bg-slate-50 px-3 py-1 rounded-md">
+                                                                  {ing.quantity} {ing.unit}
+                                                              </td>
+                                                          </tr>
+                                                      );
+                                                  })}
+                                              </tbody>
+                                          </table>
+                                      </div>
+
+                                      {/* Detailed instructions */}
+                                      {recipe.description && (
+                                          <div className="mb-6">
+                                              <h3 className="font-black text-[10px] uppercase text-black tracking-widest border-b-2 border-slate-200 pb-1.5 mb-3">
+                                                  Instructions de Préparation
+                                              </h3>
+                                              <div className="bg-slate-50 p-5 rounded-2xl text-slate-700 text-xs leading-relaxed whitespace-pre-wrap font-medium border border-slate-200">
+                                                  {recipe.description}
+                                              </div>
+                                          </div>
+                                      )}
+
+                                      {/* History Context if available */}
+                                      {recipe.history && (
+                                          <div className="bg-slate-50 p-5 rounded-2xl border border-dashed border-slate-300 italic">
+                                              <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">Histoire & Notes</p>
+                                              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                                                  "{recipe.history}"
+                                              </p>
+                                          </div>
+                                      )}
+                                  </div>
+
+                                  {/* Persistent professional A4 footer */}
+                                  <div className="text-center text-[8px] font-black text-slate-400 uppercase tracking-widest pt-4 border-t border-slate-200 mt-auto">
+                                      Back-Bar Manager • Recette {idx + 1} sur {recipesToPrint.length}
+                                  </div>
                               </div>
-                          </div>
-                      );
-                  })}
-              </div>
+                          );
+                      })}
+                  </div>,
+                  document.body
+              )}
           </div>
       );
   }
@@ -806,29 +814,34 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
               <style>{`
                   @media print {
-                      body * { visibility: hidden; }
-                      #recipe-print-container, #recipe-print-container * { visibility: visible; }
-                      #recipe-print-container {
-                          position: absolute;
-                          left: 0;
-                          top: 0;
-                          width: 100%;
-                          height: auto;
-                          margin: 0;
-                          padding: 20px;
+                      #root {
+                          display: none !important;
+                      }
+                      #single-recipe-print-container {
+                          display: block !important;
+                          position: relative !important;
+                          width: 100% !important;
+                          height: auto !important;
+                          overflow: visible !important;
                           background: white !important;
                           color: black !important;
-                          overflow: visible !important;
-                          max-height: none !important;
-                          border: none !important;
-                          box-shadow: none !important;
-                          z-index: 9999;
+                          padding: 0 !important;
+                          margin: 0 !important;
                       }
-                      .no-print { display: none !important; }
-                      .no-print-bg { background: transparent !important; border: 1px solid #ddd !important; }
-                      /* Force black text for print */
-                      #recipe-print-container .text-white { color: black !important; }
-                      #recipe-print-container .bg-slate-900 { background: white !important; color: black !important; border-bottom: 2px solid #000; }
+                      .print-recipe-page {
+                          page-break-after: always;
+                          break-after: page;
+                          page-break-inside: avoid;
+                          break-inside: avoid;
+                          box-sizing: border-box;
+                          background: white !important;
+                          color: black !important;
+                          padding: 10mm 15mm;
+                          min-height: 297mm;
+                          display: flex !important;
+                          flex-direction: column !important;
+                          justify-content: space-between !important;
+                      }
                   }
               `}</style>
               <div id="recipe-print-container" className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh] print-section">
@@ -901,6 +914,102 @@ const RecipesView: React.FC<RecipesViewProps> = ({ recipes, items, glassware, cu
                       <button onClick={() => handleEdit(selectedRecipe)} className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-indigo-600 transition-all shadow-lg active:scale-95">Modifier la fiche</button>
                   </div>
               </div>
+
+              {/* Printable container rendered directly in document.body via React Portal to bypass #root page height and overflow-hidden styles */}
+              {createPortal(
+                  <div id="single-recipe-print-container" className="hidden print:block bg-white text-black">
+                      <div className="print-recipe-page min-h-[297mm]">
+                          <div>
+                              {/* Print header */}
+                              <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-end">
+                                  <div>
+                                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 block mb-1">
+                                          Fiche Technique • {selectedRecipe.category || 'Cocktail'}
+                                      </span>
+                                      <h2 className="text-3xl font-black uppercase tracking-tighter leading-none">
+                                          {selectedRecipe.name}
+                                      </h2>
+                                  </div>
+                                  <div className="text-right">
+                                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">
+                                          Méthode
+                                      </span>
+                                      <span className="font-black text-xs uppercase bg-black text-white px-2.5 py-1 rounded">
+                                          {selectedRecipe.technique}
+                                      </span>
+                                  </div>
+                              </div>
+
+                              {/* Glass and garnish metadata */}
+                              <div className="grid grid-cols-2 gap-4 mb-6">
+                                  <div className="border border-slate-300 p-3.5 rounded-xl">
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Verre Recommandé</p>
+                                      <p className="font-bold text-slate-800 text-xs uppercase tracking-tight">{glass?.name || 'Standard'}</p>
+                                  </div>
+                                  <div className="border border-slate-300 p-3.5 rounded-xl">
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Garniture / Décoration</p>
+                                      <p className="font-bold text-slate-800 text-xs uppercase tracking-tight">
+                                          {selectedRecipe.decoration ? `🍋 ${selectedRecipe.decoration}` : 'Aucune'}
+                                      </p>
+                                  </div>
+                              </div>
+
+                              {/* Ingredients specifications */}
+                              <div className="mb-6">
+                                  <h3 className="font-black text-[10px] uppercase text-black tracking-widest border-b-2 border-slate-200 pb-1.5 mb-3">
+                                      Composition / Ingrédients
+                                  </h3>
+                                  <table className="w-full text-left text-xs font-bold divide-y divide-slate-100">
+                                      <tbody>
+                                          {selectedRecipe.ingredients.map((ing, i) => {
+                                              const item = items.find(it => it.id === ing.itemId);
+                                              return (
+                                                  <tr key={i} className="border-b border-slate-100/50">
+                                                      <td className="py-2.5 pr-4 text-slate-400 font-bold">•</td>
+                                                      <td className="py-2.5 w-full text-slate-800 uppercase tracking-tight">
+                                                          {item?.name || ing.tempName}
+                                                      </td>
+                                                      <td className="py-2.5 text-right whitespace-nowrap font-black font-mono text-xs text-black border border-slate-200 bg-slate-50 px-3 py-1 rounded-md">
+                                                          {ing.quantity} {ing.unit}
+                                                      </td>
+                                                  </tr>
+                                              );
+                                          })}
+                                      </tbody>
+                                  </table>
+                              </div>
+
+                              {/* Detailed instructions */}
+                              {selectedRecipe.description && (
+                                  <div className="mb-6">
+                                      <h3 className="font-black text-[10px] uppercase text-black tracking-widest border-b-2 border-slate-200 pb-1.5 mb-3">
+                                          Instructions de Préparation
+                                      </h3>
+                                      <div className="bg-slate-50 p-5 rounded-2xl text-slate-700 text-xs leading-relaxed whitespace-pre-wrap font-medium border border-slate-200">
+                                          {selectedRecipe.description}
+                                      </div>
+                                  </div>
+                              )}
+
+                              {/* History Context if available */}
+                              {selectedRecipe.history && (
+                                  <div className="bg-slate-50 p-5 rounded-2xl border border-dashed border-slate-300 italic">
+                                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">Histoire & Notes</p>
+                                      <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                                          "{selectedRecipe.history}"
+                                      </p>
+                                  </div>
+                              )}
+                          </div>
+
+                          {/* Persistent professional A4 footer */}
+                          <div className="text-center text-[8px] font-black text-slate-400 uppercase tracking-widest pt-4 border-t border-slate-200 mt-auto">
+                              Back-Bar Manager • Fiche Technique
+                          </div>
+                      </div>
+                  </div>,
+                  document.body
+              )}
           </div>
       );
   }
